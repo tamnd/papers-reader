@@ -3,14 +3,18 @@ package fetch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/relay"
 )
 
 // pdf is a PDF only in the sense that matters here: it starts with the magic
@@ -124,6 +128,64 @@ func TestAShortPaperIsStillAPaper(t *testing.T) {
 	}
 }
 
+// The pair of tests that say what the stall clock is for. A download is
+// abandoned for going silent and never for taking its time, because a
+// departmental server from 2003 serving a large scan slowly is working and a
+// whole-request deadline cannot tell the two apart.
+func TestASlowDownloadIsNotAStalledOne(t *testing.T) {
+	body := pdf(Floor * 2)
+	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		for i := 0; i < len(body); i += 512 {
+			w.Write(body[i:min(i+512, len(body))])
+			w.(http.Flusher).Flush()
+			time.Sleep(5 * time.Millisecond)
+		}
+	})
+	f := fetcher(t)
+	// Every chunk arrives well inside the stall window, and the whole
+	// download takes many times longer than it.
+	f.Stall = 40 * time.Millisecond
+	dest := filepath.Join(t.TempDir(), "slow.pdf")
+	got, err := f.Get(context.Background(), srv.URL, dest)
+	if err != nil {
+		t.Fatalf("a slow but healthy download was abandoned: %v", err)
+	}
+	if got.Bytes != int64(len(body)) {
+		t.Errorf("wrote %d bytes of %d", got.Bytes, len(body))
+	}
+}
+
+func TestAStalledDownloadIsAbandoned(t *testing.T) {
+	done := make(chan struct{})
+	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Write(pdf(Floor * 2))
+		w.(http.Flusher).Flush()
+		// Then nothing, ever, which is what a host that has given up on us
+		// without saying so looks like from here.
+		<-done
+	})
+	t.Cleanup(func() { close(done) })
+
+	f := fetcher(t)
+	f.Stall = 100 * time.Millisecond
+	dir := t.TempDir()
+	_, err := f.Get(context.Background(), srv.URL, filepath.Join(dir, "stalled.pdf"))
+	if err == nil {
+		t.Fatal("a download that stopped sending was accepted")
+	}
+	if !strings.Contains(err.Error(), "stopped sending") {
+		t.Errorf("the error is %q, and it should say the host went silent", err)
+	}
+	// Enough bytes arrived to pass every other check, so this is also the
+	// case where a stall could leave a plausible looking half a paper behind.
+	left, _ := os.ReadDir(dir)
+	if len(left) != 0 {
+		t.Errorf("a stalled download left %d files behind", len(left))
+	}
+}
+
 // Content-Type is the least trustworthy thing in the response, in both
 // directions. A PDF served as octet-stream is still a PDF.
 func TestTheBytesDecideAndNotTheHeader(t *testing.T) {
@@ -146,6 +208,110 @@ func TestGetStopsAtTheCeiling(t *testing.T) {
 	_, err := f.Get(context.Background(), srv.URL, filepath.Join(t.TempDir(), "paper.pdf"))
 	if err == nil || !errors.Is(err, ErrNotPDF) {
 		t.Fatalf("a download over the ceiling gave %v", err)
+	}
+}
+
+// The relay. Three papers in the corpus are held by hosts that answer 403 to
+// this network and 200 to another one, so the fetcher gets a second go from
+// somewhere else. What it will not do is relax any of the checks, because a
+// machine on another network is exactly where an unnoticed captcha page would
+// come back from.
+//
+// These tests run curl through /bin/sh rather than ssh, which is as close to
+// a second machine as a test can get without needing one.
+func hops(script string) *relay.Set {
+	return &relay.Set{Hops: []relay.Hop{{
+		Host: script,
+		Run: func(ctx context.Context, host string, argv []string) *exec.Cmd {
+			return exec.CommandContext(ctx, "/bin/sh", "-c", host)
+		},
+	}}}
+}
+
+func TestAHostThatRefusesThisNetworkIsTriedFromAnother(t *testing.T) {
+	body := pdf(Floor + 64)
+	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "go away", http.StatusForbidden)
+	})
+	far := filepath.Join(t.TempDir(), "far.pdf")
+	if err := os.WriteFile(far, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := fetcher(t)
+	f.Relay = hops(fmt.Sprintf("cat %s; printf '200 application/pdf\\n' >&2", far))
+
+	dest := filepath.Join(t.TempDir(), "paper.pdf")
+	got, err := f.Get(context.Background(), srv.URL, dest)
+	if err != nil {
+		t.Fatalf("the relay did not rescue a 403: %v", err)
+	}
+	if got.Bytes != int64(len(body)) {
+		t.Errorf("wrote %d bytes of %d", got.Bytes, len(body))
+	}
+	if _, err := os.Stat(dest); err != nil {
+		t.Errorf("the relayed download is not on disk: %v", err)
+	}
+}
+
+func TestARelayedDownloadIsCheckedLikeAnyOther(t *testing.T) {
+	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "go away", http.StatusForbidden)
+	})
+	f := fetcher(t)
+	// A bot wall, served with a 200 and a straight face.
+	f.Relay = hops("printf '<html>are you a robot</html>'; printf '200 text/html\\n' >&2")
+
+	dir := t.TempDir()
+	_, err := f.Get(context.Background(), srv.URL, filepath.Join(dir, "paper.pdf"))
+	if err == nil {
+		t.Fatal("an HTML page came back through the relay and was accepted as a paper")
+	}
+	if left, _ := os.ReadDir(dir); len(left) != 0 {
+		t.Errorf("a refused relay left %d files behind", len(left))
+	}
+}
+
+func TestBothFailuresAreReported(t *testing.T) {
+	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "go away", http.StatusForbidden)
+	})
+	f := fetcher(t)
+	f.Relay = hops("printf ''; printf '429 text/html\\n' >&2")
+
+	_, err := f.Get(context.Background(), srv.URL, filepath.Join(t.TempDir(), "paper.pdf"))
+	if err == nil {
+		t.Fatal("nothing was downloaded and no error came back")
+	}
+	for _, want := range []string{"403", "429"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error is %q, and it should say what both ends did", err)
+		}
+	}
+}
+
+// A file over the ceiling is over it from every network, and finding that out
+// twice costs a second download of something that was too big the first time.
+func TestTheCeilingIsNotWorthASecondOpinion(t *testing.T) {
+	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write(pdf(Floor * 4))
+	})
+	tried := false
+	f := fetcher(t)
+	f.Ceiling = Floor * 2
+	f.Relay = &relay.Set{Hops: []relay.Hop{{
+		Host: "never",
+		Run: func(ctx context.Context, host string, argv []string) *exec.Cmd {
+			tried = true
+			return exec.CommandContext(ctx, "/bin/sh", "-c", "true")
+		},
+	}}}
+
+	_, err := f.Get(context.Background(), srv.URL, filepath.Join(t.TempDir(), "paper.pdf"))
+	if !errors.Is(err, ErrTooBig) {
+		t.Fatalf("got %v, want the too big error", err)
+	}
+	if tried {
+		t.Error("a book was downloaded a second time through the relay")
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	papers "github.com/tamnd/papers-reader"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/fetch"
+	"github.com/tamnd/papers-reader/relay"
 )
 
 func runFetch(args []string) error {
@@ -46,7 +47,12 @@ running this twice costs nothing. A paper whose hash does not match is
 reported and not overwritten, because a file that changed under us is
 something a person should look at.
 
-`, fetch.Magic, fetch.Floor, fetch.Ceiling)
+Some hosts refuse a network rather than a program, and a few of them hold
+the only copy of a paper. If %s or ~/.config/papers/relay.json names
+ssh destinations, a download that failed from here is tried again from one
+of them, with the same User-Agent and the same checks on what comes back.
+
+`, fetch.Magic, fetch.Floor, fetch.Ceiling, relay.Env)
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -78,10 +84,18 @@ something a person should look at.
 	}
 
 	f := fetch.New(papers.Version)
+	hops, err := relay.Load()
+	if err != nil {
+		return err
+	}
+	f.Relay = hops
+	if !hops.Empty() {
+		fmt.Printf("a host that refuses this network will be tried again through %s\n", hops)
+	}
 	byID := index(recorded)
 	ctx := context.Background()
 
-	var got, held, refused, already int
+	var got, held, refused, already, caught int
 	for _, p := range todo {
 		rec, _ := recorded.ByID(p.ID)
 		if ok, why := fetch.May(rec); !ok {
@@ -92,6 +106,26 @@ something a person should look at.
 		dest := c.PDF(p.ID)
 		if !*again {
 			if sum, _, err := fetch.Sum(dest); err == nil && (rec.SHA256 == "" || sum == rec.SHA256) {
+				if rec.SHA256 == "" {
+					// The file is here and the record does not know it.
+					// That is what a run killed between the download and
+					// the write leaves behind, and it matters, because the
+					// hash is the only thing that later tells the corpus
+					// whether the file it has is the file it fetched.
+					// Writing it down costs a read of a file that is
+					// already on this disk, so there is no reason to make
+					// anybody download the paper a second time for it.
+					out := byID[p.ID]
+					out.SHA256 = sum
+					if out.Fetched == "" {
+						if info, err := os.Stat(dest); err == nil {
+							out.Fetched = info.ModTime().UTC().Format(time.DateOnly)
+						}
+					}
+					byID[p.ID] = out
+					caught++
+					continue
+				}
 				already++
 				continue
 			}
@@ -127,7 +161,7 @@ something a person should look at.
 		fmt.Println("dry run, nothing downloaded")
 		return nil
 	}
-	if got > 0 {
+	if got > 0 || caught > 0 {
 		if err := writeSources(c, byID); err != nil {
 			return err
 		}
@@ -135,6 +169,9 @@ something a person should look at.
 	}
 	fmt.Printf("%d papers, %d fetched, %d already here, %d with nowhere to fetch from, %d refused as not a paper\n",
 		len(todo), got, already, held, refused)
+	if caught > 0 {
+		fmt.Printf("%d were on disk with no hash in the record, and now have one\n", caught)
+	}
 	return nil
 }
 

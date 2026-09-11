@@ -38,6 +38,7 @@ var commands = []command{
 	{"add", "M9", "add a paper to the manifest from an arXiv id or a DOI", nil},
 	{"resolve", "M1", "find where each paper can be fetched, and its licence", runResolve},
 	{"fetch", "M1", "download the PDFs that resolved, and hash them", runFetch},
+	{"adopt", "M1", "record a PDF a person fetched by hand, and where from", runAdopt},
 	{"classify", "M1", "measure what each PDF's text layer is worth", runClassify},
 	{"render", "M2", "rasterise pages for the pages that need a model", nil},
 	{"extract", "M2", "turn pages into Markdown with LaTeX mathematics", nil},
