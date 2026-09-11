@@ -28,14 +28,26 @@ const TitleFloor = 0.92
 const YearSlack = 1
 
 // Candidate is what a lookup came back with.
+//
+// URL is the PDF and Landing is the page a human should be sent to, and they
+// are kept apart because the corpus links to the landing page and fetches the
+// PDF, and a record that confused the two would send readers at a file.
 type Candidate struct {
 	Title   string
 	Authors []string
 	Year    int
 	DOI     string
+	ArXiv   string
 	URL     string
+	Landing string
 	Licence string
-	Source  string
+	// Abstract is only filled in by the services that hand one over, and only
+	// used for a restricted paper, where it is the one piece of the paper the
+	// corpus may carry.
+	Abstract string
+	// Source names the rung of the ladder this came off, so that a record can
+	// be traced back to the service that produced it.
+	Source string
 }
 
 // Want is what the manifest says the paper is.
@@ -44,6 +56,9 @@ type Want struct {
 	Title   string
 	Authors []string
 	Year    int
+	// Seed is the reading list's link to a copy, used only as the last rung
+	// of the ladder. See corpus.Paper.Seed for why it is not a pin.
+	Seed string
 }
 
 // Verdict is why a candidate was accepted or refused. A refusal is recorded

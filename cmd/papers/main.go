@@ -36,7 +36,7 @@ var commands = []command{
 	{"list", "", "list papers in the corpus", runList},
 	{"audit", "", "check the corpus against the numbered rules", runAudit},
 	{"add", "M9", "add a paper to the manifest from an arXiv id or a DOI", nil},
-	{"resolve", "M1", "find where each paper can be fetched, and its licence", nil},
+	{"resolve", "M1", "find where each paper can be fetched, and its licence", runResolve},
 	{"fetch", "M1", "download the PDFs that resolved, and hash them", nil},
 	{"classify", "M2", "decide per page whether the text layer is trustworthy", nil},
 	{"render", "M2", "rasterise pages for the pages that need a model", nil},

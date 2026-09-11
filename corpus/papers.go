@@ -40,9 +40,20 @@ type Paper struct {
 	// ArXiv, DOI and URL are pinned identifiers. A pinned identifier beats
 	// anything an API says, because a person who has looked knows more than a
 	// search index.
-	ArXiv         string   `yaml:"arxiv,omitempty"`
-	DOI           string   `yaml:"doi,omitempty"`
-	URL           string   `yaml:"url,omitempty"`
+	ArXiv string `yaml:"arxiv,omitempty"`
+	DOI   string `yaml:"doi,omitempty"`
+	URL   string `yaml:"url,omitempty"`
+	// Seed is where the seed list said a copy of the PDF was. It is a hint and
+	// not a pin, and the difference matters.
+	//
+	// A pin is somebody saying "this is the paper, use it". A seed is a link
+	// off a reading list, and most of the hundred are links to a course page
+	// or an author's own site rather than to the publisher. That is fine for
+	// reading the paper and it is not a licence to republish a translation of
+	// it, so a seed URL is tried after every service has had a go and it never
+	// carries a licence with it. A paper whose only location is a seed stays
+	// unknown, and unknown publishes nothing.
+	Seed          string   `yaml:"seed,omitempty"`
 	Difficulty    int      `yaml:"difficulty,omitempty"`
 	Prerequisites []string `yaml:"prerequisites,omitempty"`
 	CoreIdea      string   `yaml:"core_idea,omitempty"`
