@@ -1,3 +1,7 @@
+github.com/tamnd/llm v0.1.1 h1:vKWTUAiY5drLeygYql8Dl6odqjCAHV0rg0N2+nuZwLA=
+github.com/tamnd/llm v0.1.1/go.mod h1:1PKUw3AqMTFJygbwpo/xAcRXJXctUKNRHw5Jnz+wnPQ=
+github.com/tamnd/llm v0.1.2 h1:R7q8Dfu2KNB4Sd7zyCcDr4dITqGDCn67k0ZOTygeKkU=
+github.com/tamnd/llm v0.1.2/go.mod h1:1PKUw3AqMTFJygbwpo/xAcRXJXctUKNRHw5Jnz+wnPQ=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=

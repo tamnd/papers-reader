@@ -53,8 +53,8 @@ var commands = []command{
 	{"emit", "M8", "build the JSON the reading app consumes", nil},
 	{"graph", "M7", "build the citation graph over the corpus", nil},
 	{"report", "M7", "write the coverage, audit and usage reports", nil},
-	{"queue", "M1", "show and drain the work queue", nil},
-	{"routes", "M1", "show the model routing table", nil},
+	{"queue", "M1", "show and drain the work queue", runQueue},
+	{"routes", "M1", "show the model routing table", runRoutes},
 	{"doctor", "M1", "check that the tools and the routes are usable", runDoctor},
 	{"suggest", "M9", "list works cited often and not yet in the corpus", nil},
 }

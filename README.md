@@ -75,6 +75,11 @@ cmd/papers/      the command line
 corpus/          paper ids, fields, access classes, manifests, front matter
 sources/         resolving a paper to a URL and a licence
 fetch/           downloading and hashing
+polite/          one request at a time per host, with a floor on the gap
+poppler/         the PDF tools, found and version checked
+relay/           asking another machine to fetch what this network cannot
+classify/        what a PDF's text layer is worth
+work/            the model queue, the routing table and the waiting
 extract/         PDF to Markdown
 mathtex/         LaTeX repair and validation
 figures/         cropping diagrams out of pages
@@ -84,6 +89,7 @@ tags/            the permanent identifier register
 translate/       the four language pipeline
 glossary/        the controlled vocabulary
 audit/           the numbered rules
+report/          the coverage, resolve and usage reports
 emit/            JSON for the reading app
 web/             the Astro reading app
 ```
@@ -93,7 +99,7 @@ web/             the Astro reading app
 Go 1.27 or later.
 `pdftotext` and `pdftoppm` from Poppler for the extraction commands.
 Node 22 or later for the web app.
-Nothing else, and the Go side has exactly one dependency, which is `gopkg.in/yaml.v3`.
+Nothing else. The Go side has two dependencies: `gopkg.in/yaml.v3`, and `github.com/tamnd/llm`, which is ours and has none of its own.
 
 ## Licence
 

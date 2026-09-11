@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
+	"github.com/tamnd/llm/route"
 	papers "github.com/tamnd/papers-reader"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/poppler"
+	"github.com/tamnd/papers-reader/work"
 )
 
 // runDoctor reports whether this machine can do the work, before a run that
@@ -23,11 +26,19 @@ import (
 func runDoctor(args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	root := fs.String("corpus", "", "path to a checkout of tamnd/papers")
+	offline := fs.Bool("offline", false, "do not ask the hosts in the route file anything")
+	deep := fs.Bool("deep", false, "put one trivial question to each host as well")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `usage: papers doctor [flags]
 
-Checks that the corpus is findable and that the tools each stage needs are
-installed. Nothing is downloaded, nothing is written and no model is called.
+Checks that the corpus is findable, that the tools each stage needs are
+installed, and that the hosts in the route file are answering. Nothing is
+downloaded and nothing is written.
+
+Asking a host whether it is up is a GET and costs nothing, so it is done
+by default; -offline skips it. Asking it a question costs a call, so -deep
+is opt in, and it is the only way to find out that an account has been
+quietly moved down to a smaller model than the route file names.
 
 `)
 		fs.PrintDefaults()
@@ -97,6 +108,10 @@ installed. Nothing is downloaded, nothing is written and no model is called.
 	}
 	fmt.Println("  none of these is required yet. They arrive with the layout path in M2.")
 
+	if !routesOK(*offline, *deep) {
+		ok = false
+	}
+
 	fmt.Println()
 	if !ok {
 		return fmt.Errorf("something above needs attention")
@@ -113,4 +128,74 @@ var needs = map[string]string{
 	"pdffonts":  "which is how a scan is told from a born digital file",
 	"pdfimages": "which is the other half of that test",
 	"pdftoppm":  "which is how pages are rasterised for the vision path in M3",
+}
+
+// routesOK reports on the fleet: which hosts are configured, and whether any
+// of them is answering.
+//
+// A machine with no route file is fine and says so. Nothing in the toolchain
+// puts a question to a model yet, and a doctor that fails a fresh checkout
+// over a file that is not needed until M2 teaches people to ignore it.
+//
+// A machine with a route file and nothing answering is not fine. That is the
+// state a rebuild will sit in all night, and it is the whole reason to run
+// this before starting one.
+func routesOK(offline, deep bool) bool {
+	fmt.Println("\nthe fleet, for the stages that put questions to a model")
+	registry, path, err := work.Routes("")
+	if err != nil {
+		fmt.Printf("  %-14s %v\n", "routes", err)
+		return false
+	}
+	if len(registry.Routes) == 0 {
+		fmt.Printf("  %-14s none configured, run papers routes init to write a template\n", "routes")
+		fmt.Printf("  %-14s nothing needs one until the extraction stages arrive in M2\n", "")
+		return true
+	}
+	fmt.Printf("  %-14s %d, from %s\n", "routes", len(registry.Routes), path)
+	if err := registry.Validate(); err != nil {
+		fmt.Printf("  %-14s %v\n", "", err)
+		return false
+	}
+	pool := work.Pool(registry)
+	if pool.Empty() {
+		fmt.Printf("  %-14s every route is disabled or is a reader, so nothing can be asked anything\n", "")
+		return false
+	}
+	fmt.Printf("  %-14s %d calls at once across %d hosts\n", "lanes", pool.Lanes(), len(pool.Routes()))
+	if offline {
+		fmt.Printf("  %-14s not asked, this run is offline\n", "hosts")
+		return true
+	}
+
+	pool.Prober = route.Prober{Deep: deep}
+	ctx, cancel := context.WithTimeout(context.Background(), probeFor(deep))
+	defer cancel()
+	results := pool.ProbeAll(ctx)
+	fmt.Println()
+	for line := range strings.SplitSeq(strings.TrimRight(route.Table(results), "\n"), "\n") {
+		fmt.Printf("  %s\n", line)
+	}
+	live := 0
+	for _, health := range results {
+		if health.State.Usable() {
+			live++
+		}
+	}
+	if live == 0 {
+		fmt.Printf("\n  %-14s nothing is answering, so a run started now would wait rather than work\n", "")
+		return false
+	}
+	return true
+}
+
+// probeFor is how long the whole fleet gets to answer. A health check is
+// milliseconds and a real question through a browser session has been
+// measured at about two and a half minutes, so the two bounds are not
+// remotely the same number.
+func probeFor(deep bool) time.Duration {
+	if deep {
+		return 10 * time.Minute
+	}
+	return time.Minute
 }

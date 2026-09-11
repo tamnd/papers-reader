@@ -5,8 +5,10 @@
 # cmd/papers.
 /papers
 
-# The corpus working directories, if somebody runs the tool from in here.
-/work/
+# The corpus download directories, if somebody runs the tool from in here.
+# The corpus working directory is also called work, but that name is a Go
+# package here, so it is not in this list. Nothing will write one: a corpus
+# root has to have manifests/papers.yaml in it, and this is not a corpus.
 /pdf/
 /images/
 
