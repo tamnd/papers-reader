@@ -1,0 +1,381 @@
+package extract
+
+import (
+	"sort"
+
+	"github.com/tamnd/papers-reader/poppler"
+)
+
+// The numbers here are all fractions of the page width, never points. A
+// paper from 1967 is set on a page 567 points wide and one from 2017 on one
+// 612 points wide, and a threshold in points would mean one of them was
+// measured and the other was guessed.
+const (
+	// minGutter is how wide the channel between two columns has to be. It is
+	// narrower than the gutter a typesetter would name, because the bins at
+	// the edges of the channel are painted by the side bearings of the words
+	// either side of it and what is left is the part nothing reaches into.
+	minGutter = 0.015
+	// clearShare is how much ink a bin may hold and still count as part of a
+	// channel, as a share of the busiest bin on the page. Zero is the obvious
+	// threshold and it is the wrong one: the title block of a two column
+	// paper is six full width lines and they paint the gutter all the way
+	// down the page, after which the page reads as one column and every
+	// sentence on it is interleaved with the one beside it.
+	clearShare = 0.15
+	// minShare is how much of the text a column has to hold to be one. This
+	// is what stops a marginal note, a line number down the side or a stray
+	// word in the margin from being read as a column of its own.
+	minShare = 0.1
+	// spanGap is how many ordinary word spaces the gap at a gutter has to be
+	// before the words either side of it are on different lines rather than
+	// on one line that spans the columns. A title set across the page has a
+	// word space there; two columns have a gutter. Three rather than four
+	// because a scanned page's word boxes are loose and the step across its
+	// gutter measures smaller than it looks.
+	spanGap = 3
+	// minWords is how many words a page needs before its shape says
+	// anything. A title page has forty and is one column anyway.
+	minWords = 60
+	// bins is how finely the page is divided across to look for the
+	// channels. One bin is a little under a character wide at these page
+	// sizes, and the narrowest gutter in the hundred is three of them.
+	bins = 200
+)
+
+// Gutters finds the clear vertical channels that divide a page into columns,
+// as x positions in page points, left to right. A one column page has none.
+//
+// It is a projection: every word paints the bins it covers, and a column
+// boundary is a run of bins almost nothing painted. That is a different test
+// from clustering the lines by their centres and it is the right one.
+// Centres say that a single column page whose section numbers hang in the
+// left margin is two columns, because the numbers cluster left and the body
+// clusters middle and there is a clear gap between the two. A projection
+// says the body runs straight through where the boundary would have to be,
+// which it does.
+//
+// Three columns are found the same way as two, which the 1967 proceedings
+// need and which costs nothing.
+//
+// It is a per page test and not a per paper one, because a two column paper
+// still sets its title across the full width and puts its references in two
+// columns under a heading that spans both.
+func Gutters(p poppler.Layout) []float64 {
+	if p.Width <= 0 {
+		return nil
+	}
+	words := Words(p)
+	if len(words) < minWords {
+		return nil
+	}
+	ink := make([]int, bins)
+	for _, w := range words {
+		from := max(bin(w.XMin, p.Width), 0)
+		to := min(bin(w.XMax, p.Width), bins-1)
+		for i := from; i <= to; i++ {
+			ink[i]++
+		}
+	}
+	peak := 0
+	for _, v := range ink {
+		peak = max(peak, v)
+	}
+	clear := int(float64(peak) * clearShare)
+
+	// The margins of the page are clear and are not gutters. The text block
+	// is taken as the first and last bin the text really reaches, which is
+	// not the first and last bin any word touches: a page number in the
+	// corner or a marginal mark would otherwise put the edge out in the
+	// margin and make the whole margin a candidate.
+	first, last := -1, -1
+	for i, v := range ink {
+		if v > clear {
+			if first < 0 {
+				first = i
+			}
+			last = i
+		}
+	}
+	if first < 0 || last-first < bins/4 {
+		return nil
+	}
+
+	var cuts []int
+	for i := first + 1; i < last; i++ {
+		if ink[i] > clear {
+			continue
+		}
+		j := i
+		for j < last && ink[j] <= clear {
+			j++
+		}
+		if float64(j-i)/bins >= minGutter {
+			cuts = append(cuts, (i+j)/2)
+		}
+		i = j
+	}
+
+	// A channel with almost no text on one side of it is not a column
+	// boundary. Dropping the thinnest and measuring again matters on a page
+	// where a marginal note has left a wide channel beside the body: the
+	// note is not a column, and the gutter between the real columns still
+	// is.
+	for len(cuts) > 0 {
+		share := shares(words, cuts, p.Width)
+		worst, at := 1.0, -1
+		for i, s := range share {
+			if s < worst {
+				worst, at = s, i
+			}
+		}
+		if worst >= minShare {
+			break
+		}
+		// A thin column at the left is the fault of the cut to its right,
+		// and one at the right is the fault of the cut to its left.
+		if at == 0 {
+			cuts = cuts[1:]
+		} else if at == len(share)-1 {
+			cuts = cuts[:len(cuts)-1]
+		} else {
+			cuts = append(cuts[:at-1], cuts[at:]...)
+		}
+	}
+
+	out := make([]float64, len(cuts))
+	for i, c := range cuts {
+		out[i] = float64(c) / bins * p.Width
+	}
+	return out
+}
+
+func bin(x, width float64) int { return int(x / width * bins) }
+
+// shares is how much of the text each column holds.
+func shares(words []poppler.Word, cuts []int, width float64) []float64 {
+	counts := make([]float64, len(cuts)+1)
+	for _, w := range words {
+		n := 0
+		for _, c := range cuts {
+			if bin(w.XMid(), width) >= c {
+				n++
+			}
+		}
+		counts[n]++
+	}
+	for i := range counts {
+		counts[i] /= float64(len(words))
+	}
+	return counts
+}
+
+// Words is every word of a page, in no particular order.
+//
+// The lines pdftotext groups them into are not used, and this is why. It
+// groups by the row a word sits on, and a row of a two column page crosses
+// both columns, so one of its lines can be the end of a sentence in the left
+// column followed by the start of an unrelated one in the right. That is the
+// same failure that makes pdftotext -layout unusable on a two column paper,
+// and reading its lines instead of its text does not fix it.
+func Words(p poppler.Layout) []poppler.Word {
+	var out []poppler.Word
+	for _, b := range p.Blocks {
+		for _, l := range b.Lines {
+			out = append(out, l.Words...)
+		}
+	}
+	return out
+}
+
+// Lines is the text of a page rebuilt from its words, in the order a person
+// reads them: each column top to bottom, left to right.
+//
+// A line that spans the columns ends the band above it. That is what a
+// section heading set across the page, a wide display and a full width
+// figure do, and reading the whole left column before it would move several
+// paragraphs past a heading that introduces them.
+func Lines(p poppler.Layout) []poppler.TextLine {
+	all := rows(Words(p))
+	cuts := Gutters(p)
+	if len(cuts) == 0 {
+		return all
+	}
+	page := medianWordGap(all)
+
+	var spans, inColumn []poppler.TextLine
+	for _, l := range all {
+		// A row with enough words is measured against its own spacing, which
+		// is what keeps a title set in eighteen point from being cut in half
+		// at the gutter: its word spaces are wide, and next to the page's
+		// body spacing they look like the step across a column.
+		gap := page
+		if len(l.Words) > 4 {
+			gap = medianWordGap([]poppler.TextLine{l})
+		}
+		for _, piece := range cut(l, cuts, spanGap*gap) {
+			if crosses(piece.Box, cuts) {
+				spans = append(spans, piece)
+			} else {
+				inColumn = append(inColumn, piece)
+			}
+		}
+	}
+
+	type placed struct {
+		band, col int
+		line      poppler.TextLine
+	}
+	band := func(l poppler.TextLine) int {
+		n := 0
+		for _, s := range spans {
+			if s.YMid() < l.YMid() {
+				n++
+			}
+		}
+		return n
+	}
+	var out []placed
+	for _, l := range inColumn {
+		out = append(out, placed{band(l), Column(l, cuts), l})
+	}
+	for i, s := range spans {
+		// A spanning line closes the band it is in, so it sorts after every
+		// column of that band and before anything below it.
+		out = append(out, placed{i, len(cuts) + 1, s})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].band != out[j].band {
+			return out[i].band < out[j].band
+		}
+		if out[i].col != out[j].col {
+			return out[i].col < out[j].col
+		}
+		return out[i].line.YMin < out[j].line.YMin
+	})
+	lines := make([]poppler.TextLine, len(out))
+	for i, pl := range out {
+		lines[i] = pl.line
+	}
+	return lines
+}
+
+// cut splits a row where it steps across a gutter.
+//
+// This is the whole of the two column problem and it comes down to one
+// measurement. A row that crosses a gutter is either a title set across the
+// page or the end of a line in one column followed by the start of an
+// unrelated line in the next, and what tells them apart is the size of the
+// gap at the crossing: a word space in the first, the width of the gutter
+// and the ragged edge of the column in the second.
+//
+// Measuring it against the page's own word spacing rather than against a
+// number of points is what makes it work on a 1967 proceedings set in three
+// narrow columns and on a modern preprint alike.
+func cut(l poppler.TextLine, cuts []float64, tol float64) []poppler.TextLine {
+	var out []poppler.TextLine
+	from := 0
+	for i := 1; i < len(l.Words); i++ {
+		gap := l.Words[i].XMin - l.Words[i-1].XMax
+		if gap <= tol || !crosses(poppler.Box{XMin: l.Words[i-1].XMax, XMax: l.Words[i].XMin}, cuts) {
+			continue
+		}
+		out = append(out, line(l.Words[from:i]))
+		from = i
+	}
+	if from == 0 {
+		return []poppler.TextLine{l}
+	}
+	return append(out, line(l.Words[from:]))
+}
+
+// line makes a text line out of a run of words that are already in order.
+func line(words []poppler.Word) poppler.TextLine {
+	l := poppler.TextLine{Box: words[0].Box, Words: words}
+	for _, w := range words[1:] {
+		l.Box = union(l.Box, w.Box)
+	}
+	return l
+}
+
+func crosses(b poppler.Box, cuts []float64) bool {
+	for _, c := range cuts {
+		if b.XMin < c && b.XMax > c {
+			return true
+		}
+	}
+	return false
+}
+
+// medianWordGap is the usual distance between two words of this page, which
+// is the unit a gutter crossing is measured in.
+func medianWordGap(lines []poppler.TextLine) float64 {
+	var gaps []float64
+	for _, l := range lines {
+		for i := 1; i < len(l.Words); i++ {
+			if g := l.Words[i].XMin - l.Words[i-1].XMax; g >= 0 {
+				gaps = append(gaps, g)
+			}
+		}
+	}
+	if len(gaps) == 0 {
+		return 0
+	}
+	sort.Float64s(gaps)
+	return gaps[len(gaps)/2]
+}
+
+// rows groups words into the lines they were set on.
+//
+// Two words are on the same line when either one's vertical centre is inside
+// the other's box. The test is symmetric on purpose, and that is what keeps
+// a superscript with the line it belongs to: it is a small box set high, its
+// own centre is above the line's top and the line's centre is nowhere near
+// it, so a one sided test loses it and the exponent ends up on a line of its
+// own between two lines of prose.
+func rows(words []poppler.Word) []poppler.TextLine {
+	if len(words) == 0 {
+		return nil
+	}
+	sorted := append([]poppler.Word(nil), words...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].YMid() != sorted[j].YMid() {
+			return sorted[i].YMid() < sorted[j].YMid()
+		}
+		return sorted[i].XMin < sorted[j].XMin
+	})
+
+	var out []poppler.TextLine
+	for _, w := range sorted {
+		if n := len(out); n > 0 && sameRow(out[n-1].Box, w.Box) {
+			out[n-1].Words = append(out[n-1].Words, w)
+			out[n-1].Box = union(out[n-1].Box, w.Box)
+			continue
+		}
+		out = append(out, poppler.TextLine{Box: w.Box, Words: []poppler.Word{w}})
+	}
+	for i := range out {
+		ws := out[i].Words
+		sort.SliceStable(ws, func(a, b int) bool { return ws[a].XMin < ws[b].XMin })
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].YMin < out[j].YMin })
+	return out
+}
+
+func sameRow(line, word poppler.Box) bool {
+	return (word.YMid() >= line.YMin && word.YMid() <= line.YMax) ||
+		(line.YMid() >= word.YMin && line.YMid() <= word.YMax)
+}
+
+// Column says which column a line is in, counting from zero at the left. It
+// is what tells a paragraph that continues at the top of the next column
+// from one that continues on the next line.
+func Column(l poppler.TextLine, cuts []float64) int {
+	n := 0
+	for _, c := range cuts {
+		if l.XMid() >= c {
+			n++
+		}
+	}
+	return n
+}
