@@ -774,3 +774,33 @@ func TestMarkdownPutsTheWorkFirst(t *testing.T) {
 		}
 	}
 }
+
+// A run over four papers used to leave behind a report that said four
+// papers, four resolved, which reads as the state of the corpus and is not.
+// Prior is how the papers a run did not touch get into the report anyway.
+func TestAPriorRecordStillCounts(t *testing.T) {
+	fresh := &Result{ID: "a-1970-one", Rung: "pin", Accepted: &Candidate{}, Record: corpus.Source{Access: corpus.AccessRestricted}}
+	old := Prior(corpus.Source{
+		ID:      "b-1971-two",
+		Access:  corpus.AccessOpen,
+		Licence: "CC BY 4.0",
+		URL:     "https://example.test/b.pdf",
+	})
+	if !old.OK() {
+		t.Fatal("a record with a url did not count as resolved")
+	}
+	never := Prior(corpus.Source{ID: "c-1972-three"})
+	if never.OK() {
+		t.Error("a record with no url counted as resolved")
+	}
+
+	md := Markdown([]*Result{fresh, old, never})
+	if !strings.Contains(md, "3 papers, 2 resolved, 1 not") {
+		t.Error("the report counted the run and not the corpus")
+	}
+	for _, want := range []string{"b-1971-two", "CC BY 4.0", "recorded earlier", "c-1972-three"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("the report does not mention %q", want)
+		}
+	}
+}

@@ -44,6 +44,21 @@ type Miss struct {
 // OK reports whether the paper resolved.
 func (r *Result) OK() bool { return r.Accepted != nil }
 
+// Prior turns a record already in manifests/sources.yaml back into a Result.
+//
+// It exists so that `resolve --id something` still writes a report about the
+// whole corpus. A report that covered only the papers of the last run would
+// say four papers, four resolved, which is true and reads as if the corpus
+// were four papers long. The rung is not kept in the record, so a prior
+// result has none, and the report says so rather than inventing one.
+func Prior(rec corpus.Source) *Result {
+	res := &Result{ID: rec.ID, Record: rec}
+	if rec.URL != "" {
+		res.Accepted = &Candidate{URL: rec.URL, Landing: rec.Landing, Licence: rec.Licence, Source: rec.By}
+	}
+	return res
+}
+
 // Resolver runs the ladder. The fields are the rungs, so a test can replace
 // one of them and every rung is reachable without a network.
 type Resolver struct {
@@ -406,6 +421,12 @@ func publishes(a corpus.Access) string {
 //
 // The report is ordered by what needs a person: the papers that did not
 // resolve come first, with their near misses, because that list is the work.
+//
+// Pass the whole corpus, not the papers one run happened to look at. The
+// report is read as the state of the corpus, so a run over four papers that
+// left behind a report saying four papers, four resolved would be a lie by
+// omission about the other ninety six. Prior turns the records already on
+// disk into the results for the ones this run did not touch.
 func Markdown(results []*Result) string {
 	var b strings.Builder
 	var ok, failed []*Result
@@ -448,7 +469,13 @@ func Markdown(results []*Result) string {
 		if licence == "" {
 			licence = "none recorded"
 		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", r.ID, r.Rung, r.Record.Access, licence)
+		rung := r.Rung
+		if rung == "" {
+			// A record from an earlier run. The rung is not kept in
+			// sources.yaml, so there is nothing honest to put here.
+			rung = "recorded earlier"
+		}
+		fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", r.ID, rung, r.Record.Access, licence)
 	}
 	b.WriteString("\n")
 
