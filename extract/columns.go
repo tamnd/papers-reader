@@ -179,6 +179,50 @@ func shares(words []poppler.Word, cuts []int, width float64) []float64 {
 // same failure that makes pdftotext -layout unusable on a two column paper,
 // and reading its lines instead of its text does not fix it.
 func Words(p poppler.Layout) []poppler.Word {
+	all := words(p)
+	h := medianHeight(all)
+	out := make([]poppler.Word, 0, len(all))
+	for _, w := range all {
+		if !sideways(w, h) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// Sideways is the text on a page that is set rotated, which comes back from
+// pdftotext as a word in a box taller than the page's text ever is.
+//
+// It is kept out of the page and kept here rather than thrown away. On this
+// corpus it is almost always the stamp a preprint server prints down the
+// left margin, which is furniture of the plainest kind: it is not the paper,
+// it was not written by the author, and it turns up in the middle of the
+// abstract if it is left in. Returned rather than dropped because the day
+// there is a paper with a rotated table in it, this is where to look.
+func Sideways(p poppler.Layout) []poppler.Word {
+	all := words(p)
+	h := medianHeight(all)
+	var out []poppler.Word
+	for _, w := range all {
+		if sideways(w, h) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// sidewaysFactor is how much taller than the page's usual word a box has to
+// be before it is a line of text turned on its side. Three is high enough
+// that the tall brackets of a displayed matrix stay in the text, and a
+// rotated run is a whole line's worth of characters stacked, which is ten
+// times the height of a word and not three.
+const sidewaysFactor = 3
+
+func sideways(w poppler.Word, median float64) bool {
+	return median > 0 && w.Height() > median*sidewaysFactor && w.Height() > w.Width()
+}
+
+func words(p poppler.Layout) []poppler.Word {
 	var out []poppler.Word
 	for _, b := range p.Blocks {
 		for _, l := range b.Lines {
@@ -186,6 +230,16 @@ func Words(p poppler.Layout) []poppler.Word {
 		}
 	}
 	return out
+}
+
+func medianHeight(words []poppler.Word) float64 {
+	var hs []float64
+	for _, w := range words {
+		if h := w.Height(); h > 0 {
+			hs = append(hs, h)
+		}
+	}
+	return median(hs)
 }
 
 // Lines is the text of a page rebuilt from its words, in the order a person
@@ -327,12 +381,17 @@ func medianWordGap(lines []poppler.TextLine) float64 {
 
 // rows groups words into the lines they were set on.
 //
-// Two words are on the same line when either one's vertical centre is inside
-// the other's box. The test is symmetric on purpose, and that is what keeps
-// a superscript with the line it belongs to: it is a small box set high, its
-// own centre is above the line's top and the line's centre is nowhere near
-// it, so a one sided test loses it and the exponent ends up on a line of its
-// own between two lines of prose.
+// A word joins the row whose band it falls in, and the band is not the box
+// of everything in the row so far. That is the mistake to avoid and it is
+// not obvious until it happens: a row that grows to hold a tall bracket, a
+// fraction or the ascender of an integral reaches the line below, the first
+// word of that line joins it, the row grows again, and a page of prose comes
+// out as one row of two hundred words sorted left to right. The Transformer
+// paper's abstract came out that way.
+//
+// So the band narrows rather than grows. It starts as the first word's box
+// and each word that joins intersects it, which leaves the band the height
+// of the shortest thing on the line and holds it where the line really is.
 func rows(words []poppler.Word) []poppler.TextLine {
 	if len(words) == 0 {
 		return nil
@@ -346,13 +405,16 @@ func rows(words []poppler.Word) []poppler.TextLine {
 	})
 
 	var out []poppler.TextLine
+	var bands []poppler.Box
 	for _, w := range sorted {
-		if n := len(out); n > 0 && sameRow(out[n-1].Box, w.Box) {
+		if n := len(out); n > 0 && sameRow(bands[n-1], w.Box) {
 			out[n-1].Words = append(out[n-1].Words, w)
 			out[n-1].Box = union(out[n-1].Box, w.Box)
+			bands[n-1] = overlap(bands[n-1], w.Box)
 			continue
 		}
 		out = append(out, poppler.TextLine{Box: w.Box, Words: []poppler.Word{w}})
+		bands = append(bands, w.Box)
 	}
 	for i := range out {
 		ws := out[i].Words
@@ -362,9 +424,30 @@ func rows(words []poppler.Word) []poppler.TextLine {
 	return out
 }
 
-func sameRow(line, word poppler.Box) bool {
-	return (word.YMid() >= line.YMin && word.YMid() <= line.YMax) ||
-		(line.YMid() >= word.YMin && line.YMid() <= word.YMax)
+// sameRow says whether a word belongs to a row, given the row's band.
+//
+// The first test is the one that does the work: the word's centre is inside
+// the band. The second is for a superscript, which is a small box set high
+// whose own centre is above the band and which overlaps it all the same.
+// Only a box smaller than the band qualifies, because the same shape one
+// size larger is the tall delimiter of the display below.
+func sameRow(band, word poppler.Box) bool {
+	if word.YMid() >= band.YMin && word.YMid() <= band.YMax {
+		return true
+	}
+	return word.Height() < band.Height() &&
+		band.YMid() >= word.YMin && band.YMid() <= word.YMax
+}
+
+// overlap is the part of two boxes that is in both, vertically. It keeps the
+// left and right edges of the first, because nothing asks a band about x.
+func overlap(band, w poppler.Box) poppler.Box {
+	band.YMin = max(band.YMin, w.YMin)
+	band.YMax = min(band.YMax, w.YMax)
+	if band.YMax < band.YMin {
+		band.YMax = band.YMin
+	}
+	return band
 }
 
 // Column says which column a line is in, counting from zero at the left. It

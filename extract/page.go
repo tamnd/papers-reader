@@ -2,6 +2,7 @@ package extract
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -38,8 +39,13 @@ type Paragraph struct {
 // A Page is one page of a paper after the geometry has been read, the
 // furniture taken out and the columns put in order.
 type Page struct {
-	Number     int
-	Columns    int
+	Number  int
+	Columns int
+	// Printed is the page number the page itself prints, as it printed it,
+	// and empty when it prints none. It is kept as text and not as an integer
+	// because the front matter of a thesis prints roman numerals and because
+	// a folio that came back as "48I" from a scan is worth seeing.
+	Printed    string
 	Paragraphs []Paragraph
 }
 
@@ -58,6 +64,17 @@ func (p Page) Text() string {
 	return strings.Join(parts, "\n\n") + "\n"
 }
 
+// PrintedNumber is the page's own number as an integer, for the page map.
+// The bool is false for a page that printed none and for the roman numerals
+// of a thesis's front matter, which carry no offset worth learning.
+func (p Page) PrintedNumber() (int, bool) {
+	n, err := strconv.Atoi(strings.Trim(p.Printed, "-[]() "))
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 // Empty reports whether the page carried no text at all, which on the native
 // path means a plate, a blank verso, or a page whose text layer is an image
 // and whose paper should not have been on this path.
@@ -71,7 +88,7 @@ func (p Page) Empty() bool { return len(p.Paragraphs) == 0 }
 // deleted because it looked like one.
 func Read(p poppler.Layout, f *Furniture) Page {
 	cuts := Gutters(p)
-	out := Page{Number: p.Number, Columns: len(cuts) + 1}
+	out := Page{Number: p.Number, Columns: len(cuts) + 1, Printed: Printed(p)}
 	lines := f.Lines(p)
 	if len(lines) == 0 {
 		return out
@@ -217,6 +234,13 @@ func hyphenated(s string) bool {
 // "Newton-Raphson" set across a line break into "NewtonRaphson" and, worse,
 // turns a paper's own hyphenated term into two different spellings in the
 // same document.
+// There is one more case and it is worth the four lines. A compound that is
+// broken at one of its own hyphens puts a lower case letter after the break,
+// so the capital test does not save it: "English-to-German" set across a
+// line comes back as "English-" and "to-German", and healing it gives
+// "Englishto-German", which is in the abstract of the Transformer paper. A
+// fragment that carries a hyphen of its own is the rest of a compound and
+// not the rest of a word.
 func broken(left, right string) bool {
 	if left == "" || right == "" {
 		return false
@@ -225,7 +249,11 @@ func broken(left, right string) bool {
 	if !strings.ContainsRune(hyphens, l[len(l)-1]) {
 		return false
 	}
-	return unicode.IsLower([]rune(right)[0])
+	if !unicode.IsLower([]rune(right)[0]) {
+		return false
+	}
+	word, _, _ := strings.Cut(right, " ")
+	return !strings.ContainsAny(word, hyphens)
 }
 
 // closed says whether a paragraph ends where a sentence ends. A closing

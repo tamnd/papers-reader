@@ -124,6 +124,26 @@ func (f *Furniture) Count() int {
 	return len(f.repeated)
 }
 
+// Printed is the page number a page prints, as it printed it, and empty for
+// a page that prints none.
+//
+// It is read off the page before the furniture is stripped, because the
+// folio is furniture and is gone by the time anything else looks. The
+// toolchain wants it for the page map: a paper pulled out of a journal
+// starts at 483 and its PDF starts at 1, and the reading app shows the
+// reader the number that is on the paper.
+func Printed(p poppler.Layout) string {
+	for _, l := range Lines(p) {
+		if _, ok := key(p, l); !ok {
+			continue
+		}
+		if s := strings.TrimSpace(l.Text()); folio.MatchString(s) {
+			return s
+		}
+	}
+	return ""
+}
+
 var folio = regexp.MustCompile(`^[-\[\(]?\s*(?:[0-9]{1,4}|[ivxlcdmIVXLCDM]{1,7})\s*[-\]\)]?$`)
 
 // key is how a line is recognised on another page: what it says, with the

@@ -102,6 +102,17 @@ func TestACompoundAtALineEndIsLeftAlone(t *testing.T) {
 	}
 }
 
+func TestACompoundBrokenAtItsOwnHyphenIsLeftAlone(t *testing.T) {
+	// The capital test does not catch this one: what follows the break is
+	// lower case and the hyphen is still the author's.
+	p := read(column(60, 100,
+		"the model was evaluated on the English-",
+		"to-German translation task and did well"))
+	if got := p.Paragraphs[0].Text; !strings.Contains(got, "English-to-German") {
+		t.Errorf("read %q, want the compound kept", got)
+	}
+}
+
 func TestAParagraphThatEndsMidSentenceIsMarkedAsContinuing(t *testing.T) {
 	p := read(column(60, 100, "the sentence carries on past the foot of", "the page and is not finished here"))
 	if !p.Paragraphs[0].Continues {

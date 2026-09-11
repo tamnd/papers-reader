@@ -41,7 +41,7 @@ var commands = []command{
 	{"adopt", "M1", "record a PDF a person fetched by hand, and where from", runAdopt},
 	{"classify", "M1", "measure what each PDF's text layer is worth", runClassify},
 	{"render", "M2", "rasterise pages for the pages that need a model", nil},
-	{"extract", "M2", "turn pages into Markdown with LaTeX mathematics", nil},
+	{"extract", "M2", "turn pages into Markdown with LaTeX mathematics", runExtract},
 	{"figures", "M3", "crop the diagrams out of the pages", nil},
 	{"pagemap", "M3", "record which figure came from which page and box", nil},
 	{"refs", "M4", "parse bibliographies and link the citations", nil},
