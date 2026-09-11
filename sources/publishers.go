@@ -90,20 +90,39 @@ var Publishers = []PublisherRule{
 		Access:  corpus.AccessUnknown,
 	},
 	{
-		Name:    "acm",
-		Host:    "dl.acm.org",
-		PDF:     acmPDF,
-		Licence: "",
-		Access:  corpus.AccessUnknown,
+		Name:   "acm",
+		Host:   "dl.acm.org",
+		PDF:    acmPDF,
+		Access: corpus.AccessRestricted,
 	},
 	{
-		Name:    "springer",
-		Host:    "link.springer.com",
-		PDF:     springerPDF,
-		Licence: "",
-		Access:  corpus.AccessUnknown,
+		Name:   "acm-portal",
+		Host:   "portal.acm.org",
+		PDF:    acmPDF,
+		Access: corpus.AccessRestricted,
 	},
+	{
+		Name:   "springer",
+		Host:   "link.springer.com",
+		PDF:    springerPDF,
+		Access: corpus.AccessRestricted,
+	},
+	{Name: "elsevier", Host: "sciencedirect.com", PDF: noPDF, Access: corpus.AccessRestricted},
+	{Name: "nature", Host: "nature.com", PDF: noPDF, Access: corpus.AccessRestricted},
+	{Name: "ieee", Host: "ieeexplore.ieee.org", PDF: noPDF, Access: corpus.AccessRestricted},
+	{Name: "cambridge", Host: "cambridge.org", PDF: noPDF, Access: corpus.AccessRestricted},
+	{Name: "oup", Host: "academic.oup.com", PDF: noPDF, Access: corpus.AccessRestricted},
+	{Name: "siam", Host: "epubs.siam.org", PDF: noPDF, Access: corpus.AccessRestricted},
+	{Name: "wiley", Host: "onlinelibrary.wiley.com", PDF: noPDF, Access: corpus.AccessRestricted},
+	{Name: "jstor", Host: "jstor.org", PDF: noPDF, Access: corpus.AccessRestricted},
+	{Name: "tandf", Host: "tandfonline.com", PDF: noPDF, Access: corpus.AccessRestricted},
 }
+
+// noPDF is the rewrite for a publisher whose URL shape is not worth guessing
+// at. These rules are in the table for what they say about rights and not
+// for what they say about files, and a rule that returns nothing is skipped
+// by the publisher rung and still consulted by HostRule.
+func noPDF(*url.URL) string { return "" }
 
 // Publisher applies the first rule that claims the landing page's host and
 // recognises its shape.
@@ -137,17 +156,45 @@ func Publisher(landing string) (Candidate, bool) {
 	return Candidate{}, false
 }
 
-// PublisherAccess is what a rule says about a site that publishes everything
-// under one licence. It is separate from Publisher because most rules say
-// nothing, and "nothing" must not overwrite what Unpaywall found.
+// PublisherAccess is what a rule says about the rights on a site that has one
+// position for everything it hosts. It is separate from Publisher because
+// most rules say nothing, and "nothing" must not overwrite what Unpaywall
+// found.
 func PublisherAccess(name string) (corpus.Access, bool) {
 	name = strings.TrimPrefix(name, "publisher:")
 	for _, r := range Publishers {
-		if r.Name == name && r.Licence != "" {
+		if r.Name == name && r.Access != corpus.AccessUnknown {
 			return r.Access, true
 		}
 	}
 	return corpus.AccessUnknown, false
+}
+
+// HostRule is the rule for whatever host a URL is on, whether or not a
+// publisher rewrite is what found it.
+//
+// This is the difference between "USENIX gave us this file" and "this file is
+// on usenix.org". The second one is what matters for rights: a copy sitting
+// on a publisher's own site is under that publisher's terms no matter who
+// linked to it, which is how a paper that resolved off a reading list still
+// ends up correctly classified.
+//
+// It is only ever consulted for a site that has one position for everything,
+// which means the publishers and the two standards bodies. A copy on a
+// university web server is not covered and never will be, because a
+// department page says nothing whatever about rights.
+func HostRule(raw string) (PublisherRule, bool) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return PublisherRule{}, false
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Host), "www.")
+	for _, r := range Publishers {
+		if host == r.Host || strings.HasSuffix(host, "."+r.Host) {
+			return r, true
+		}
+	}
+	return PublisherRule{}, false
 }
 
 // publisherLicence is the licence string that goes with PublisherAccess.

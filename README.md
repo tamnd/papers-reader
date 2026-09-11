@@ -11,7 +11,7 @@ The model plumbing underneath is [tamnd/llm](https://github.com/tamnd/llm).
 ```
 resolve    find where a paper can legally be fetched from, and under what licence
 fetch      download it, hash it, record it
-classify   decide per page whether the text layer is trustworthy
+classify   measure what each PDF's text layer is worth, and pick the path
 extract    turn pages into Markdown, with the mathematics as LaTeX
 figures    crop the diagrams out of the pages
 refs       parse the bibliography and link the citations
@@ -47,6 +47,14 @@ Every path, every manifest schema and every access rule lives in `corpus/`, so a
 **Nothing is published on a guess.**
 `papers resolve` accepts a candidate only when the title similarity clears 0.92, the year is within one, and at least one surname matches.
 A paper that fails any of the three stays unresolved, and an unresolved paper publishes nothing at all.
+
+**Being able to download something is not permission to republish it.**
+A paper with no licence anybody can name is restricted, which publishes its title, its authors, its year, its links and an abstract under 250 words, and no body text and no figures.
+That is the default for most of the corpus, and the number of papers whose text may be published is written at the top of `reports/resolve.md` every time the resolver runs.
+
+**The text layer is measured, not guessed at.**
+`papers classify` counts characters, mathematical glyphs, embedded fonts and full page images over a band of body pages, and decides from the numbers whether `pdftotext` alone can read the file.
+The year is a hint and nothing more: there are 1980 papers with a clean text layer and 2005 papers that are photographs of a printout.
 
 **Extraction says how it was done.**
 Pages read by `pdftotext` on a born digital file are marked `native` and were never guessed by a model.

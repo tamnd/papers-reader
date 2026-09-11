@@ -268,10 +268,11 @@ func absorb(known *Candidate, got Candidate) {
 
 // record builds the sources.yaml entry.
 //
-// Note that the access class comes from the licence and nothing else. Not
-// from the manifest's expect field, which is a prediction, and not from the
-// paper having been found, which only means it exists. A licence string with
-// no rule for it leaves the paper unknown, and unknown publishes nothing.
+// Note that what may be published comes from the licence and nothing else.
+// Not from the manifest's expect field, which is a prediction, and not from
+// the paper having been found, which only means it exists. Being able to
+// download something is not permission to republish it, so a paper with no
+// licence lands on restricted and stays there until somebody finds one.
 func record(p corpus.Paper, cand Candidate, res *Result) corpus.Source {
 	name, access := Licence(cand.Licence)
 	rec := corpus.Source{
@@ -284,7 +285,7 @@ func record(p corpus.Paper, cand Candidate, res *Result) corpus.Source {
 	// A site that publishes everything it hosts under one licence is a last
 	// resort and only for a paper that has nothing better. USENIX and the RFC
 	// editor are the two that really are that uniform.
-	if access == corpus.AccessUnknown {
+	if rec.Access == corpus.AccessUnknown {
 		if a, ok := PublisherAccess(cand.Source); ok {
 			rec.Access = a
 			if rec.Licence == "" {
@@ -292,13 +293,94 @@ func record(p corpus.Paper, cand Candidate, res *Result) corpus.Source {
 			}
 		}
 	}
-	if rec.Access == corpus.AccessUnknown && cand.Licence != "" {
-		res.Notes = append(res.Notes, fmt.Sprintf("no rule for the licence %q, so this paper publishes nothing", cand.Licence))
+	// Then the host of whatever was accepted, which is a different question.
+	// The rung says who found the file and the host says whose site it is
+	// sitting on, and rights follow the second one. A paper on dl.acm.org
+	// that a reading list linked to is under ACM's terms exactly as much as
+	// one Crossref pointed at.
+	if rec.Access == corpus.AccessUnknown {
+		if r, ok := HostRule(cand.URL); ok && r.Access != corpus.AccessUnknown {
+			rec.Access = r.Access
+			if rec.Licence == "" {
+				rec.Licence = r.Licence
+			}
+			res.Notes = append(res.Notes, fmt.Sprintf("classified from the host: %s publishes under one set of terms and this copy is on it", r.Host))
+		}
+	}
+	// Last, a paper that was found and has no licence anybody can name.
+	// Somebody holds the rights and it is not us, and that is exactly what
+	// restricted means: the bibliographic record and a short abstract from the
+	// metadata, no body text and no figures. All rights reserved is the
+	// default for any work that does not say otherwise, so this is not a guess
+	// about the paper, it is the law applied to the absence of a licence.
+	//
+	// It is also a far more useful answer than unknown, which would publish
+	// nothing at all about a paper whose title, authors and year are not in
+	// doubt. Unknown is kept for what it is actually for: a paper that did not
+	// resolve to anything, so there is nothing to say about it and nothing to
+	// publish.
+	if rec.Access == corpus.AccessUnknown && rec.URL != "" {
+		rec.Access = corpus.AccessRestricted
+		if cand.Licence != "" {
+			// A licence string nobody here has a rule for is a gap in the
+			// rules. It gets the cautious class like everything else and it
+			// gets said out loud, because the paper may well be open and a
+			// person reading the report can add the rule.
+			res.Notes = append(res.Notes, fmt.Sprintf("no rule for the licence %q, so this is treated as all rights reserved until somebody adds one", cand.Licence))
+		} else {
+			res.Notes = append(res.Notes, "no licence is recorded anywhere, so it is treated as all rights reserved and publishes front matter and a short abstract only")
+		}
 	}
 	if p.Expect != "" && p.Expect != rec.Access {
 		res.Notes = append(res.Notes, fmt.Sprintf("the manifest expected %s and the licence says %s", p.Expect, rec.Access))
 	}
 	return rec
+}
+
+// publishable is the paragraph the whole resolve stage exists to produce:
+// how many of the papers may have their text published, how many get their
+// front matter and an abstract, and how many produce nothing at all. The
+// number that matters is the first one, and it is a good deal smaller than
+// the number of papers that resolved, which is the point.
+func publishable(results []*Result) string {
+	counts := map[corpus.Access]int{}
+	for _, r := range results {
+		counts[r.Record.Access]++
+	}
+	var body, abstract int
+	for a, n := range counts {
+		switch {
+		case a.Body():
+			body += n
+		case a.Abstract():
+			abstract += n
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("## What may be published\n\n")
+	fmt.Fprintf(&b, "%d of these may have their text published, %d get front matter and a short abstract only, and %d publish nothing at all.\n",
+		body, abstract, len(results)-body-abstract)
+	fmt.Fprintf(&b, "The count that the licence work is measured by, public domain plus open, is %d.\n\n",
+		counts[corpus.AccessPublicDomain]+counts[corpus.AccessOpen])
+	b.WriteString("| access | papers | what it publishes |\n| --- | --- | --- |\n")
+	for _, a := range corpus.Accesses {
+		fmt.Fprintf(&b, "| %s | %d | %s |\n", a, counts[a], publishes(a))
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+// publishes says in words what each class allows, so that the table is
+// readable by somebody who has not read the specification.
+func publishes(a corpus.Access) string {
+	switch {
+	case a.Body() && a.Figures():
+		return "the full text, the mathematics and the figures"
+	case a.Abstract():
+		return "title, authors, year, links and an abstract under 250 words"
+	}
+	return "nothing"
 }
 
 // Markdown renders reports/resolve.md.
@@ -318,6 +400,7 @@ func Markdown(results []*Result) string {
 
 	b.WriteString("# Resolve\n\n")
 	fmt.Fprintf(&b, "%d papers, %d resolved, %d not.\n\n", len(results), len(ok), len(failed))
+	b.WriteString(publishable(results))
 
 	if len(failed) > 0 {
 		b.WriteString("## Not resolved\n\n")

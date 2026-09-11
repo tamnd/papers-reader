@@ -38,7 +38,7 @@ var commands = []command{
 	{"add", "M9", "add a paper to the manifest from an arXiv id or a DOI", nil},
 	{"resolve", "M1", "find where each paper can be fetched, and its licence", runResolve},
 	{"fetch", "M1", "download the PDFs that resolved, and hash them", runFetch},
-	{"classify", "M2", "decide per page whether the text layer is trustworthy", nil},
+	{"classify", "M1", "measure what each PDF's text layer is worth", runClassify},
 	{"render", "M2", "rasterise pages for the pages that need a model", nil},
 	{"extract", "M2", "turn pages into Markdown with LaTeX mathematics", nil},
 	{"figures", "M3", "crop the diagrams out of the pages", nil},
@@ -54,7 +54,7 @@ var commands = []command{
 	{"report", "M7", "write the coverage, audit and usage reports", nil},
 	{"queue", "M1", "show and drain the work queue", nil},
 	{"routes", "M1", "show the model routing table", nil},
-	{"doctor", "M1", "check that the tools and the routes are usable", nil},
+	{"doctor", "M1", "check that the tools and the routes are usable", runDoctor},
 	{"suggest", "M9", "list works cited often and not yet in the corpus", nil},
 }
 

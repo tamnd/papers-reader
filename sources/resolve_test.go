@@ -279,20 +279,95 @@ func TestPublisherRulesDeclineWhatTheyDoNotKnow(t *testing.T) {
 	}
 }
 
-// Only USENIX and the RFC editor really do publish everything they host
-// under one thing. A rule for a host that does not must not hand out a
-// licence, because a URL shape is evidence about where a file is and no
-// evidence at all about what may be done with it.
-func TestOnlyUniformSitesCarryALicence(t *testing.T) {
+// A publisher rule may say what a site's rights position is, and only a site
+// that really does publish everything under one licence may name a licence.
+// The difference matters: ACM's position is that it holds the rights, which
+// is worth recording, and it is not a licence and must never be written into
+// the record as one.
+func TestWhatAPublisherRuleMaySay(t *testing.T) {
 	for _, name := range []string{"usenix", "rfc-editor", "ietf-datatracker", "bitcoin.org"} {
-		if _, ok := PublisherAccess(name); !ok {
-			t.Errorf("%s should carry a licence", name)
+		access, ok := PublisherAccess(name)
+		if !ok || access != corpus.AccessOpen {
+			t.Errorf("%s is an open site and came out %s, ok=%v", name, access, ok)
+		}
+		if publisherLicence(name) == "" {
+			t.Errorf("%s publishes everything under one licence and does not name it", name)
 		}
 	}
-	for _, name := range []string{"acm", "springer", "llvm.org", "engelbart-institute"} {
+	for _, name := range []string{"acm", "springer", "elsevier", "ieee", "wiley"} {
+		access, ok := PublisherAccess(name)
+		if !ok || access != corpus.AccessRestricted {
+			t.Errorf("%s holds its own rights and came out %s, ok=%v", name, access, ok)
+		}
+		if l := publisherLicence(name); l != "" {
+			t.Errorf("%s handed out the licence %q, and all rights reserved is not a licence", name, l)
+		}
+	}
+	// A site whose rights position nobody knows says nothing at all, and
+	// nothing at all is the right answer.
+	for _, name := range []string{"llvm.org", "engelbart-institute"} {
 		if access, ok := PublisherAccess(name); ok {
 			t.Errorf("%s handed out %s from a URL shape", name, access)
 		}
+	}
+}
+
+// Rights follow the host and not the rung. A copy sitting on a publisher's
+// own site is under that publisher's terms whoever linked to it, and a copy
+// on a university web server says nothing about rights however respectable
+// the university.
+func TestHostRule(t *testing.T) {
+	cases := map[string]corpus.Access{
+		"https://dl.acm.org/doi/pdf/10.1145/359545.359563":                           corpus.AccessRestricted,
+		"https://www.usenix.org/legacy/events/osdi04/tech/full_papers/dean/dean.pdf": corpus.AccessOpen,
+		"https://academic.oup.com/comjnl/article-pdf/5/1/10/x.pdf":                   corpus.AccessRestricted,
+		"https://www.cs.virginia.edu/~robins/Turing_Paper_1936.pdf":                  corpus.AccessUnknown,
+		"https://people.eecs.berkeley.edu/~brewer/cs262b/x.pdf":                      corpus.AccessUnknown,
+		"not a url at all": corpus.AccessUnknown,
+	}
+	for raw, want := range cases {
+		got := corpus.AccessUnknown
+		if r, ok := HostRule(raw); ok {
+			got = r.Access
+		}
+		if got != want {
+			t.Errorf("%s came out %s, want %s", raw, got, want)
+		}
+	}
+}
+
+// A paper that was found and has no licence on it is restricted, not
+// unknown. All rights reserved is what the law says about a work that does
+// not say otherwise, so restricted is not a guess, and it publishes a great
+// deal more than unknown does, which publishes nothing at all.
+func TestAPaperWithNoLicenceIsRestricted(t *testing.T) {
+	res := &Result{}
+	rec := record(corpus.Paper{ID: "x-1970-y"}, Candidate{
+		URL:    "https://example.test/x.pdf",
+		DOI:    "10.1145/3065386",
+		Source: "crossref",
+	}, res)
+	if rec.Access != corpus.AccessRestricted {
+		t.Errorf("a published paper with no licence came out %s", rec.Access)
+	}
+	if rec.Licence != "" {
+		t.Errorf("it was given the licence %q, and nobody stated one", rec.Licence)
+	}
+
+	// A tech report on a university server has no DOI and no licence either,
+	// and its rights are no different for that.
+	res = &Result{}
+	rec = record(corpus.Paper{ID: "x-1970-y"}, Candidate{URL: "https://example.test/x.pdf", Source: "seed"}, res)
+	if rec.Access != corpus.AccessRestricted {
+		t.Errorf("a file found with no DOI and no licence came out %s", rec.Access)
+	}
+
+	// Nothing was found at all, so there is nothing to say and nothing to
+	// publish. This is what unknown is for.
+	res = &Result{}
+	rec = record(corpus.Paper{ID: "x-1970-y"}, Candidate{Source: "seed"}, res)
+	if rec.Access != corpus.AccessUnknown {
+		t.Errorf("a paper that resolved to nothing came out %s", rec.Access)
 	}
 }
 
@@ -376,9 +451,12 @@ func TestResolveTakesThePinFirst(t *testing.T) {
 		t.Errorf("resolved off %q, want pin", res.Rung)
 	}
 	// A pin says where the file is. It says nothing about the licence, so the
-	// paper is unknown and unknown publishes nothing.
-	if res.Record.Access != corpus.AccessUnknown {
+	// paper is restricted and restricted publishes no body text.
+	if res.Record.Access != corpus.AccessRestricted {
 		t.Errorf("a bare pinned url produced access %s", res.Record.Access)
+	}
+	if res.Record.Licence != "" {
+		t.Errorf("a bare pinned url produced the licence %q", res.Record.Licence)
 	}
 }
 
@@ -469,8 +547,11 @@ func TestResolveFallsBackToTheSeed(t *testing.T) {
 	if res.Rung != "seed" {
 		t.Errorf("resolved off %q, want seed", res.Rung)
 	}
-	if res.Record.Access != corpus.AccessUnknown {
-		t.Errorf("a seed url produced access %s, and a reading list is not a licence", res.Record.Access)
+	if res.Record.Licence != "" {
+		t.Errorf("a seed url produced the licence %q, and a reading list is not a licence", res.Record.Licence)
+	}
+	if res.Record.Access == corpus.AccessOpen || res.Record.Access == corpus.AccessPublicDomain {
+		t.Errorf("a seed url produced access %s, and a reading list cannot say that", res.Record.Access)
 	}
 }
 
@@ -582,7 +663,10 @@ func TestResolveSaysWhenTheLicenceIsUnknown(t *testing.T) {
 	if !res.OK() {
 		t.Fatalf("nothing resolved: %v %v", res.Notes, res.Misses)
 	}
-	if res.Record.Access != corpus.AccessUnknown {
+	// Nobody has a rule for that licence, so it gets the cautious class and a
+	// note. What it must not get is open, which is the only thing a missing
+	// rule could turn into a mistake nobody notices.
+	if res.Record.Access != corpus.AccessRestricted {
 		t.Errorf("access is %s, and nobody has a rule for that licence", res.Record.Access)
 	}
 	var sawLicence, sawExpect bool
