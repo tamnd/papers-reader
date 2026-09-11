@@ -64,13 +64,8 @@ func parseUnpaywall(body []byte) (Candidate, error) {
 		Source: "unpaywall",
 	}
 	for _, a := range w.Authors {
-		switch {
-		case a.Family != "" && a.Given != "":
-			cand.Authors = append(cand.Authors, a.Given+" "+a.Family)
-		case a.Family != "":
-			cand.Authors = append(cand.Authors, a.Family)
-		case a.Name != "":
-			cand.Authors = append(cand.Authors, a.Name)
+		if name := a.name(); name != "" {
+			cand.Authors = append(cand.Authors, name)
 		}
 	}
 	if best := pickOA(w); best != nil {

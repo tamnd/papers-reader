@@ -10,6 +10,7 @@ import (
 	"github.com/tamnd/papers-reader/assemble"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
+	"github.com/tamnd/papers-reader/refs"
 	"github.com/tamnd/papers-reader/split"
 )
 
@@ -190,6 +191,7 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, dry, 
 	}
 	r := split.Split(d)
 	n.notes = r.Notes
+	n.notes = append(n.notes, cite(c, p.ID, r)...)
 
 	front := corpus.Front{
 		Paper:      p.ID,
@@ -236,6 +238,32 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, dry, 
 		n.notes = append(n.notes, fmt.Sprintf("%s is from an earlier split and this one did not produce it", name))
 	}
 	return n, nil
+}
+
+// cite rewrites the in-text citations of every section into links, using
+// the bibliography papers refs build already parsed.
+//
+// It runs here rather than in package split because split is the only thing
+// that writes a content file, and a rewrite done after the file was written
+// would have to defeat the hand-edit protection to do it. The reference
+// section itself is left alone: the labels in it are the entries, not
+// citations of them.
+func cite(c *corpus.Corpus, id string, r *split.Result) []string {
+	m := loadRefs(c, id)
+	if m == nil {
+		return nil
+	}
+	links := m.Links()
+	if len(links) == 0 {
+		return nil
+	}
+	for i := range r.Sections {
+		if r.Sections[i].Kind == split.KindReferences {
+			continue
+		}
+		r.Sections[i].Body = refs.Rewrite(r.Sections[i].Body, links)
+	}
+	return []string{fmt.Sprintf("%d references link into the corpus", len(links))}
 }
 
 // document joins one paper's extracted pages. A paper with no pages yet is

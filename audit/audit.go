@@ -11,10 +11,12 @@ package audit
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/refs"
 )
 
 // Group is the first letter of a rule id.
@@ -95,6 +97,11 @@ type Input struct {
 	// and slash separated. Rules S03 and F04 are about what git holds rather
 	// than about what is on the disk, so they need this rather than a walk.
 	Tracked []string
+	// Refs is the parsed bibliography of every paper that has one, keyed by
+	// paper id. A paper with no bibliography yet is missing from the map
+	// rather than present and empty, so that group R can tell "nothing to
+	// check" apart from "a bibliography with nothing in it".
+	Refs map[string]*refs.Manifest
 }
 
 // Load reads everything the rules need out of a corpus.
@@ -113,7 +120,29 @@ func Load(c *corpus.Corpus) (*Input, error) {
 	if in.Tracked, err = trackedFiles(c.Root); err != nil {
 		return nil, err
 	}
+	if in.Refs, err = loadRefs(c, in.Papers); err != nil {
+		return nil, err
+	}
 	return in, nil
+}
+
+// loadRefs reads every bibliography the corpus has parsed so far. A paper
+// without one is skipped and is not an error: the milestone that parses
+// them is still working through the corpus and an audit that refused to run
+// until it finished would be useless for the whole of it.
+func loadRefs(c *corpus.Corpus, papers *corpus.Papers) (map[string]*refs.Manifest, error) {
+	out := map[string]*refs.Manifest{}
+	for _, p := range papers.Papers {
+		m, err := refs.Load(c.Refs(p.ID))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		out[p.ID] = m
+	}
+	return out, nil
 }
 
 // Result is what one rule did.

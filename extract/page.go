@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/tamnd/papers-reader/assemble"
 	"github.com/tamnd/papers-reader/poppler"
 )
 
@@ -217,14 +218,13 @@ func join(lines []poppler.TextLine, cuts []float64) Paragraph {
 
 // hyphens is every character a line break hyphen is written with: the plain
 // one, the Unicode hyphen, the non-breaking one and the soft one that a PDF
-// producer sometimes leaves in the text layer.
-const hyphens = "-\u2010\u2011\u00ad"
+// producer sometimes leaves in the text layer. It is package assemble's set
+// rather than a second copy of it, because a word broken at a line end and
+// the same word broken across a page have to come out spelled the same way.
+const hyphens = assemble.Hyphens
 
 // hyphenated says whether a line ends in a hyphen at all, healed or not.
-func hyphenated(s string) bool {
-	r := []rune(s)
-	return len(r) > 0 && strings.ContainsRune(hyphens, r[len(r)-1])
-}
+func hyphenated(s string) bool { return assemble.Hyphenated(s) }
 
 // broken says whether a word was split across these two lines.
 //

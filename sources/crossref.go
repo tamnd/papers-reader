@@ -31,6 +31,25 @@ type crAuthor struct {
 	Given  string `json:"given"`
 	Family string `json:"family"`
 	Name   string `json:"name"`
+	// Raw is the whole name in one string. Crossref never sends it, but
+	// Unpaywall copies its author list from several upstreams and for some
+	// records this is the only field there is. A resolver that read the
+	// split fields alone would see a paper with no authors at all, and the
+	// author predicate would then refuse a candidate that is plainly right.
+	Raw string `json:"raw_author_name"`
+}
+
+// name is the author written out, whichever of the shapes the record uses.
+func (a crAuthor) name() string {
+	switch {
+	case a.Family != "" && a.Given != "":
+		return a.Given + " " + a.Family
+	case a.Family != "":
+		return a.Family
+	case a.Name != "":
+		return a.Name
+	}
+	return a.Raw
 }
 
 // crDate is Crossref's date-parts, which is a list of lists of numbers where
@@ -128,13 +147,8 @@ func crossrefCandidate(w crossrefWork) Candidate {
 		cand.Title = collapse(w.Title[0])
 	}
 	for _, a := range w.Author {
-		switch {
-		case a.Family != "" && a.Given != "":
-			cand.Authors = append(cand.Authors, a.Given+" "+a.Family)
-		case a.Family != "":
-			cand.Authors = append(cand.Authors, a.Family)
-		case a.Name != "":
-			cand.Authors = append(cand.Authors, a.Name)
+		if name := a.name(); name != "" {
+			cand.Authors = append(cand.Authors, name)
 		}
 	}
 	// The print date first, because the manifest records the year the canon

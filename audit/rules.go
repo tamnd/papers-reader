@@ -18,7 +18,7 @@ import (
 // that decide what may be published at all, and the tag register rules. The
 // rest arrive with the milestone that produces the files they read.
 func Rules() []Rule {
-	return []Rule{
+	out := []Rule{
 		{
 			ID: "S01", Hard: true,
 			What:  "no content file exists for a paper whose access is unknown or missing.",
@@ -44,6 +44,9 @@ func Rules() []Rule {
 			What:  "every open and permissive paper names a licence, not just a URL.",
 			Check: ruleS06,
 		},
+	}
+	out = append(out, refsRules()...)
+	return append(out, []Rule{
 		{
 			ID: "G01", Hard: true,
 			What:  "every tag in tags/tags is four hex characters, and every line is tag,anchor.",
@@ -59,7 +62,7 @@ func Rules() []Rule {
 			What:  "no anchor appears twice.",
 			Check: ruleG03,
 		},
-	}
+	}...)
 }
 
 // contentFiles lists the Markdown a paper has in any language, relative to

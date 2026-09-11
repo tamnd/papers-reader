@@ -63,7 +63,7 @@ func Join(pages []Page) *Document {
 			// before it. Inside a page the break was decided by the
 			// geometry, which knows more than the punctuation does.
 			if i == 0 && n > 0 && continues(d.Paragraphs[n-1].Text, text) {
-				d.Paragraphs[n-1].Text = joinText(d.Paragraphs[n-1].Text, text)
+				d.Paragraphs[n-1].Text = JoinText(d.Paragraphs[n-1].Text, text)
 				d.Paragraphs[n-1].Pages++
 				continue
 			}
@@ -107,26 +107,47 @@ func continues(left, right string) bool {
 	return !closed(left)
 }
 
-// joinText puts two halves of a paragraph back together, healing the word
-// that was broken across the page break.
-func joinText(left, right string) string {
+// JoinText puts two halves of a paragraph back together, healing the word
+// that was broken at the break.
+//
+// Exported because a bibliography entry arrives as several paragraphs, one
+// per printed line of the hanging indent, and package refs has to put those
+// back together too. The two have to heal a word the same way or the same
+// reference would be spelled one way in the body and another in the
+// reference list.
+func JoinText(left, right string) string {
+	if left == "" {
+		return right
+	}
+	if right == "" {
+		return left
+	}
 	l := []rune(left)
-	if strings.ContainsRune(hyphens, l[len(l)-1]) {
+	if strings.ContainsRune(Hyphens, l[len(l)-1]) {
 		word, _, _ := strings.Cut(right, " ")
-		if !strings.ContainsAny(word, hyphens) {
-			return strings.TrimRight(left, hyphens) + right
+		if !strings.ContainsAny(word, Hyphens) {
+			return strings.TrimRight(left, Hyphens) + right
 		}
 		return left + right
 	}
 	return left + " " + right
 }
 
-// hyphens is every character a line break hyphen is written with. It is the
-// same set package extract heals inside a page, and the two have to agree:
-// a word broken across a page break is the same word broken at a line end,
-// and a reader who saw one healed and the other left would be right to
-// wonder which spelling the corpus uses.
-const hyphens = "-\u2010\u2011\u00ad"
+// Hyphens is every character a line break hyphen is written with.
+//
+// One set for the whole toolchain, because a word broken across a page
+// break is the same word broken at a line end and the same word broken
+// between two lines of a bibliography entry. A reader who saw one healed
+// and the others left would be right to wonder which spelling the corpus
+// uses.
+const Hyphens = "-\u2010\u2011\u00ad"
+
+// Hyphenated says whether a piece of text ends in a line break hyphen, and
+// so wants the text after it joined on without a space.
+func Hyphenated(s string) bool {
+	r := []rune(s)
+	return len(r) > 0 && strings.ContainsRune(Hyphens, r[len(r)-1])
+}
 
 // closed says whether a paragraph ends where a sentence ends.
 //

@@ -204,6 +204,30 @@ func TestUnpaywallPrefersALocationWithAPDF(t *testing.T) {
 	}
 }
 
+// Unpaywall copies its author list from several upstreams and for some
+// records the whole name is in one field. Read only the split fields and the
+// candidate arrives with no authors, the author predicate has nothing to
+// agree with, and a record that matched the title exactly and the year
+// exactly is refused.
+func TestUnpaywallReadsAWholeNameInOneField(t *testing.T) {
+	const raw = `{"doi":"10.1162/x","title":"A Theory of Slow Indexes","year":1991,
+	  "z_authors":[{"raw_author_name":"A. Nkemelu"},{"raw_author_name":"B. Oyelaran"}]}`
+	cand, err := parseUnpaywall([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cand.Authors) != 2 || cand.Authors[0] != "A. Nkemelu" {
+		t.Fatalf("the authors came out as %v", cand.Authors)
+	}
+	v := Verify(
+		Want{Title: "A Theory of Slow Indexes", Authors: []string{"A. Nkemelu"}, Year: 1991},
+		cand,
+	)
+	if !v.OK {
+		t.Errorf("the candidate was refused: %s", v.Why)
+	}
+}
+
 func TestOpenAlex(t *testing.T) {
 	cand, err := parseOpenAlexWork([]byte(openalexJSON))
 	if err != nil {
