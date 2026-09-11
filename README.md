@@ -81,7 +81,8 @@ relay/           asking another machine to fetch what this network cannot
 classify/        what a PDF's text layer is worth
 work/            the model queue, the routing table and the waiting
 extract/         PDF to Markdown
-mathtex/         LaTeX repair and validation
+mathtex/         LaTeX repair, equation numbers and cross references
+katex/           the real KaTeX, run at build time to check and render
 figures/         cropping diagrams out of pages
 refs/            bibliography parsing and citation linking
 split/           one paper into one file per section
@@ -99,7 +100,7 @@ web/             the Astro reading app
 Go 1.27 or later.
 `pdftotext` and `pdftoppm` from Poppler for the extraction commands.
 Node 22 or later for the web app.
-Nothing else. The Go side has two dependencies: `gopkg.in/yaml.v3`, and `github.com/tamnd/llm`, which is ours and has none of its own.
+Nothing else. The Go side has three dependencies: `gopkg.in/yaml.v3`, `github.com/tamnd/llm`, which is ours and has none of its own, and `github.com/dop251/goja`, a JavaScript engine that exists so the toolchain can run the real KaTeX to check every formula it writes without putting Node in the build.
 
 ## Licence
 
