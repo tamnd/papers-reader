@@ -85,19 +85,116 @@ func (d *Document) Text() string {
 	return strings.Join(parts, "\n\n") + "\n"
 }
 
+// paragraphs cuts a page into paragraphs on its blank lines, except inside a
+// block where a blank line is content.
+//
+// The native path writes prose and nothing else, and for prose a blank line
+// is always a paragraph break. The layout path writes fenced listings and
+// display equations as well, and both of those can hold a blank line: an
+// algorithm with a gap between its setup and its loop, a two part derivation
+// with a line between the halves. Cutting there produces half a fence, which
+// renders as the rest of the paper in a code block.
 func paragraphs(text string) []string {
 	var out []string
-	for _, p := range strings.Split(text, "\n\n") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
+	var cur []string
+	verbatim := false
+	fence, display := "", false
+
+	flush := func() {
+		if len(cur) == 0 {
+			return
+		}
+		s := strings.Join(cur, "\n")
+		if !verbatim {
+			s = strings.TrimSpace(s)
+		} else {
+			s = strings.Trim(s, "\n")
+		}
+		if strings.TrimSpace(s) != "" {
+			out = append(out, s)
+		}
+		cur, verbatim = nil, false
+	}
+
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case fence != "":
+			cur = append(cur, line)
+			if strings.HasPrefix(trimmed, fence) {
+				fence = ""
+				flush()
+			}
+		case display:
+			cur = append(cur, line)
+			if trimmed == "$$" {
+				display = false
+				flush()
+			}
+		case opens(trimmed) != "":
+			flush()
+			fence, verbatim = opens(trimmed), true
+			cur = append(cur, line)
+		case trimmed == "$$":
+			flush()
+			display, verbatim = true, true
+			cur = append(cur, line)
+		case trimmed == "":
+			flush()
+		default:
+			cur = append(cur, line)
 		}
 	}
+	// A fence or a display block that never closed. What is left is still
+	// the end of the page and dropping it would lose it.
+	flush()
 	return out
+}
+
+// opens is the fence a line opens a code block with, or the empty string.
+// The fence has to be at least three of the same character and the closing
+// one has to be at least as long, which is how a listing that itself
+// contains a fence is written.
+func opens(trimmed string) string {
+	for _, c := range []string{"`", "~"} {
+		n := 0
+		for n < len(trimmed) && string(trimmed[n]) == c {
+			n++
+		}
+		if n >= 3 {
+			return strings.Repeat(c, n)
+		}
+	}
+	return ""
+}
+
+// block says whether a paragraph is one of the things that is not prose, and
+// so can neither continue the paragraph before it nor be continued by the one
+// after it. A heading is in the list for the same reason: it ends without
+// terminal punctuation, which is exactly what the continuation rule looks
+// for, so without this a heading swallows the paragraph under it.
+func block(s string) bool {
+	switch {
+	case opens(s) != "":
+		return true
+	case strings.HasPrefix(s, "$$"):
+		return true
+	case strings.HasPrefix(s, "#"):
+		return true
+	case strings.HasPrefix(s, "|"):
+		return true
+	case strings.HasPrefix(s, "!["):
+		return true
+	}
+	return false
 }
 
 // continues says whether the second paragraph is the rest of the first.
 func continues(left, right string) bool {
 	if left == "" || right == "" {
+		return false
+	}
+	if block(left) || block(right) {
 		return false
 	}
 	r := []rune(right)[0]

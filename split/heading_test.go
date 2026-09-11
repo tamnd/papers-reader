@@ -239,3 +239,140 @@ func equal(a, b []string) bool {
 	}
 	return true
 }
+
+// The layout path writes a heading as an ATX heading, because a layout model
+// does not have to guess at its headings the way the native path does.
+
+func TestAMarkedHeadingIsFoundWithoutANumberingScheme(t *testing.T) {
+	paragraphs := []string{
+		"# Introduction",
+		"A paragraph of invented prose that runs on for a while.",
+		"# The Method",
+		"Another paragraph of invented prose.",
+	}
+	s, hs := Headings(paragraphs)
+	if s != SchemeNone {
+		t.Errorf("scheme is %q, want none", s)
+	}
+	if len(hs) != 2 {
+		t.Fatalf("found %d headings, want 2: %+v", len(hs), hs)
+	}
+	for _, h := range hs {
+		if h.How != Marked {
+			t.Errorf("%q was found by %q, want %q", h.Title, h.How, Marked)
+		}
+	}
+	if got, want := hs[0].Title, "Introduction"; got != want {
+		t.Errorf("the first heading is %q, want %q", got, want)
+	}
+}
+
+func TestAMarkedHeadingKeepsThePaperSOwnNumber(t *testing.T) {
+	paragraphs := []string{
+		"# 1 Introduction",
+		"A paragraph of invented prose.",
+		"# 2 Background",
+		"Another paragraph.",
+		"## 2.1 Notation",
+		"A third paragraph.",
+		"# 3 The Method",
+		"A fourth paragraph.",
+	}
+	s, hs := Headings(paragraphs)
+	if s != SchemeArabic {
+		t.Fatalf("scheme is %q, want %q", s, SchemeArabic)
+	}
+	if len(hs) != 4 {
+		t.Fatalf("found %d headings, want 4: %+v", len(hs), hs)
+	}
+	want := []struct {
+		number string
+		level  int
+		title  string
+	}{
+		{"1", 1, "Introduction"},
+		{"2", 1, "Background"},
+		{"2.1", 2, "Notation"},
+		{"3", 1, "The Method"},
+	}
+	for i, w := range want {
+		if hs[i].Number != w.number || hs[i].Level != w.level || hs[i].Title != w.title {
+			t.Errorf("heading %d is %+v, want %s %d %q", i, hs[i], w.number, w.level, w.title)
+		}
+		if hs[i].How != Marked {
+			t.Errorf("heading %d was found by %q, want %q", i, hs[i].How, Marked)
+		}
+	}
+}
+
+func TestTheNumberingWinsOverTheLevelTheModelGave(t *testing.T) {
+	// A model that labelled 3.2 a top level heading is wrong about the
+	// structure of the paper in a way the number settles.
+	paragraphs := []string{
+		"# 1 Introduction",
+		"A paragraph.",
+		"# 2 Background",
+		"A paragraph.",
+		"# 3 The Method",
+		"A paragraph.",
+		"# 3.1 A Detail",
+		"A paragraph.",
+	}
+	_, hs := Headings(paragraphs)
+	if len(hs) != 4 {
+		t.Fatalf("found %d headings, want 4: %+v", len(hs), hs)
+	}
+	if got, want := hs[3].Level, 2; got != want {
+		t.Errorf("3.1 came out at level %d, want %d", got, want)
+	}
+}
+
+func TestAMarkedHeadingThatBreaksTheNumberingIsStillAHeading(t *testing.T) {
+	// The acknowledgements are unnumbered in a paper that numbers
+	// everything else, and the numbered pass skips them by design.
+	paragraphs := []string{
+		"# 1 Introduction",
+		"A paragraph.",
+		"# 2 Background",
+		"A paragraph.",
+		"# 3 The Method",
+		"A paragraph.",
+		"# Acknowledgements",
+		"A paragraph.",
+		"# References",
+		"A paragraph.",
+	}
+	_, hs := Headings(paragraphs)
+	if len(hs) != 5 {
+		t.Fatalf("found %d headings, want 5: %+v", len(hs), hs)
+	}
+	if got, want := hs[3].Title, "Acknowledgments"; got != want {
+		t.Errorf("the heading is filed as %q, want %q", got, want)
+	}
+	if got, want := hs[4].Kind, KindReferences; got != want {
+		t.Errorf("the references are kind %q, want %q", got, want)
+	}
+}
+
+func TestAHashInProseIsNotAHeading(t *testing.T) {
+	for _, text := range []string{
+		"#define MAX 32",
+		"# 12 is the issue number and this paragraph runs on\nacross two lines of prose.",
+		"####### seven hashes are not a heading",
+		"#",
+	} {
+		if _, _, ok := atxParts(text); ok {
+			t.Errorf("%q was read as a heading", text)
+		}
+	}
+}
+
+func TestAMarkedHeadingIsTitleCasedWhenThePaperShouted(t *testing.T) {
+	_, hs := Headings([]string{"# THE CONSISTENCY CONDITION", "A paragraph."})
+	if len(hs) != 1 {
+		t.Fatalf("found %d headings, want 1", len(hs))
+	}
+	if got, want := hs[0].Title, "The Consistency Condition"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

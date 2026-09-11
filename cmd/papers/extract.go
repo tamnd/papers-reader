@@ -7,11 +7,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tamnd/papers-reader/classify"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
 	"github.com/tamnd/papers-reader/katex"
+	"github.com/tamnd/papers-reader/layout"
 	"github.com/tamnd/papers-reader/poppler"
 )
 
@@ -22,6 +24,7 @@ func runExtract(args []string) error {
 	field := fs.String("field", "", "extract one field only")
 	all := fs.Bool("all", false, "extract every paper on disk whose path is implemented")
 	path := fs.String("path", "", "force an extraction path instead of the measured one")
+	tool := fs.String("tool", "", "which layout tool to run: mineru, marker or docling")
 	pages := fs.String("pages", "", "extract these pages only, as N or N-M")
 	again := fs.Bool("again", false, "extract pages that are already done too")
 	dry := fs.Bool("dry-run", false, "print what would be extracted and write nothing")
@@ -34,10 +37,10 @@ work/<id>/pages/NNNN.txt. Nothing here is committed: these are the
 intermediate the assembler joins and the splitter cuts into sections.
 
 Which path a paper takes was measured by papers classify and is recorded in
-manifests/sources.yaml. Only the native path is implemented so far.
+manifests/sources.yaml.
 
     native    pdftotext reads the file and no model is in the path
-    layout    a layout model reads the geometry              (milestone M2)
+    layout    a layout model reads the geometry
     vision    a vision model reads a picture of the page     (milestone M3)
 
 The native path asks pdftotext for the word boxes rather than for text,
@@ -45,20 +48,29 @@ because pdftotext -layout interleaves the columns of a two column paper
 into nonsense. The columns, the reading order, the running heads and the
 paragraphs are worked out here from the geometry.
 
+The layout path runs mineru, marker or docling over the whole file once and
+reads the JSON it wrote, never its Markdown: the three write three dialects
+and the corpus writes its own. The run costs minutes and its output is kept
+under work/<id>/layout, so a second run over a paper that is already
+converted reads the file it wrote and starts no process. Pass --tool to pick
+one; without it the first installed is used, in the order above.
+
 Every page is checked against the eight acceptance rules before it is
-written, and a page that breaks one is reported and not written. On this
-path there is nothing to retry with: pdftotext is not going to read the
-page differently the second time, so a refused page is a page for a person
-to look at, and it stays in the report until somebody does.
+written, and a page that breaks one is reported and not written. Neither
+path has anything to retry with: the same program over the same file reads
+the page the same way the second time, so a refused page is a page for a
+person to look at, and it stays in the report until somebody does. The
+thing to try is the other path, with --path.
 
 A page that is already extracted is left alone, so running this twice costs
-one pdftotext run and no writes. Pass --again to do the work over.
+one read of the file and no writes. Pass --again to do the work over.
 
 A restricted paper is read as far as its first page and no further. Nothing
 but its front matter and a short abstract can ever be published, so the
 rest of it would be work done to fill a directory nobody may read.
 
-This needs poppler. Run papers doctor to see whether it is installed.
+This needs poppler, and the layout path needs one of the three tools. Run
+papers doctor to see what is installed.
 
 `)
 		fs.PrintDefaults()
@@ -73,8 +85,13 @@ This needs poppler. Run papers doctor to see whether it is installed.
 	if err != nil {
 		return err
 	}
-	if *path != "" && classify.Path(*path) != classify.PathNative {
+	switch classify.Path(*path) {
+	case "", classify.PathNative, classify.PathLayout:
+	default:
 		return fmt.Errorf("the %s path arrives in a later milestone", *path)
+	}
+	if *tool != "" && !known(layout.Tool(*tool)) {
+		return fmt.Errorf("%q is not a layout tool: run papers doctor to see which are installed", *tool)
 	}
 
 	c, err := openCorpus(*root)
@@ -107,7 +124,13 @@ This needs poppler. Run papers doctor to see whether it is installed.
 	var done, refused, skipped int
 	for _, p := range todo {
 		rec, _ := recorded.ByID(p.ID)
-		n, err := extractOne(ctx, c, p, rec, math, classify.Path(*path), first, last, *again, *dry, *long)
+		run := extraction{
+			corpus: c, paper: p, source: rec, math: math,
+			forced: classify.Path(*path), tool: layout.Tool(*tool),
+			first: first, last: last,
+			again: *again, dry: *dry, long: *long,
+		}
+		n, err := run.do(ctx)
 		switch {
 		case err != nil:
 			fmt.Printf("  %-34s %v\n", p.ID, err)
@@ -146,77 +169,68 @@ func (n count) String() string {
 	return strings.Join(parts, ", ")
 }
 
-func extractOne(ctx context.Context, c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, math *katex.Renderer, forced classify.Path, first, last int, again, dry, long bool) (count, error) {
+// An extraction is one paper's run. It is a struct rather than a dozen
+// arguments because the two paths want almost the same things and a reader
+// comparing them should not have to count parameters to see where they
+// differ.
+type extraction struct {
+	corpus *corpus.Corpus
+	paper  corpus.Paper
+	source *corpus.Source
+	math   *katex.Renderer
+	forced classify.Path
+	tool   layout.Tool
+
+	first, last int
+	again       bool
+	dry         bool
+	long        bool
+}
+
+func (e *extraction) do(ctx context.Context) (count, error) {
 	var n count
-	if rec == nil {
+	if e.source == nil {
 		return n, fmt.Errorf("no licence record, so nothing may be published from it: run papers resolve")
 	}
-	switch rec.Access {
+	switch e.source.Access {
 	case corpus.AccessUnknown, "":
 		return n, fmt.Errorf("nothing is known about what may be published from it, so it is not read")
 	case corpus.AccessRestricted:
 		// Front matter and an abstract under 250 words is the whole of what
 		// this paper can ever publish, and both are on the first page.
-		last = 1
+		e.last = 1
 	}
-	file := c.PDF(p.ID)
+	file := e.corpus.PDF(e.paper.ID)
 	if _, err := os.Stat(file); err != nil {
 		return n, fmt.Errorf("not fetched yet")
 	}
-	switch layer := classify.Layer(rec.TextLayer); {
-	case forced == classify.PathNative:
-		// A person asked for this path for this paper. That is what the flag
-		// is for and it is the honest way to extract a paper the measurement
-		// sent to the layout path only because it has figures to place: the
-		// text of such a paper extracts perfectly well, and the figures are a
-		// separate stage with its own command.
-	case layer == classify.Native:
-	case layer == "":
-		return n, fmt.Errorf("not classified yet: run papers classify")
-	default:
-		return n, fmt.Errorf("its text layer is %s, and only the native path is implemented", layer)
+	path, err := e.path()
+	if err != nil {
+		return n, err
+	}
+	if err := e.pageRange(ctx, file); err != nil {
+		return n, err
 	}
 
-	if last == 0 {
-		last = rec.Pages
-	}
-	if last == 0 {
-		doc, err := poppler.Info(ctx, file)
-		if err != nil {
-			return n, err
-		}
-		last = doc.Pages
-	}
-	if first == 0 {
-		first = 1
-	}
-	if last < first {
-		return n, fmt.Errorf("page %d comes before page %d", last, first)
-	}
-
-	store := extract.Store{Dir: c.Work(p.ID, "pages")}
-	todo := store.Missing(first, last)
-	if again {
+	store := extract.Store{Dir: e.corpus.Work(e.paper.ID, "pages")}
+	todo := store.Missing(e.first, e.last)
+	if e.again {
 		todo = nil
-		for page := first; page <= last; page++ {
+		for page := e.first; page <= e.last; page++ {
 			todo = append(todo, page)
 		}
 	}
-	n.already = last - first + 1 - len(todo)
+	n.already = e.last - e.first + 1 - len(todo)
 	if len(todo) == 0 {
 		return n, nil
 	}
 
-	// The whole range is read in one pdftotext run whatever pages are
-	// missing, because the running heads are learned from the paper and a
-	// single page read on its own has no way to know what is furniture.
-	native, err := extract.ReadNative(ctx, file, first, last)
+	got, err := e.read(ctx, path, file)
 	if err != nil {
 		return n, err
 	}
-	read := native.All()
+	read, checker := got.pages, got.checker
 
-	checker := &extract.Checker{Math: math, Map: extract.LearnMap(read)}
 	// The pages are checked in order and the ones that are already done are
 	// checked too, because acceptance rule A5 is about how long this paper's
 	// pages usually are and a resumed run that only saw the last three pages
@@ -226,33 +240,193 @@ func extractOne(ctx context.Context, c *corpus.Corpus, p corpus.Paper, rec *corp
 		want[page] = true
 	}
 	for _, page := range read {
-		text := page.Text()
-		if !want[page.Number] {
-			if done, err := store.Read(page.Number); err == nil {
-				checker.Check(page.Number, done)
+		if !want[page.number] {
+			if done, err := store.Read(page.number); err == nil {
+				checker.Check(page.number, done)
 			}
 			continue
 		}
-		if faults := checker.Check(page.Number, text); len(faults) > 0 {
+		if faults := checker.Check(page.number, page.text); len(faults) > 0 {
 			n.refused++
 			for _, f := range faults {
-				fmt.Printf("    %s page %d: %s\n", p.ID, page.Number, f)
+				fmt.Printf("    %s page %d: %s\n", e.paper.ID, page.number, f)
 			}
 			continue
 		}
-		if long {
-			fmt.Printf("    %s page %d: %d columns, %d paragraphs\n", p.ID, page.Number, page.Columns, len(page.Paragraphs))
+		if e.long {
+			fmt.Printf("    %s page %d: %s\n", e.paper.ID, page.number, page.how)
 		}
-		if dry {
+		if e.dry {
 			n.written++
 			continue
 		}
-		if err := store.Write(page.Number, text); err != nil {
+		if err := store.Write(page.number, page.text); err != nil {
 			return n, err
 		}
 		n.written++
 	}
+	if n.written > 0 {
+		// Written last, so that a run killed halfway leaves a record of
+		// pages that are really there rather than of pages it meant to do.
+		record := extract.Record{
+			Path:  string(path),
+			Tool:  got.tool,
+			First: e.first,
+			Last:  e.last,
+			When:  time.Now().UTC().Truncate(time.Second),
+		}
+		if err := record.Write(e.corpus.Work(e.paper.ID)); err != nil {
+			return n, err
+		}
+	}
 	return n, nil
+}
+
+// path is the extraction path this paper takes.
+func (e *extraction) path() (classify.Path, error) {
+	layer := classify.Layer(e.source.TextLayer)
+	switch {
+	case e.forced != "":
+		// A person asked for this path for this paper. That is what the flag
+		// is for and it is the honest way to extract a paper the measurement
+		// sent to the layout path only because it has figures to place: the
+		// text of such a paper extracts perfectly well, and the figures are a
+		// separate stage with its own command.
+		return e.forced, nil
+	case layer == classify.Native:
+		return classify.PathNative, nil
+	case layer == classify.Digital:
+		return classify.PathLayout, nil
+	case layer == "":
+		return "", fmt.Errorf("not classified yet: run papers classify")
+	}
+	return "", fmt.Errorf("its text layer is %s, and the vision path arrives in milestone M3", layer)
+}
+
+// pageRange fills in the ends of the range that were not given.
+func (e *extraction) pageRange(ctx context.Context, file string) error {
+	if e.last == 0 {
+		e.last = e.source.Pages
+	}
+	if e.last == 0 {
+		doc, err := poppler.Info(ctx, file)
+		if err != nil {
+			return err
+		}
+		e.last = doc.Pages
+	}
+	if e.first == 0 {
+		e.first = 1
+	}
+	if e.last < e.first {
+		return fmt.Errorf("page %d comes before page %d", e.last, e.first)
+	}
+	return nil
+}
+
+// A rendered page is one page of either path, ready to be checked and
+// written. The two paths agree on this much and nothing downstream can tell
+// which one produced a page, which is the point of having two.
+type rendered struct {
+	number int
+	text   string
+	// how is what to print under --v: the shape of the page as the path that
+	// read it saw it.
+	how string
+}
+
+// A reading is one pass over a file: the pages, the checker that has this
+// paper's shape in it, and the name of the program that did the reading, for
+// the record the run leaves behind.
+type reading struct {
+	pages   []rendered
+	checker *extract.Checker
+	tool    string
+}
+
+func (e *extraction) read(ctx context.Context, path classify.Path, file string) (*reading, error) {
+	if path == classify.PathLayout {
+		return e.readLayout(ctx, file)
+	}
+	// The whole range is read in one pdftotext run whatever pages are
+	// missing, because the running heads are learned from the paper and a
+	// single page read on its own has no way to know what is furniture.
+	native, err := extract.ReadNative(ctx, file, e.first, e.last)
+	if err != nil {
+		return nil, err
+	}
+	read := native.All()
+	out := make([]rendered, 0, len(read))
+	for _, p := range read {
+		out = append(out, rendered{
+			number: p.Number,
+			text:   p.Text(),
+			how:    fmt.Sprintf("%d columns, %d paragraphs", p.Columns, len(p.Paragraphs)),
+		})
+	}
+	return &reading{
+		pages:   out,
+		checker: &extract.Checker{Math: e.math, Map: extract.LearnMap(read)},
+		tool:    version(poppler.Version(ctx, "pdftotext")),
+	}, nil
+}
+
+func (e *extraction) readLayout(ctx context.Context, file string) (*reading, error) {
+	dir := e.corpus.Work(e.paper.ID, "layout")
+	if e.dry && !layout.Done(dir) {
+		return nil, fmt.Errorf("a layout run takes minutes, so a dry run will not start one")
+	}
+	doc, err := layout.Run(ctx, e.tool, file, dir)
+	if err != nil {
+		return nil, err
+	}
+	for _, note := range doc.Notes {
+		fmt.Printf("    %s: %s\n", e.paper.ID, note)
+	}
+	var out []rendered
+	for _, p := range doc.Pages {
+		if p.Number < e.first || p.Number > e.last {
+			continue
+		}
+		out = append(out, rendered{
+			number: p.Number,
+			text:   p.Text(),
+			how:    fmt.Sprintf("%s, %d blocks", doc.Tool, len(p.Blocks)),
+		})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%s read the file and found none of pages %d to %d in it", doc.Tool, e.first, e.last)
+	}
+	// A6 is off because the folio is furniture and the layout model dropped
+	// it before this saw the page. A5 is on because a layout model is a
+	// model and a model can stop halfway down a page, which is the thing
+	// that rule is for.
+	return &reading{
+		pages:   out,
+		checker: &extract.Checker{Math: e.math, Model: true},
+		tool:    version(layout.Version(ctx, doc.Tool)),
+	}, nil
+}
+
+// version is the line a tool prints about itself, or nothing. A run that
+// cannot get a version out of a program still extracted the pages, and a
+// record that says which program read them is worth more than no record.
+func version(s string, err error) string {
+	if err != nil {
+		return ""
+	}
+	return s
+}
+
+// known says whether a name is one of the layout tools, installed or not. A
+// typo should be an error here rather than a tool that is silently not run.
+func known(t layout.Tool) bool {
+	for _, have := range layout.Tools {
+		if have == t {
+			return true
+		}
+	}
+	return false
 }
 
 // choosePapers picks the papers a run is about. It is deliberately not

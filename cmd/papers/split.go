@@ -194,16 +194,29 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, dry, 
 	n.notes = append(n.notes, cite(c, p.ID, r)...)
 
 	front := corpus.Front{
-		Paper:      p.ID,
-		Title:      p.Title,
-		Authors:    p.Authors,
-		Year:       p.Year,
-		Venue:      p.Venue,
-		Field:      p.Field,
-		Lang:       corpus.EN,
-		Source:     sourceRef(p, rec),
-		PDFSHA256:  rec.SHA256,
-		Extraction: "native",
+		Paper:     p.ID,
+		Title:     p.Title,
+		Authors:   p.Authors,
+		Year:      p.Year,
+		Venue:     p.Venue,
+		Field:     p.Field,
+		Lang:      corpus.EN,
+		Source:    sourceRef(p, rec),
+		PDFSHA256: rec.SHA256,
+	}
+	// What read the pages is what the extraction run wrote down. A paper
+	// extracted before the run kept a record, or one whose work directory
+	// has been cleaned out, leaves these fields empty rather than claiming
+	// a path nobody can check.
+	record, err := extract.ReadRecord(c.Work(p.ID))
+	if err != nil {
+		return n, err
+	}
+	if record != nil {
+		front.Extraction = record.Path
+		front.ExtractionModel = record.Tool
+	} else {
+		n.notes = append(n.notes, "no extraction record, so the front matter cannot say what read the pages")
 	}
 	files := split.Files(front, r)
 	if !rec.Access.Body() {

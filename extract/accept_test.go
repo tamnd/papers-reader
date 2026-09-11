@@ -192,3 +192,22 @@ func TestAcceptNamesEveryRuleThePageBroke(t *testing.T) {
 		}
 	}
 }
+
+func TestAPageThatOpensWithAFenceIsNotRefused(t *testing.T) {
+	// The layout path writes a listing as the first block of a page on any
+	// paper whose page starts with an algorithm, and then the opening fence
+	// has no newline in front of it.
+	var c Checker
+	text := "```text\nfor i in 1..n\n```\n\nand the prose under it.\n"
+	if faults := c.Check(1, text); len(faults) > 0 {
+		t.Errorf("the page was refused: %v", faults)
+	}
+}
+
+func TestAFenceThatIsNeverClosedIsStillRefused(t *testing.T) {
+	var c Checker
+	text := "```text\nfor i in 1..n\n\nand the prose under it.\n"
+	if faults := c.Check(1, text); len(faults) == 0 {
+		t.Error("a fence that was never closed was accepted")
+	}
+}

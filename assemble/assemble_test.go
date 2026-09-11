@@ -157,3 +157,83 @@ func TestNoPagesMakeAnEmptyDocument(t *testing.T) {
 		t.Errorf("an empty document reads %q, want nothing", d.Text())
 	}
 }
+
+// The pages the layout path writes hold more than prose, and a blank line
+// inside a fence or a display equation is content rather than a paragraph
+// break.
+
+func TestAListingWithABlankLineStaysOneBlock(t *testing.T) {
+	page := "```python\ndef f(x):\n    y = x + 1\n\n    return y\n```\n\nand the prose after it.\n"
+	d := join(page)
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("assembled %d paragraphs, want 2: %q", len(d.Paragraphs), d.Text())
+	}
+	want := "```python\ndef f(x):\n    y = x + 1\n\n    return y\n```"
+	if got := d.Paragraphs[0].Text; got != want {
+		t.Errorf("the listing came out as %q", got)
+	}
+}
+
+func TestAListingKeepsItsIndentation(t *testing.T) {
+	page := "```text\nline one\n        deeply indented\n```\n"
+	d := join(page)
+	if len(d.Paragraphs) != 1 {
+		t.Fatalf("assembled %d paragraphs, want 1: %q", len(d.Paragraphs), d.Text())
+	}
+	if !strings.Contains(d.Paragraphs[0].Text, "\n        deeply indented") {
+		t.Errorf("the indentation was lost: %q", d.Paragraphs[0].Text)
+	}
+}
+
+func TestALongerFenceIsNeededToCloseALongerOne(t *testing.T) {
+	page := "````markdown\n```\nnested\n```\n````\n\nprose.\n"
+	d := join(page)
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("assembled %d paragraphs, want 2: %q", len(d.Paragraphs), d.Text())
+	}
+}
+
+func TestADisplayEquationWithABlankLineStaysOneBlock(t *testing.T) {
+	page := "$$\na = b\n\nc = d\n$$\n\nand the prose after it.\n"
+	d := join(page)
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("assembled %d paragraphs, want 2: %q", len(d.Paragraphs), d.Text())
+	}
+	if got, want := d.Paragraphs[0].Text, "$$\na = b\n\nc = d\n$$"; got != want {
+		t.Errorf("the equation came out as %q", got)
+	}
+}
+
+func TestAFenceThatNeverClosesIsStillKept(t *testing.T) {
+	d := join("```text\nthe page ran out here\n")
+	if len(d.Paragraphs) != 1 {
+		t.Fatalf("assembled %d paragraphs, want 1: %q", len(d.Paragraphs), d.Text())
+	}
+	if !strings.Contains(d.Paragraphs[0].Text, "the page ran out here") {
+		t.Errorf("the unclosed block was dropped: %q", d.Paragraphs[0].Text)
+	}
+}
+
+func TestAHeadingDoesNotSwallowTheParagraphUnderIt(t *testing.T) {
+	// A heading ends without terminal punctuation and the paragraph under
+	// it can start lower case, which is exactly what the continuation rule
+	// looks for.
+	d := join("## 3.1 Gated units\n", "the paragraph under the heading.\n")
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("assembled %d paragraphs, want 2: %q", len(d.Paragraphs), d.Text())
+	}
+}
+
+func TestABlockIsNeverJoinedAcrossAPageBreak(t *testing.T) {
+	for _, right := range []string{
+		"```text\nlisting\n```\n",
+		"$$\na = b\n$$\n",
+		"| a | b |\n| --- | --- |\n",
+		"![figure](images/one.png)\n",
+	} {
+		d := join("the sentence that ran out of room and\n", right)
+		if len(d.Paragraphs) != 2 {
+			t.Errorf("%q was joined onto the prose before it: %q", right, d.Text())
+		}
+	}
+}

@@ -26,8 +26,9 @@ const (
 // text an emphasised line and a short paragraph look the same.
 type How string
 
-// The three detectors, in the order of how much they can be trusted.
+// The four detectors, in the order of how much they can be trusted.
 const (
+	Marked      How = "marked"      // the extractor wrote it as a heading
 	Numbered    How = "numbered"    // it continues the paper's own numbering
 	Named       How = "named"       // it is one of the forty section names
 	Typographic How = "typographic" // it is set like a heading and nothing more
@@ -67,7 +68,29 @@ var (
 	// the stop.
 	roman = regexp.MustCompile(`^([IVXL]+)\.[ \t]+(\S.*)$`)
 	sign  = regexp.MustCompile(`^§[ \t]*(\d+(?:\.\d+)*)\.?[ \t]*(\S.*)$`)
+	// atx is a heading the extractor already found. The layout path writes
+	// one for every block its model labelled a heading, and the native path
+	// writes none at all, so a # at the start of a paragraph is a statement
+	// and not a guess.
+	atx = regexp.MustCompile(`^(#{1,6})[ \t]+(\S.*)$`)
 )
+
+// atxParts takes the marker off a heading the extractor wrote.
+//
+// The paragraph has to be a single line, because a heading is one line and a
+// paragraph of prose that happens to open with a hash is not. That is not a
+// hypothetical: a paper about C writes a preprocessor directive in running
+// text, and one about issue trackers writes "# 12" in a sentence.
+func atxParts(text string) (level int, rest string, ok bool) {
+	if strings.ContainsRune(text, '\n') {
+		return 0, text, false
+	}
+	m := atx.FindStringSubmatch(text)
+	if m == nil {
+		return 0, text, false
+	}
+	return len(m[1]), strings.TrimSpace(m[2]), true
+}
 
 // parseNumber pulls the number and the title off a heading under one scheme.
 // The second return is false when the paragraph is not of that shape.
@@ -174,7 +197,11 @@ func chain(s Scheme, paragraphs []string) []Heading {
 	// last is the last number accepted under each parent: the empty key for
 	// top level sections, "3" for the subsections of section 3.
 	last := map[string]int{}
-	for i, text := range paragraphs {
+	for i, raw := range paragraphs {
+		// A heading the extractor marked keeps its printed number in its
+		// title, so the marker comes off before the number is read and the
+		// numbering of a paper reads the same down either path.
+		_, text, marked := atxParts(raw)
 		if !candidate(text) {
 			continue
 		}
@@ -204,12 +231,16 @@ func chain(s Scheme, paragraphs []string) []Heading {
 				}
 			}
 		}
+		how := Numbered
+		if marked {
+			how = Marked
+		}
 		out = append(out, Heading{
 			Index:  i,
 			Number: num,
 			Level:  len(parts),
 			Title:  strings.TrimRight(title, "."),
-			How:    Numbered,
+			How:    how,
 		})
 	}
 	return out
@@ -229,8 +260,21 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 	for _, h := range chain(s, paragraphs) {
 		found[h.Index] = h
 	}
-	for i, text := range paragraphs {
-		if _, taken := found[i]; taken || !candidate(text) {
+	for i, raw := range paragraphs {
+		if _, taken := found[i]; taken {
+			continue
+		}
+		// A heading the extractor marked is a heading whether or not it
+		// continues the numbering, because something that read the page
+		// said so. An unnumbered heading in the middle of a numbered paper
+		// is normally the acknowledgements, and the numbered pass above
+		// skips it by design.
+		if h, ok := markedHeading(s, i, raw); ok {
+			found[i] = h
+			continue
+		}
+		text := raw
+		if !candidate(text) {
 			continue
 		}
 		if title, ok := named(text); ok {
@@ -249,6 +293,32 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 	}
 	assignKinds(out)
 	return s, out
+}
+
+// markedHeading reads a heading the extractor wrote.
+//
+// The level is the one the extractor gave unless the paper's own numbering
+// says otherwise, and then the numbering wins: a model that labelled 3.2 a
+// top level heading is wrong about the structure of the paper in a way the
+// number settles. The title is canonicalised the same way an unnumbered
+// heading found by name is, so that Acknowledgements files under
+// Acknowledgments however the paper spelled it and however it was found.
+func markedHeading(s Scheme, i int, raw string) (Heading, bool) {
+	level, text, ok := atxParts(raw)
+	if !ok {
+		return Heading{}, false
+	}
+	h := Heading{Index: i, Level: level, Title: text, How: Marked}
+	if num, parts, title, numbered := parseNumber(s, text); numbered {
+		h.Number, h.Level, h.Title = num, len(parts), strings.TrimRight(title, ".")
+		return h, true
+	}
+	if title, named := named(text); named {
+		h.Title = title
+		return h, true
+	}
+	h.Title = titleCase(text)
+	return h, true
 }
 
 // named matches a paragraph against the section names English papers use. The

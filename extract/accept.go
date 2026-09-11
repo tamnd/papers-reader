@@ -199,7 +199,7 @@ func (c *Checker) faults(page int, text string) []Fault {
 		}
 	}
 
-	if n := strings.Count(text, "\n```"); n%2 == 1 {
+	if n := len(fence.FindAllString(text, -1)); n%2 == 1 {
 		add(A7, "a code fence was opened and never closed", 0)
 	}
 	for _, s := range spans {
@@ -225,6 +225,15 @@ func (c *Checker) stddev() float64 {
 	}
 	return math.Sqrt(c.m2 / float64(c.n-1))
 }
+
+// fence is a line that opens or closes a code block. Matched at the start of
+// a line rather than counted as a substring, because a page whose very first
+// block is a listing has its opening fence at the start of the text with no
+// newline in front of it, and a count of "\n```" sees the closing fence and
+// not the opening one. That page reads as a fence that was never closed, and
+// the layout path writes it on any paper whose page starts with an
+// algorithm.
+var fence = regexp.MustCompile("(?m)^[ \t]*(```|~~~)")
 
 // illegible is the markers the prompt asks a reader to leave where a page is
 // unreadable. Anything else it invents is caught by A1 or by a person.

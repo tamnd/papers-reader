@@ -5,13 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/tamnd/llm/route"
 	papers "github.com/tamnd/papers-reader"
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/layout"
 	"github.com/tamnd/papers-reader/poppler"
 	"github.com/tamnd/papers-reader/work"
 )
@@ -99,14 +99,25 @@ quietly moved down to a smaller model than the route file names.
 	}
 
 	fmt.Println("\nlayout models, for the papers pdftotext cannot read on its own")
-	for _, tool := range []string{"mineru", "marker_single", "docling"} {
-		if path, err := exec.LookPath(tool); err == nil {
-			fmt.Printf("  %-14s %s\n", tool, path)
-		} else {
+	for _, tool := range layout.Tools {
+		if !layout.Have(tool) {
 			fmt.Printf("  %-14s not installed\n", tool)
+			continue
 		}
+		version, err := layout.Version(ctx, tool)
+		if err != nil {
+			version = "installed, version unknown"
+		}
+		fmt.Printf("  %-14s %s\n", tool, version)
 	}
-	fmt.Println("  none of these is required yet. They arrive with the layout path in M2.")
+	switch have := layout.Installed(); {
+	case len(have) == 0:
+		// Not an error. Most of the hundred take the native path and a
+		// machine that only ever runs those needs none of these.
+		fmt.Println("  none installed, so papers extract --path layout has nothing to run")
+	default:
+		fmt.Printf("  %-14s %s, unless --tool says otherwise\n", "the default", have[0])
+	}
 
 	if !routesOK(*offline, *deep) {
 		ok = false
@@ -133,9 +144,10 @@ var needs = map[string]string{
 // routesOK reports on the fleet: which hosts are configured, and whether any
 // of them is answering.
 //
-// A machine with no route file is fine and says so. Nothing in the toolchain
-// puts a question to a model yet, and a doctor that fails a fresh checkout
-// over a file that is not needed until M2 teaches people to ignore it.
+// A machine with no route file is fine and says so. The native and layout
+// paths ask no model anything, so a checkout that only ever runs those needs
+// no route file, and a doctor that fails over a file that is not needed
+// teaches people to ignore it.
 //
 // A machine with a route file and nothing answering is not fine. That is the
 // state a rebuild will sit in all night, and it is the whole reason to run
@@ -149,7 +161,7 @@ func routesOK(offline, deep bool) bool {
 	}
 	if len(registry.Routes) == 0 {
 		fmt.Printf("  %-14s none configured, run papers routes init to write a template\n", "routes")
-		fmt.Printf("  %-14s nothing needs one until the extraction stages arrive in M2\n", "")
+		fmt.Printf("  %-14s the native and layout paths need none, the vision path needs one\n", "")
 		return true
 	}
 	fmt.Printf("  %-14s %d, from %s\n", "routes", len(registry.Routes), path)
