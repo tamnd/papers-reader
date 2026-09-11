@@ -1,0 +1,103 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Nothing in this workflow writes anything, so nothing in it gets a write
+# token. A job that needs one asks for it by name.
+permissions:
+  contents: read
+
+# A push that lands while an older run is still going cancels it, except on
+# main, where every commit gets a result of its own.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  GO_VERSION: "1.27.1"
+
+jobs:
+  build:
+    name: build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go mod tidy is a no-op
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: coverage
+        run: go tool cover -func=coverage.out | tail -1
+      - name: build
+        run: go build -trimpath ./...
+
+  staticcheck:
+    name: staticcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+      - run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+      - run: staticcheck ./...
+
+  # The toolchain exists to build one specific corpus, so the thing worth
+  # testing is that it can read that corpus. This checks out tamnd/papers and
+  # runs the hard audit rules against it.
+  corpus:
+    name: audit the corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: papers-reader
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tamnd/papers
+          persist-credentials: false
+          path: papers
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+      - name: build
+        working-directory: papers-reader
+        run: go build -trimpath -o /usr/local/bin/papers ./cmd/papers
+      - name: list
+        env:
+          PAPERS_CORPUS: ${{ github.workspace }}/papers
+        run: papers list --count
+      - name: audit
+        env:
+          PAPERS_CORPUS: ${{ github.workspace }}/papers
+        run: papers audit --hard
