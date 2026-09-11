@@ -371,6 +371,36 @@ func TestAPaperWithNoLicenceIsRestricted(t *testing.T) {
 	}
 }
 
+// The manifest has to say which papers a person found. Half this corpus is
+// pre-web work that no API has a copy of, and somebody sat and looked for
+// each one, so a record that does not say so reads as if a service found it.
+func TestTheRecordSaysWhoFoundIt(t *testing.T) {
+	cases := map[string]string{
+		"pin":       corpus.ByPin,
+		"seed":      corpus.BySeed,
+		"arxiv":     "",
+		"crossref":  "",
+		"unpaywall": "",
+		"openalex":  "",
+		"publisher": "",
+	}
+	for rung, want := range cases {
+		res := &Result{Rung: rung}
+		rec := record(corpus.Paper{ID: "x-1970-y"}, Candidate{URL: "https://example.test/x.pdf", Source: rung}, res)
+		if rec.By != want {
+			t.Errorf("a paper accepted at the %s rung has by %q, want %q", rung, rec.By, want)
+		}
+		if rec.Chosen() != (want != "") {
+			t.Errorf("Chosen is %v for the %s rung", rec.Chosen(), rung)
+		}
+		// A pin is a location, not a licence, so it must not claim to be one
+		// a person decided. Only `by: hand` freezes a record.
+		if rec.Hand() {
+			t.Errorf("the %s rung wrote a record that no re-run will ever correct", rung)
+		}
+	}
+}
+
 func TestLicenceTable(t *testing.T) {
 	cases := map[string]corpus.Access{
 		"http://creativecommons.org/publicdomain/zero/1.0/": corpus.AccessPublicDomain,

@@ -281,6 +281,7 @@ func record(p corpus.Paper, cand Candidate, res *Result) corpus.Source {
 		Licence: name,
 		URL:     cand.URL,
 		Landing: cand.Landing,
+		By:      by(res.Rung),
 	}
 	// A site that publishes everything it hosts under one licence is a last
 	// resort and only for a paper that has nothing better. USENIX and the RFC
@@ -335,6 +336,24 @@ func record(p corpus.Paper, cand Candidate, res *Result) corpus.Source {
 		res.Notes = append(res.Notes, fmt.Sprintf("the manifest expected %s and the licence says %s", p.Expect, rec.Access))
 	}
 	return rec
+}
+
+// by turns the rung that accepted a paper into the record's by field, which
+// is how the manifest says out loud which papers a person found and which
+// ones a service did.
+//
+// Only the top two rungs are a person. A pin is somebody writing the arxiv,
+// doi or url field in papers.yaml, and a seed is the link the reading list
+// arrived with. Everything below them is an API answering a query, and the
+// absence of a by field is the honest record of that.
+func by(rung string) string {
+	switch rung {
+	case "pin":
+		return corpus.ByPin
+	case "seed":
+		return corpus.BySeed
+	}
+	return ""
 }
 
 // publishable is the paragraph the whole resolve stage exists to produce:

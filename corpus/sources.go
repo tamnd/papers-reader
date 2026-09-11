@@ -34,20 +34,40 @@ type Source struct {
 	// FiguresLicence is recorded separately because a paper can be free to
 	// read while its figures are reprinted from somewhere else.
 	FiguresLicence string `yaml:"figures_licence,omitempty"`
-	// By says who decided this record's access and licence. Empty means the
-	// resolver, and ByHand means a person. A person's judgement is never
-	// overwritten, not by a re-run and not by --again, because somebody who
-	// went and read the publisher's own terms knows more than any ladder of
-	// APIs does and should not have to do it twice.
+	// By says how much of this record came from a person rather than from the
+	// ladder of APIs. Empty means a service found the paper on its own.
 	By   string `yaml:"by,omitempty"`
 	Note string `yaml:"note,omitempty"`
 }
 
-// ByHand marks a record a person decided.
-const ByHand = "hand"
+// The values By takes, from the most human to the least.
+//
+// ByHand is a record a person decided outright, licence and all, usually
+// after reading the publisher's own terms. It is never overwritten, not by a
+// re-run and not by --again, because somebody who went and looked knows more
+// than any ladder does and should not have to do it twice.
+//
+// ByPin is a location a person put in manifests/papers.yaml, in the arxiv,
+// doi or url field. The person chose where the paper is, and the resolver
+// still works out the licence from there, so a re-run may improve the licence
+// and can never lose the location.
+//
+// BySeed is a location that came in with the reading list the corpus was
+// built from. Somebody linked it once, which is a good hint and not a
+// decision, so it is marked to make it easy to find and check.
+const (
+	ByHand = "hand"
+	ByPin  = "pin"
+	BySeed = "seed"
+)
 
 // Hand reports whether a person wrote this record's licence.
 func (s Source) Hand() bool { return s.By == ByHand }
+
+// Chosen reports whether a person chose where this paper was fetched from,
+// whether by deciding the whole record or by pinning the location. It is the
+// question "did the tools find this on their own" asked the other way round.
+func (s Source) Chosen() bool { return s.By != "" }
 
 // LoadSources reads manifests/sources.yaml.
 func LoadSources(path string) (*Sources, error) {
