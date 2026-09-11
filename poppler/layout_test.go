@@ -1,6 +1,9 @@
 package poppler
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The fixture is what pdftotext -bbox-layout writes, cut down to two pages.
 // It is written out rather than captured from a paper because every paper in
@@ -106,5 +109,23 @@ func TestABoxKnowsItsOwnShape(t *testing.T) {
 	}
 	if b.XMid() != 25 || b.YMid() != 40 {
 		t.Errorf("the centre of %+v is %g,%g", b, b.XMid(), b.YMid())
+	}
+}
+
+func TestAControlCharacterInTheTextLayerDoesNotLoseThePage(t *testing.T) {
+	// A font that maps a glyph to nothing leaves the control character in the
+	// text layer and poppler prints it into the XHTML, which no XML decoder
+	// will accept. Losing fifteen readable pages over it is the wrong answer.
+	broken := strings.Replace(bbox, ">second<", ">sec\x03ond<", 1)
+	pages, err := ParseLayout([]byte(broken))
+	if err != nil {
+		t.Fatalf("a page with a control character in it did not parse: %v", err)
+	}
+	if len(pages) == 0 {
+		t.Fatal("no pages came back")
+	}
+	got := pages[0].Lines()[1].Text()
+	if !strings.Contains(got, "second") {
+		t.Errorf("the line reads %q, want the word with the character gone", got)
 	}
 }

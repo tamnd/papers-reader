@@ -218,7 +218,7 @@ func join(lines []poppler.TextLine, cuts []float64) Paragraph {
 // hyphens is every character a line break hyphen is written with: the plain
 // one, the Unicode hyphen, the non-breaking one and the soft one that a PDF
 // producer sometimes leaves in the text layer.
-const hyphens = "-‐‑­"
+const hyphens = "-\u2010\u2011\u00ad"
 
 // hyphenated says whether a line ends in a hyphen at all, healed or not.
 func hyphenated(s string) bool {

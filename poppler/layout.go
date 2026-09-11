@@ -123,7 +123,7 @@ func Layouts(ctx context.Context, path string, first, last int) ([]Layout, error
 // itself wrote, and a page of mathematics that ends up with a stray entity in
 // a word is a page the acceptance rules will catch anyway.
 func ParseLayout(out []byte) ([]Layout, error) {
-	d := xml.NewDecoder(bytes.NewReader(out))
+	d := xml.NewDecoder(bytes.NewReader(scrub(out)))
 	d.Strict = false
 	d.AutoClose = xml.HTMLAutoClose
 	d.Entity = xml.HTMLEntity
@@ -221,4 +221,38 @@ func attrFloat(t xml.StartElement, name string) float64 {
 		}
 	}
 	return 0
+}
+
+// scrub takes out the characters XML does not allow, which pdftotext prints
+// anyway.
+//
+// A PDF whose font maps a glyph to nothing leaves the control character in
+// the text layer, and poppler passes it through into the XHTML it writes. The
+// decoder is then right to refuse the document, and refusing it would lose
+// the whole paper over a character that is not on the page: Razborov 1997 has
+// a U+0003 on page 3 and thirteen pages of readable mathematics around it.
+//
+// They are dropped rather than replaced with a space. A control character in
+// a text layer sits inside a word, and a space there would cut the word in
+// two, which is a worse reading of the page than the one with the character
+// gone.
+func scrub(b []byte) []byte {
+	clean := true
+	for _, c := range b {
+		if c < 0x20 && c != '\t' && c != '\n' && c != '\r' {
+			clean = false
+			break
+		}
+	}
+	if clean {
+		return b
+	}
+	out := make([]byte, 0, len(b))
+	for _, c := range b {
+		if c < 0x20 && c != '\t' && c != '\n' && c != '\r' {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }
