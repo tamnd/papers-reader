@@ -34,8 +34,20 @@ type Source struct {
 	// FiguresLicence is recorded separately because a paper can be free to
 	// read while its figures are reprinted from somewhere else.
 	FiguresLicence string `yaml:"figures_licence,omitempty"`
-	Note           string `yaml:"note,omitempty"`
+	// By says who decided this record's access and licence. Empty means the
+	// resolver, and ByHand means a person. A person's judgement is never
+	// overwritten, not by a re-run and not by --again, because somebody who
+	// went and read the publisher's own terms knows more than any ladder of
+	// APIs does and should not have to do it twice.
+	By   string `yaml:"by,omitempty"`
+	Note string `yaml:"note,omitempty"`
 }
+
+// ByHand marks a record a person decided.
+const ByHand = "hand"
+
+// Hand reports whether a person wrote this record's licence.
+func (s Source) Hand() bool { return s.By == ByHand }
 
 // LoadSources reads manifests/sources.yaml.
 func LoadSources(path string) (*Sources, error) {

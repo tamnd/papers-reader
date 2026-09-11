@@ -11,11 +11,13 @@ const testSources = `sources:
     fetched: 2026-09-11
     sha256: 0000000000000000000000000000000000000000000000000000000000000000
     pages: 15
-    text_layer: true
+    text_layer: native
   - id: turing-1936-computable
     access: public-domain
     licence: public domain
     url: https://example.org/turing.pdf
+    by: hand
+    note: the 1936 volume is out of copyright, checked against the publisher's own page
 `
 
 func TestSourcesAccess(t *testing.T) {
@@ -77,5 +79,33 @@ func TestSourcesEmpty(t *testing.T) {
 	}
 	if s.Access("vaswani-2017-attention") != AccessUnknown {
 		t.Error("an empty manifest granted access")
+	}
+}
+
+// A record a person decided says so, and that is the only thing standing
+// between somebody's afternoon of reading a publisher's terms and a re-run
+// that throws it away.
+func TestSourcesByHand(t *testing.T) {
+	c := testCorpus(t, threePapers, "", testSources)
+	s, err := c.LoadSources()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hand, ok := s.ByID("turing-1936-computable")
+	if !ok {
+		t.Fatal("the hand written record is not there")
+	}
+	if !hand.Hand() {
+		t.Errorf("by is %q, so nothing will protect this record", hand.By)
+	}
+	tool, ok := s.ByID("vaswani-2017-attention")
+	if !ok {
+		t.Fatal("the resolved record is not there")
+	}
+	if tool.Hand() {
+		t.Error("a record the resolver wrote claims a person wrote it")
+	}
+	if tool.TextLayer != "native" {
+		t.Errorf("the text layer is %q, and it is a layer name and not a flag", tool.TextLayer)
 	}
 }

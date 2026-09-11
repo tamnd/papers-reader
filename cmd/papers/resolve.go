@@ -147,11 +147,17 @@ func selectPapers(manifest *corpus.Papers, recorded *corpus.Sources, ids, field 
 		case field != "" && string(p.Field) != field:
 			continue
 		}
-		if !again {
+		if rec, ok := recorded.ByID(p.ID); ok {
+			// A record a person decided is left alone whatever the flags say.
+			// --again means ask the services again, not throw away somebody's
+			// afternoon of reading a publisher's terms.
+			if rec.Hand() {
+				continue
+			}
 			// A paper with a record has been resolved. Doing it again costs a
 			// request to somebody else's free service for an answer already
 			// on disk, so it takes --again to ask for it.
-			if rec, ok := recorded.ByID(p.ID); ok && rec.URL != "" {
+			if !again && rec.URL != "" {
 				continue
 			}
 		}
@@ -196,6 +202,13 @@ func mergeSources(c *corpus.Corpus, recorded *corpus.Sources, results []*sources
 		}
 		rec := res.Record
 		if old, ok := byID[rec.ID]; ok {
+			// Twice, because this is the one thing in the toolchain that can
+			// quietly undo a person's work. selectPapers does not offer a
+			// hand record to the ladder in the first place, and if one gets
+			// here anyway it is not written over.
+			if old.Hand() {
+				continue
+			}
 			// Keep everything the fetcher and the classifier wrote, because
 			// this command did not learn any of it and must not erase it.
 			rec.Fetched, rec.SHA256, rec.Pages = old.Fetched, old.SHA256, old.Pages

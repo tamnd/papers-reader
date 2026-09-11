@@ -109,6 +109,21 @@ func TestGetRefusesWhatIsNotAPaper(t *testing.T) {
 	}
 }
 
+// The floor is there to catch error pages, not short papers. RFC 896, which
+// is Nagle's congestion control paper, is a complete nine page PDF in 16,949
+// bytes, because it is text with no images in it. The old twenty kilobyte
+// floor threw it away, so this is the case that pins the new one down.
+func TestAShortPaperIsStillAPaper(t *testing.T) {
+	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Write(pdf(16949))
+	})
+	dest := filepath.Join(t.TempDir(), "nagle-1984-congestion.pdf")
+	if _, err := fetcher(t).Get(context.Background(), srv.URL, dest); err != nil {
+		t.Fatalf("a complete sixteen kilobyte paper was refused: %v", err)
+	}
+}
+
 // Content-Type is the least trustworthy thing in the response, in both
 // directions. A PDF served as octet-stream is still a PDF.
 func TestTheBytesDecideAndNotTheHeader(t *testing.T) {
@@ -159,7 +174,10 @@ func TestGetOnlyTalksHTTP(t *testing.T) {
 	}
 }
 
-func TestTheLicenceGate(t *testing.T) {
+// The download gate asks one question: is there somewhere to fetch from.
+// The copy lands in pdf/, which is never committed and never served, so a
+// restricted paper may be read on this machine like any other.
+func TestTheDownloadGate(t *testing.T) {
 	ok := corpus.Source{ID: "a", Access: corpus.AccessOpen, Licence: "CC BY 4.0", URL: "https://example.test/a.pdf"}
 	cases := []struct {
 		name string
@@ -169,10 +187,10 @@ func TestTheLicenceGate(t *testing.T) {
 		{"open with a licence", &ok, true},
 		{"public domain", &corpus.Source{ID: "a", Access: corpus.AccessPublicDomain, Licence: "public domain", URL: "u"}, true},
 		{"permissive", &corpus.Source{ID: "a", Access: corpus.AccessPermissive, Licence: "arXiv non-exclusive", URL: "u"}, true},
-		{"restricted", &corpus.Source{ID: "a", Access: corpus.AccessRestricted, Licence: "all rights reserved", URL: "u"}, false},
-		{"unknown", &corpus.Source{ID: "a", Access: corpus.AccessUnknown, URL: "u"}, false},
-		{"open with no licence", &corpus.Source{ID: "a", Access: corpus.AccessOpen, URL: "u"}, false},
-		{"open with no location", &corpus.Source{ID: "a", Access: corpus.AccessOpen, Licence: "CC BY 4.0"}, false},
+		{"restricted", &corpus.Source{ID: "a", Access: corpus.AccessRestricted, URL: "u"}, true},
+		{"open with no licence recorded", &corpus.Source{ID: "a", Access: corpus.AccessOpen, URL: "u"}, true},
+		{"unknown, which means nothing was found", &corpus.Source{ID: "a", Access: corpus.AccessUnknown, URL: "u"}, false},
+		{"no location", &corpus.Source{ID: "a", Access: corpus.AccessOpen, Licence: "CC BY 4.0"}, false},
 		{"no record at all", nil, false},
 		{"a class nobody has heard of", &corpus.Source{ID: "a", Access: corpus.Access("free-ish"), URL: "u"}, false},
 	}
@@ -181,6 +199,37 @@ func TestTheLicenceGate(t *testing.T) {
 			got, why := May(tc.rec)
 			if got != tc.want {
 				t.Errorf("May is %v, want %v, because %q", got, tc.want, why)
+			}
+			if !got && why == "" {
+				t.Error("the gate said no and did not say why")
+			}
+		})
+	}
+}
+
+// The licence gate has not moved. What may be downloaded and what may be
+// published are two different questions, and this is the one that decides
+// what goes into a public repository.
+func TestTheLicenceGate(t *testing.T) {
+	cases := []struct {
+		name string
+		rec  *corpus.Source
+		want bool
+	}{
+		{"open with a licence", &corpus.Source{ID: "a", Access: corpus.AccessOpen, Licence: "CC BY 4.0", URL: "u"}, true},
+		{"public domain", &corpus.Source{ID: "a", Access: corpus.AccessPublicDomain, Licence: "public domain", URL: "u"}, true},
+		{"permissive", &corpus.Source{ID: "a", Access: corpus.AccessPermissive, Licence: "arXiv non-exclusive", URL: "u"}, true},
+		{"restricted, even with the file on disk", &corpus.Source{ID: "a", Access: corpus.AccessRestricted, URL: "u", SHA256: "abc"}, false},
+		{"unknown", &corpus.Source{ID: "a", Access: corpus.AccessUnknown, URL: "u"}, false},
+		{"open with no licence", &corpus.Source{ID: "a", Access: corpus.AccessOpen, URL: "u"}, false},
+		{"no record at all", nil, false},
+		{"a class nobody has heard of", &corpus.Source{ID: "a", Access: corpus.Access("free-ish"), URL: "u"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, why := Publish(tc.rec)
+			if got != tc.want {
+				t.Errorf("Publish is %v, want %v, because %q", got, tc.want, why)
 			}
 			if !got && why == "" {
 				t.Error("the gate said no and did not say why")

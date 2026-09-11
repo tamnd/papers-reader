@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,10 +26,17 @@ const Magic = "%PDF-"
 
 // Floor is the smallest thing worth believing is a paper.
 //
-// Twenty kilobytes is generous. The shortest real paper in the corpus is a
-// couple of hundred. What lands under the floor is an error page that happens
-// to be a valid PDF, which publishers do produce, and a truncated download.
-const Floor = 20 << 10
+// What lands under the floor is an error page that happens to be a valid PDF,
+// which publishers do produce, and a truncated download.
+//
+// This was twenty kilobytes, on the reasoning that the shortest real paper in
+// the corpus is a couple of hundred. That reasoning was drawn from scans, and
+// it is wrong for anything born digital with no images in it. RFC 896, which
+// is Nagle's congestion control paper, is a complete nine page PDF in 16,949
+// bytes, and the old floor threw it away. Eight kilobytes still catches every
+// publisher error page we have seen, which run from a few hundred bytes to
+// about five thousand.
+const Floor = 8 << 10
 
 // Ceiling is the largest download that will be accepted. A paper that is
 // bigger than this is a book, a dataset or a mistake, and in all three cases
@@ -54,11 +62,36 @@ type Fetcher struct {
 }
 
 // New returns a fetcher with the manners on.
+// Timeouts. A run over the whole corpus is a hundred requests and some of
+// the hosts will not answer at all, so the question is not how patient to be
+// with one paper but how long the other ninety nine should wait for it.
+//
+// Headers is the one that matters. A publisher that is going to serve the
+// file starts doing so quickly; a publisher that is stalling a program it
+// does not want stalls from the first byte. Whole is generous after that,
+// because a 30 megabyte proceedings scan over a slow link is a real thing.
+//
+// Whole was two minutes and that was too tight. A first run over the corpus
+// lost six papers to it, all of them university course pages serving a large
+// scan at a few tens of kilobytes a second, which is slow but not broken.
+// Five minutes loses none of them and still gives up on a host that has
+// stopped sending.
+const (
+	Headers = 20 * time.Second
+	Whole   = 5 * time.Minute
+)
+
 func New(version string) *Fetcher {
 	return &Fetcher{
-		// Long, because some publishers take their time, and bounded, because
-		// a connection that hangs should not hold up the other ninety nine.
-		HTTP:      &http.Client{Timeout: 5 * time.Minute},
+		HTTP: &http.Client{
+			Timeout: Whole,
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: Headers,
+			},
+		},
 		UserAgent: polite.UserAgent(version),
 		Gate:      &polite.Gate{Interval: polite.MinInterval},
 		Floor:     Floor,

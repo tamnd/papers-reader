@@ -20,20 +20,22 @@ func runFetch(args []string) error {
 	root := fs.String("corpus", "", "path to a checkout of tamnd/papers")
 	ids := fs.String("id", "", "fetch these papers only, comma separated")
 	field := fs.String("field", "", "fetch one field only")
-	all := fs.Bool("all", false, "fetch every paper the licence allows and that is not here yet")
+	all := fs.Bool("all", false, "fetch every paper that resolved and is not here yet")
 	again := fs.Bool("again", false, "download papers that are already on disk too")
 	limit := fs.Int("limit", 0, "stop after this many downloads")
 	dry := fs.Bool("dry-run", false, "print what would be fetched and download nothing")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `usage: papers fetch [flags]
 
-Downloads the PDFs that manifests/sources.yaml says may be downloaded, into
-pdf/, which is gitignored and never committed under any licence.
+Downloads every paper that resolved to a location, into pdf/, which is
+gitignored and never committed under any licence and never served anywhere.
 
-Only public-domain, open and permissive papers are fetched. Restricted papers
-are not: they publish front matter and a short abstract, both of which come
-from the metadata, so there is no reason to hold the file. Unknown papers are
-not fetched either, because unknown publishes nothing.
+Downloading and publishing are different questions. A PDF on the open web
+may be read, and that is what the extraction stages do with it. What may be
+published out of it is decided later by the licence: a restricted paper is
+read and measured like any other and still publishes nothing but its front
+matter and a short abstract. Only unknown papers are skipped, and only
+because unknown means nothing was found, so there is nowhere to fetch from.
 
 What comes back has to be a real PDF. It has to begin %s, be over %d bytes
 and under %d, and arrive with a 200. Anything else leaves no file behind,
@@ -83,7 +85,7 @@ something a person should look at.
 	for _, p := range todo {
 		rec, _ := recorded.ByID(p.ID)
 		if ok, why := fetch.May(rec); !ok {
-			fmt.Printf("  %-34s held back, it %s\n", p.ID, why)
+			fmt.Printf("  %-34s not fetched, it %s\n", p.ID, why)
 			held++
 			continue
 		}
@@ -131,7 +133,7 @@ something a person should look at.
 		}
 		fmt.Println("wrote", c.SourcesManifest())
 	}
-	fmt.Printf("%d papers, %d fetched, %d already here, %d held back by the licence, %d refused as not a paper\n",
+	fmt.Printf("%d papers, %d fetched, %d already here, %d with nowhere to fetch from, %d refused as not a paper\n",
 		len(todo), got, already, held, refused)
 	return nil
 }
