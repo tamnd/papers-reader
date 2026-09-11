@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/tamnd/papers-reader/polite"
 	"time"
 )
 
@@ -16,7 +18,7 @@ func testClient(t *testing.T, srv *httptest.Server) *Client {
 	t.Helper()
 	c := NewClient("test", t.TempDir())
 	c.HTTP = srv.Client()
-	c.Interval = 0
+	c.Gate.Interval = 0
 	return c
 }
 
@@ -124,7 +126,7 @@ func TestTheClientSaysWhoItIs(t *testing.T) {
 	if _, err := c.Get(context.Background(), srv.URL+"/x"); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"papers-reader/test", "github.com/tamnd/papers", Mailto} {
+	for _, want := range []string{"papers-reader/test", "github.com/tamnd/papers", polite.Mailto} {
 		if !strings.Contains(agent, want) {
 			t.Errorf("the user agent %q does not contain %q", agent, want)
 		}
@@ -134,7 +136,7 @@ func TestTheClientSaysWhoItIs(t *testing.T) {
 func TestTheRateLimitHolds(t *testing.T) {
 	srv, _ := serve(t, map[string]string{"/a": "x", "/b": "x"})
 	c := testClient(t, srv)
-	c.Interval = 40 * time.Millisecond
+	c.Gate.Interval = 40 * time.Millisecond
 
 	start := time.Now()
 	for _, p := range []string{"/a", "/b"} {
@@ -142,8 +144,8 @@ func TestTheRateLimitHolds(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if d := time.Since(start); d < c.Interval {
-		t.Errorf("two requests to one host took %v, which is under the %v floor", d, c.Interval)
+	if d := time.Since(start); d < c.Gate.Interval {
+		t.Errorf("two requests to one host took %v, which is under the %v floor", d, c.Gate.Interval)
 	}
 }
 

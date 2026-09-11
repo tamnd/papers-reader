@@ -6,14 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	papers "github.com/tamnd/papers-reader"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/sources"
-
-	"gopkg.in/yaml.v3"
 )
 
 func runResolve(args []string) error {
@@ -190,14 +187,9 @@ func skipped(only string) map[string]bool {
 // losing the ones already there.
 //
 // A record that was edited by hand wins over one this run produced, which is
-// the same rule as the top of the ladder and for the same reason. The file is
-// rewritten sorted by id so that two runs in different orders produce the
-// same diff.
+// the same rule as the top of the ladder and for the same reason.
 func mergeSources(c *corpus.Corpus, recorded *corpus.Sources, results []*sources.Result) error {
-	byID := map[string]corpus.Source{}
-	for _, rec := range recorded.Sources {
-		byID[rec.ID] = rec
-	}
+	byID := index(recorded)
 	for _, res := range results {
 		if !res.OK() {
 			continue
@@ -214,23 +206,5 @@ func mergeSources(c *corpus.Corpus, recorded *corpus.Sources, results []*sources
 		}
 		byID[rec.ID] = rec
 	}
-
-	out := corpus.Sources{Sources: make([]corpus.Source, 0, len(byID))}
-	for _, rec := range byID {
-		out.Sources = append(out.Sources, rec)
-	}
-	sort.Slice(out.Sources, func(i, j int) bool { return out.Sources[i].ID < out.Sources[j].ID })
-
-	var b strings.Builder
-	b.WriteString("# Where each paper was found and what may be published from it.\n")
-	b.WriteString("#\n")
-	b.WriteString("# Written by `papers resolve`. Hand edits survive a re-run, so a record corrected by a person stays corrected.\n")
-	b.WriteString("# A paper with no entry here, or with access: unknown, publishes nothing at all.\n\n")
-
-	enc, err := yaml.Marshal(out)
-	if err != nil {
-		return err
-	}
-	b.Write(enc)
-	return os.WriteFile(c.SourcesManifest(), []byte(b.String()), 0o644)
+	return writeSources(c, byID)
 }

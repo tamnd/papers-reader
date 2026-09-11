@@ -5,5 +5,8 @@
 // idempotent: a file whose hash already matches the record is not downloaded
 // again.
 //
-// Arrives in milestone M1.
+// The two halves are deliberately separate. May is the licence gate and
+// decides whether a paper may be downloaded at all, and Fetcher.Get is the
+// download and decides whether what came back is a paper. Neither of them
+// knows anything about the other, and both can be read on their own.
 package fetch

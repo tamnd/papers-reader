@@ -11,21 +11,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
+
+	"github.com/tamnd/papers-reader/polite"
 )
-
-// Mailto is the address sent to Crossref, Unpaywall and OpenAlex.
-//
-// It is not decoration. Those three run a polite pool and a shared pool, and
-// a request that identifies itself lands in the polite one. A resolver that
-// does not say who it is gets the rate limit it deserves.
-const Mailto = "tamnd87@gmail.com"
-
-// MinInterval is the floor between two requests to the same host. One second
-// is what the public APIs here ask for, and asking for a hundred papers at
-// once from a free service is how a free service stops being free.
-const MinInterval = time.Second
 
 // CacheFor is how long a cached response is trusted. Thirty days, because
 // where a paper lives does not change often and re-running the resolver over
@@ -41,9 +30,8 @@ type Client struct {
 	HTTP      *http.Client
 	UserAgent string
 	Mailto    string
-	// Interval is the floor between two requests to the same host. Tests set
-	// it to zero.
-	Interval time.Duration
+	// Gate is the per host rate limit. Tests turn it off.
+	Gate *polite.Gate
 	// CacheDir is where responses are kept. An empty CacheDir turns the cache
 	// off, which is what a test wants and what a person debugging a rule asks
 	// for with --no-cache.
@@ -54,9 +42,6 @@ type Client struct {
 	// so that the tests can point the whole ladder at one httptest server and
 	// `go test ./...` needs no network. Nothing else should ever set it.
 	Base Endpoints
-
-	mu   sync.Mutex
-	last map[string]time.Time
 }
 
 // Endpoints is the base URL of each service on the ladder.
@@ -77,20 +62,17 @@ var DefaultEndpoints = Endpoints{
 	OpenAlex:  "https://api.openalex.org/works",
 }
 
-// NewClient returns a client that behaves itself. Version goes in the user
-// agent so that a service which needs to block one build of this tool can do
-// so without blocking every build of it.
+// NewClient returns a client that behaves itself.
 func NewClient(version, cacheDir string) *Client {
 	return &Client{
 		HTTP:      &http.Client{Timeout: 30 * time.Second},
-		UserAgent: fmt.Sprintf("papers-reader/%s (+https://github.com/tamnd/papers; %s)", version, Mailto),
-		Mailto:    Mailto,
-		Interval:  MinInterval,
+		UserAgent: polite.UserAgent(version),
+		Mailto:    polite.Mailto,
+		Gate:      &polite.Gate{Interval: polite.MinInterval},
 		CacheDir:  cacheDir,
 		CacheFor:  CacheFor,
 		Now:       time.Now,
 		Base:      DefaultEndpoints,
-		last:      map[string]time.Time{},
 	}
 }
 
@@ -119,7 +101,7 @@ func (c *Client) Get(ctx context.Context, raw string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.wait(u.Host)
+	c.Gate.Wait(u.Host)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
 	if err != nil {
@@ -164,28 +146,6 @@ func (c *Client) now() time.Time {
 		return c.Now()
 	}
 	return time.Now()
-}
-
-// wait holds the caller until this host may be asked again.
-func (c *Client) wait(host string) {
-	if c.Interval <= 0 {
-		return
-	}
-	c.mu.Lock()
-	if c.last == nil {
-		c.last = map[string]time.Time{}
-	}
-	next := c.last[host].Add(c.Interval)
-	now := c.now()
-	c.last[host] = now
-	if next.After(now) {
-		c.last[host] = next
-	}
-	c.mu.Unlock()
-
-	if d := next.Sub(now); d > 0 {
-		time.Sleep(d)
-	}
 }
 
 // cachePath is where a URL's response lives. The name is a hash because a URL
