@@ -54,8 +54,11 @@ type Result struct {
 // the first section, with the front kind, and the writer files it as
 // 00_front.md.
 func Split(d *assemble.Document) *Result {
-	texts := make([]string, len(d.Paragraphs))
-	for i, p := range d.Paragraphs {
+	// Unrun first, because everything below counts paragraphs and a heading
+	// that is still inside one is a heading nothing here can find.
+	paragraphs := Unrun(d.Paragraphs)
+	texts := make([]string, len(paragraphs))
+	for i, p := range paragraphs {
 		texts[i] = p.Text
 	}
 	scheme, headings := Headings(texts)
@@ -90,7 +93,7 @@ func Split(d *assemble.Document) *Result {
 	}
 	ordinal := 0
 	for i, start := range starts {
-		end := len(d.Paragraphs)
+		end := len(paragraphs)
 		if i+1 < len(starts) {
 			end = starts[i+1]
 		}
@@ -101,7 +104,7 @@ func Split(d *assemble.Document) *Result {
 			start++
 		}
 		s.Ordinal = ordinal
-		s.Body, s.First, s.Last = body(d.Paragraphs, start, end, sub)
+		s.Body, s.First, s.Last = body(paragraphs, start, end, sub)
 		r.Sections = append(r.Sections, s)
 	}
 	if len(r.Sections) == 1 {
