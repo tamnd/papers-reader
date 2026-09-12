@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -10,8 +11,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/tamnd/llm"
+
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/glossary"
+	"github.com/tamnd/papers-reader/work"
 )
 
 func runGlossary(args []string) error {
@@ -24,22 +28,22 @@ func runGlossary(args []string) error {
 		return runGlossaryExtract(args[1:])
 	case "show":
 		return runGlossaryShow(args[1:])
+	case "translate":
+		return runGlossaryTranslate(args[1:])
 	case "-h", "--help", "help":
 		glossaryUsage(os.Stdout)
 		return nil
-	case "translate":
-		return fmt.Errorf("glossary translate arrives with the translate command")
 	}
 	glossaryUsage(os.Stderr)
 	return fmt.Errorf("there is no glossary %s", args[0])
 }
 
 func glossaryUsage(w *os.File) {
-	fmt.Fprint(w, `usage: papers glossary <extract|show> [flags]
+	fmt.Fprint(w, `usage: papers glossary <extract|translate|show> [flags]
 
     extract    propose terms for the glossary from the English corpus
+    translate  ask a model for the renderings the glossary is missing
     show       print the glossary and what it covers
-    translate  ask for the renderings of the approved terms (arrives with translate)
 
 Run papers glossary extract -h for the flags.
 `)
@@ -142,6 +146,141 @@ fields, and moves those into manifests/glossary.yaml.
 	}
 	fmt.Println("wrote", out)
 	return nil
+}
+
+func runGlossaryTranslate(args []string) error {
+	fs := flag.NewFlagSet("glossary translate", flag.ContinueOnError)
+	root := fs.String("corpus", "", "path to a checkout of tamnd/papers")
+	langs := fs.String("lang", "", "which languages to fill, comma separated, or every one of them")
+	routes := fs.String("routes", "", "path to a routing table, instead of the one in the config directory")
+	size := fs.Int("batch", glossary.Batch, "how many terms go up in one question")
+	dry := fs.Bool("dry", false, "say what would be asked and ask nothing")
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `usage: papers glossary translate [flags]
+
+Asks a model for the renderings the glossary is missing and writes them into
+manifests/glossary.yaml.
+
+What comes back is a proposal. It is written into the file so that a reviewer
+can read it in place next to the terms it has to be consistent with, and
+every entry in the file is one somebody should have looked at before a paper
+is translated against it.
+
+A rendering that is already there is never asked about and never overwritten,
+so this is safe to run again after a review. A term the model does not answer
+for is left empty and named on the terminal.
+
+`)
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	c, err := openCorpus(*root)
+	if err != nil {
+		return err
+	}
+	want, err := languages(*langs)
+	if err != nil {
+		return err
+	}
+	path := c.GlossaryManifest()
+	g, err := glossary.Load(path)
+	if err != nil {
+		return err
+	}
+	if len(g.Terms) == 0 {
+		return fmt.Errorf("%s has no terms in it: review glossary-candidates.yaml and put the survivors there first", path)
+	}
+
+	if *dry {
+		for _, l := range want {
+			fmt.Printf("%s: %d of %d terms have no rendering\n", l.Name(), len(g.Missing(l)), len(g.Terms))
+		}
+		fmt.Println("dry run, nothing asked and nothing written")
+		return nil
+	}
+
+	// The fleet is built once for every language, and it is built before the
+	// first question rather than lazily, because there is nothing else this
+	// command does: a missing routing table should stop it here and not after
+	// a language and a half.
+	asker, from, err := work.Fleet(work.Glossary, *routes, false, func(format string, args ...any) {
+		fmt.Printf("    "+format+"\n", args...)
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("the terms go to the hosts in the %s routing table\n", from)
+
+	r := &glossary.Renderer{
+		Ask: func(ctx context.Context, target string, req llm.Request) (glossary.Reply, error) {
+			answer, err := asker.Do(ctx, target, req)
+			return glossary.Reply{Response: answer.Response, Model: answer.Model}, err
+		},
+		Size: *size,
+		Logf: func(format string, args ...any) { fmt.Printf("    "+format+"\n", args...) },
+	}
+
+	ctx := context.Background()
+	total := 0
+	for _, l := range want {
+		before := len(g.Missing(l))
+		if before == 0 {
+			fmt.Printf("%s: nothing missing\n", l.Name())
+			continue
+		}
+		filled, err := r.Fill(ctx, g, l)
+		total += filled
+		if err != nil {
+			// Written out anyway. The questions that were answered before the
+			// failure cost the same quota as the ones that were not, and
+			// throwing them away means paying for them twice.
+			if total > 0 {
+				g.Version++
+				if werr := g.Save(path); werr != nil {
+					return werr
+				}
+				fmt.Printf("%d renderings written before the run stopped\n", total)
+			}
+			return err
+		}
+		fmt.Printf("%s: %d of %d filled\n", l.Name(), filled, before)
+	}
+	if total == 0 {
+		fmt.Println("nothing to write")
+		return nil
+	}
+	g.Version++
+	if err := g.Save(path); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %s at version %d\n", path, g.Version)
+	fmt.Println("read what it said before anything is translated against it")
+	return nil
+}
+
+// languages reads the -lang flag: a list of codes, or every translation when
+// it is empty.
+func languages(s string) ([]corpus.Lang, error) {
+	if strings.TrimSpace(s) == "" {
+		var out []corpus.Lang
+		for _, l := range corpus.Langs {
+			if l.Translated() {
+				out = append(out, l)
+			}
+		}
+		return out, nil
+	}
+	var out []corpus.Lang
+	for _, part := range strings.Split(s, ",") {
+		l := corpus.Lang(strings.TrimSpace(part))
+		if !l.Translated() {
+			return nil, fmt.Errorf("%q is not a language this corpus translates into: vi, zh or ja", part)
+		}
+		out = append(out, l)
+	}
+	return out, nil
 }
 
 func runGlossaryShow(args []string) error {

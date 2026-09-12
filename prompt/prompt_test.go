@@ -1,8 +1,11 @@
 package prompt
 
 import (
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/tamnd/papers-reader/corpus"
 )
 
 // Every prompt in the directory is readable and hashes to something. A file
@@ -40,16 +43,48 @@ func TestTheReadingPromptIsNamedCorrectly(t *testing.T) {
 
 // A prompt with a placeholder nobody fills is a prompt sent to a model with
 // {{SOMETHING}} still in it, and the model reads that as an instruction it
-// cannot follow. None of these take a variable, so none of them should have
-// one.
-func TestNoPromptHasAnUnfilledPlaceholder(t *testing.T) {
+// cannot follow. Render refuses that, so the way it actually goes wrong is a
+// caller filling LANGUAGE while the file asks for LANG, and a run that stops
+// at the first ask with no clue which end the typo is at.
+//
+// So the variables are written down here as well as in the file, and the two
+// have to agree. A prompt not in the table takes none, which is the common
+// case and the one to keep common.
+func TestEveryPlaceholderIsOneSomebodyFills(t *testing.T) {
+	want := map[string][]string{
+		GlossaryTerm: {"LANGUAGE", "RULES", "TERMS"},
+	}
 	all, err := All()
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range all {
-		if vars := p.Vars(); len(vars) > 0 {
-			t.Errorf("%s wants %v and nothing fills them", p.Name, vars)
+		got := p.Vars()
+		slices.Sort(got)
+		if !slices.Equal(got, want[p.Name]) {
+			t.Errorf("%s wants %v and this package fills %v", p.Name, got, want[p.Name])
+		}
+	}
+}
+
+// The language rules are looked up by building a file name out of a language
+// code, so a language with no file is a missing file rather than a compile
+// error, and the way to find out is to ask for all of them.
+func TestEveryLanguageTheCorpusPublishesHasItsRules(t *testing.T) {
+	for _, l := range corpus.Langs {
+		p, err := Lang(l)
+		if l == corpus.EN {
+			if err == nil {
+				t.Error("English has language rules, and nothing is translated into English here")
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s has no rules: %v", l, err)
+			continue
+		}
+		if len(p.Text) < 200 {
+			t.Errorf("the rules for %s are %d characters, which is not rules", l, len(p.Text))
 		}
 	}
 }

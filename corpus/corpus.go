@@ -162,3 +162,20 @@ func (l Lang) Valid() bool {
 
 // Translated reports whether l is one of the three translations.
 func (l Lang) Translated() bool { return l.Valid() && l != EN }
+
+// Name is the language in English, for a prompt and for a line on a
+// terminal. An unknown code is returned as it came, because a message about
+// a code nobody recognises should say which code.
+func (l Lang) Name() string {
+	switch l {
+	case EN:
+		return "English"
+	case VI:
+		return "Vietnamese"
+	case ZH:
+		return "Chinese"
+	case JA:
+		return "Japanese"
+	}
+	return string(l)
+}

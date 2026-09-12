@@ -89,6 +89,62 @@ func Load(path string) (*Glossary, error) {
 	return &g, nil
 }
 
+// Save writes the glossary back, keeping the comment block at the top of the
+// file and sorting the terms.
+//
+// The header is prose somebody wrote about how to use the file, and a program
+// that dropped it would be deleting the instructions for itself. It is
+// carried across verbatim rather than regenerated, because it is not this
+// program's text to write. A comment further down the file, between two
+// terms, is not carried across: there is nowhere to hang it once the terms
+// are sorted, and a note that has to survive belongs in a term's note field
+// where the prompt can also see it.
+func (g *Glossary) Save(path string) error {
+	head, err := header(path)
+	if err != nil {
+		return err
+	}
+	var b strings.Builder
+	b.WriteString(head)
+	enc := yaml.NewEncoder(&b)
+	// Two spaces, because that is what the file is written in by hand and a
+	// diff where every line moved is a diff nobody reads.
+	enc.SetIndent(2)
+	out := *g
+	out.Terms = g.Sorted()
+	if err := enc.Encode(out); err != nil {
+		return err
+	}
+	if err := enc.Close(); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// header is the comment block at the top of the file, up to the first line
+// that is neither blank nor a comment.
+func header(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var out []string
+	for _, line := range strings.Split(string(b), "\n") {
+		t := strings.TrimSpace(line)
+		if t != "" && !strings.HasPrefix(t, "#") {
+			break
+		}
+		out = append(out, line)
+	}
+	if len(out) == 0 {
+		return "", nil
+	}
+	return strings.Join(out, "\n") + "\n", nil
+}
+
 // For is the terms offered to a paper in one field: the global terms and
 // that field's, longest first.
 //

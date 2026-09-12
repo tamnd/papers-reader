@@ -15,12 +15,15 @@ package prompt
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"path"
 	"slices"
 	"strings"
 
 	llmprompt "github.com/tamnd/llm/prompt"
+
+	"github.com/tamnd/papers-reader/corpus"
 )
 
 //go:embed *.md
@@ -49,8 +52,31 @@ func All() ([]Prompt, error) { return set.All() }
 // prompt_sha256.
 func SHA256(text string) string { return llmprompt.SHA256(text) }
 
-// OCR is the prompt for reading a picture of a page of a paper.
-const OCR = "ocr_paper"
+// The prompts this toolchain sends, by name.
+const (
+	// OCR is the prompt for reading a picture of a page of a paper.
+	OCR = "ocr_paper"
+	// GlossaryTerm asks for the standing rendering of a batch of terms.
+	GlossaryTerm = "glossary_term"
+)
+
+// Lang is the rules for writing one language: its terminology, its
+// punctuation and its register.
+//
+// It is a prompt of its own rather than a paragraph inside each prompt that
+// needs it, because the glossary and the body have to be written in the same
+// Vietnamese. Two copies of these rules would drift apart, and the drift
+// would show up as a corpus whose glossary and whose prose disagree, which is
+// the one thing a glossary exists to prevent.
+//
+// English has no file. Nothing is translated into English here: the English
+// is what came off the page.
+func Lang(l corpus.Lang) (Prompt, error) {
+	if l == "" || l == corpus.EN {
+		return Prompt{}, fmt.Errorf("there are no language rules for %q: the English is what came off the page", l)
+	}
+	return Get("lang_" + string(l))
+}
 
 //go:embed notes
 var notes embed.FS
