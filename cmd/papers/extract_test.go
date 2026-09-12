@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"sort"
 	"strings"
 	"testing"
@@ -142,28 +141,6 @@ func TestJudgingAPaperOfOnePageIsQuiet(t *testing.T) {
 	checker := &extract.Checker{Model: true}
 	if faults := judge(checker, []int{1}, map[int]string{1: page(60)}); len(faults) > 0 {
 		t.Errorf("a paper of one page was refused: %v", faults)
-	}
-}
-
-func TestATextLayerIsReadOncePerPage(t *testing.T) {
-	var reads int
-	layer := keepLayer(func(page int) (string, error) {
-		reads++
-		if page == 2 {
-			return "", errors.New("pdftotext found nothing on this page")
-		}
-		return "the words this page was typeset from", nil
-	})
-	for range 3 {
-		if body, ok := layer(1); !ok || body == "" {
-			t.Errorf("page 1 came back %q %v, want its text layer", body, ok)
-		}
-		if _, ok := layer(2); ok {
-			t.Error("a page pdftotext could not read came back as having a layer")
-		}
-	}
-	if reads != 2 {
-		t.Errorf("the layer was read %d times over two pages asked for three times each, want 2", reads)
 	}
 }
 

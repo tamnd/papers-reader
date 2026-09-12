@@ -416,33 +416,46 @@ func judge(checker *extract.Checker, pages []int, text map[int]string) map[int][
 	return out
 }
 
-// pageLayer is the text layer of one page of a file, for rule A9 outside a
-// live extraction run.
+// pageLayer is what rule A9 compares a reading against: the page's own text
+// layer with the labels inside its figures and the running heads taken out,
+// which is extract.Prose and the reasons are written there.
+//
+// The whole file is read in one go the first time a page is asked for. It
+// has to be: a line is a running head because it repeats, and no single page
+// can tell that. Reading it once is also cheaper than reading it a page at a
+// time, which is what this used to do, and it gives every caller the same
+// answer for a page whichever goroutine asks.
 func pageLayer(ctx context.Context, file string) func(int) (string, bool) {
-	return keepLayer(func(page int) (string, error) {
-		return poppler.Page(ctx, file, page, page)
-	})
+	var (
+		once  sync.Once
+		prose map[int]string
+	)
+	return func(page int) (string, bool) {
+		once.Do(func() { prose = proseOf(ctx, file) })
+		text := prose[page]
+		return text, text != ""
+	}
 }
 
-// keepLayer reads a page's text layer once and keeps it.
-//
-// Reading one is a pdftotext process, and judge asks for every page twice, so
-// without this a recheck of the corpus would fork twice per page for an answer
-// that cannot have changed in between. A page pdftotext could not read is kept
-// as absent rather than as empty, so the second ask does not retry it either.
-func keepLayer(read func(int) (string, error)) func(int) (string, bool) {
-	seen := map[int]string{}
-	return func(page int) (string, bool) {
-		body, ok := seen[page]
-		if !ok {
-			var err error
-			if body, err = read(page); err != nil {
-				body = ""
-			}
-			seen[page] = body
-		}
-		return body, body != ""
+// proseOf is every page of a file as rule A9 wants to read it. A file
+// pdftotext will not open is no pages, which turns the rule off rather than
+// refusing anything: everything else about a page has been checked by the
+// time this is asked.
+func proseOf(ctx context.Context, file string) map[int]string {
+	doc, err := poppler.Info(ctx, file)
+	if err != nil {
+		return nil
 	}
+	pages, err := poppler.Layouts(ctx, file, 1, doc.Pages)
+	if err != nil {
+		return nil
+	}
+	furniture := extract.FindFurniture(pages)
+	out := make(map[int]string, len(pages))
+	for _, p := range pages {
+		out[p.Number] = extract.Prose(p, furniture)
+	}
+	return out
 }
 
 // retidyPages runs the tidier over the pages that are already on disk.
@@ -632,30 +645,13 @@ func (e *extraction) path() (classify.Path, error) {
 // one, so comparing a good reading against it reports the good reading as
 // wrong, and those are precisely the papers the vision path exists for. A
 // file with no layer at all has nothing to say either way.
-//
-// pdftotext is asked per page and the answer is kept, because the rule runs
-// again on every retry of the same page and a paper is read once per run.
 func (e *extraction) layer(ctx context.Context, file string) func(int) (string, bool) {
 	switch classify.Layer(e.source.TextLayer) {
 	case classify.Native, classify.Digital:
 	default:
 		return nil
 	}
-	seen := map[int]string{}
-	return func(page int) (string, bool) {
-		if text, ok := seen[page]; ok {
-			return text, text != ""
-		}
-		text, err := poppler.Page(ctx, file, page, page)
-		if err != nil {
-			// A layer that will not come out is a rule that does not run,
-			// not a page that is refused. Everything else about the page has
-			// already been checked by the time this is asked.
-			text = ""
-		}
-		seen[page] = text
-		return text, text != ""
-	}
+	return pageLayer(ctx, file)
 }
 
 // pageRange fills in the ends of the range that were not given.

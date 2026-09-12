@@ -1,0 +1,192 @@
+package extract
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/tamnd/papers-reader/poppler"
+)
+
+// The fixtures here are typeset the same way as the rest of this package's,
+// by putting words at points. No page of any paper appears in this file.
+
+// blocked puts each group of lines in a block of its own, which is what
+// pdftotext does and what this reads. The block's box is the box around its
+// lines, because that is the only thing Prose asks a block for.
+func blocked(groups ...[]poppler.TextLine) poppler.Layout {
+	p := poppler.Layout{Number: 1, Width: pageWidth, Height: pageHeight}
+	for _, g := range groups {
+		if len(g) == 0 {
+			continue
+		}
+		b := poppler.Block{Box: g[0].Box, Lines: g}
+		for _, l := range g[1:] {
+			b.XMin = min(b.XMin, l.XMin)
+			b.YMin = min(b.YMin, l.YMin)
+			b.XMax = max(b.XMax, l.XMax)
+			b.YMax = max(b.YMax, l.YMax)
+		}
+		p.Blocks = append(p.Blocks, b)
+	}
+	return p
+}
+
+// marker is one word of a diagram, set where the picture wanted it.
+func marker(x, y float64, s string) []poppler.TextLine {
+	return []poppler.TextLine{put(x, y, s)}
+}
+
+func hasWords(t *testing.T, got, want string) {
+	t.Helper()
+	if !strings.Contains(got, want) {
+		t.Errorf("the prose does not have %q in it:\n%s", want, got)
+	}
+}
+
+func lacksWords(t *testing.T, got, want string) {
+	t.Helper()
+	if strings.Contains(got, want) {
+		t.Errorf("the prose still has %q in it:\n%s", want, got)
+	}
+}
+
+// The bug this was written for. Page 3 of the MapReduce paper is half a
+// diagram, the words inside the diagram are in the file's text layer, a
+// correct reading describes the diagram instead of transcribing it, and rule
+// A9 read the correct reading as a page with a hole in it.
+func TestTheWordsInsideADiagramAreNotProse(t *testing.T) {
+	p := blocked(
+		body(60, 100, 12, "a line of the left column of the paper"),
+		body(330, 100, 12, "a line of the right column of the paper"),
+		marker(120, 300, "Master"),
+		marker(200, 320, "worker"),
+		marker(260, 340, "shuffle"),
+	)
+	got := Prose(p, nil)
+	hasWords(t, got, "left column")
+	hasWords(t, got, "right column")
+	lacksWords(t, got, "Master")
+	lacksWords(t, got, "worker")
+	lacksWords(t, got, "shuffle")
+}
+
+// A page with nothing on it but text comes back with all of it. This is the
+// common case and the one that must not lose a word.
+func TestAPageOfNothingButTextIsUnchanged(t *testing.T) {
+	p := blocked(
+		body(60, 100, 12, "a line of the left column of the paper"),
+		body(330, 100, 12, "a line of the right column of the paper"),
+	)
+	if got := len(strings.Fields(Prose(p, nil))); got != 2*12*9 {
+		t.Errorf("the prose has %d words, want %d", got, 2*12*9)
+	}
+}
+
+// A caption is prose and is set to the width of its column, so it stays even
+// though what it is captioning does not. The reading is expected to have it.
+func TestACaptionStaysWithTheProse(t *testing.T) {
+	p := blocked(
+		body(60, 100, 12, "a line of the left column of the paper"),
+		body(330, 100, 12, "a line of the right column of the paper"),
+		marker(120, 300, "Master"),
+		column(60, 360,
+			"Figure 1: the parts of the system and what",
+			"each of them is holding while it runs."),
+	)
+	got := Prose(p, nil)
+	hasWords(t, got, "Figure 1")
+	lacksWords(t, got, "Master")
+}
+
+// The column and not the page. A paragraph of a two column paper is half the
+// width of the type area, so a threshold measured against the page would
+// throw away every paragraph in the paper.
+func TestTheWidthIsMeasuredAgainstAColumnAndNotThePage(t *testing.T) {
+	p := blocked(
+		body(60, 100, 12, "a line of the left column of the paper"),
+		body(330, 100, 12, "a line of the right column of the paper"),
+	)
+	if len(Gutters(p)) != 1 {
+		t.Fatalf("the fixture is not being read as two columns: gutters %v", Gutters(p))
+	}
+	hasWords(t, Prose(p, nil), "right column")
+}
+
+// A one column paper has no channel down it and its paragraphs are the whole
+// type area, which is the other end of the same sum.
+func TestAOneColumnPageKeepsItsParagraphs(t *testing.T) {
+	p := blocked(
+		body(60, 100, 14, "a line of the one column this paper is set in ok"),
+		marker(300, 320, "Nonce"),
+	)
+	if len(Gutters(p)) != 0 {
+		t.Fatalf("the fixture is not being read as one column: gutters %v", Gutters(p))
+	}
+	hasWords(t, Prose(p, nil), "one column")
+	lacksWords(t, Prose(p, nil), "Nonce")
+}
+
+// The known loss, written down so that changing it is a decision. A section
+// heading is a short line in a block of its own and goes with the labels.
+func TestASectionHeadingGoesWithTheLabels(t *testing.T) {
+	p := blocked(
+		body(60, 100, 12, "a line of the left column of the paper"),
+		body(330, 100, 12, "a line of the right column of the paper"),
+		column(60, 260, "3 Implementation"),
+	)
+	lacksWords(t, Prose(p, nil), "Implementation")
+}
+
+// The second half of the same bug. With Figure 1 out of the way, what was
+// left of page 3 of the MapReduce paper was the line the journal prints
+// along the bottom of every page, which no reader transcribes and which is
+// as wide as the type area, so the width test keeps it.
+func TestTheRunningFootIsNotProse(t *testing.T) {
+	var pages []poppler.Layout
+	for i := 1; i <= 6; i++ {
+		p := blocked(
+			body(60, 100, 12, "a line of the left column of the paper"),
+			body(330, 100, 12, "a line of the right column of the paper"),
+			column(60, 740, "Proceedings of the Symposium on Operating Systems"),
+		)
+		p.Number = i
+		pages = append(pages, p)
+	}
+	f := FindFurniture(pages)
+	got := Prose(pages[1], f)
+	hasWords(t, got, "left column")
+	lacksWords(t, got, "Proceedings")
+}
+
+// A running head is learned from the paper and not from the page, so a paper
+// handed over one page at a time keeps its head. The alternative is a rule
+// that quietly stops looking at the top and the bottom of every page.
+func TestOnePageOnItsOwnKeepsItsHead(t *testing.T) {
+	p := blocked(
+		body(60, 100, 12, "a line of the left column of the paper"),
+		body(330, 100, 12, "a line of the right column of the paper"),
+		column(60, 740, "Proceedings of the Symposium on Operating Systems"),
+	)
+	hasWords(t, Prose(p, FindFurniture([]poppler.Layout{p})), "Proceedings")
+}
+
+func TestAPageWithNoBlocksIsNoProse(t *testing.T) {
+	if got := Prose(poppler.Layout{Number: 1, Width: pageWidth, Height: pageHeight}, nil); got != "" {
+		t.Errorf("an empty page has prose %q", got)
+	}
+}
+
+// A full page plate has a caption and nothing else, and the caption is the
+// widest thing on it, so it is what one column means and it stays. Coverage
+// reads a page with almost nothing to compare as covered, which is right: a
+// picture is not missing prose.
+func TestAFullPagePlateKeepsItsCaption(t *testing.T) {
+	p := blocked(
+		marker(200, 200, "Nonce"),
+		marker(280, 240, "Hash"),
+		column(60, 700, "Figure 4: the whole of the apparatus as it was built."),
+	)
+	got := Prose(p, nil)
+	hasWords(t, got, "Figure 4")
+	lacksWords(t, got, "Nonce")
+}
