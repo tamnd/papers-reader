@@ -121,10 +121,14 @@ func TestATableWithATagItCannotReadIsLeftAlone(t *testing.T) {
 	}
 }
 
-func TestATableWithOneRowIsLeftAlone(t *testing.T) {
+// A row of boxes is a table with one row in it, which is what the Spanner
+// paper draws its example schema as, and a header with nothing under it is a
+// table GitHub Flavored Markdown can write.
+func TestATableWithOneRowIsAHeaderWithNothingUnderIt(t *testing.T) {
 	in := "<table>\n<tr><th>Model</th><th>Score</th></tr>\n</table>"
-	if got := Untable(in); got != in {
-		t.Errorf("got:\n%s\nwant it left alone", got)
+	want := "| Model | Score |\n| --- | --- |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
 

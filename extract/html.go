@@ -93,11 +93,18 @@ func closesTable(lines []string, from int, fenced []bool) int {
 // guessing.
 func pipeTable(html string) (string, bool) {
 	rows := rowTag.FindAllStringSubmatch(html, -1)
-	if len(rows) < 2 {
-		// One row is a heading with nothing under it, which is not a table
-		// anybody can read, and no rows is markup this function misread.
+	if len(rows) == 0 {
+		// No rows is markup this function misread.
 		return "", false
 	}
+	// One row is allowed and comes out as a header with nothing under it,
+	// which is a table GitHub Flavored Markdown can write and every renderer
+	// draws. It used to be refused on the grounds that a heading with nothing
+	// under it is not a table, and that was wrong: the Spanner paper draws
+	// the interleaving of its example schema as a strip of seven boxes in a
+	// row, which is one row of cells and reads perfectly well as one. The
+	// cost of refusing it was that the strip stayed as raw HTML in the
+	// corpus, which is worse by every measure.
 	// grid is the table being filled in, and held is the cells still coming
 	// down from a rowspan above. A cell that spans four rows is written once
 	// and the three rows under it get an empty cell in that column, which is
