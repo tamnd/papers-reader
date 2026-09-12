@@ -102,7 +102,7 @@ func TestAFreshCorpusRunsAlmostNothing(t *testing.T) {
 	if len(rep.Errors()) != 0 {
 		t.Errorf("rules broke: %v", rep.Errors())
 	}
-	for _, id := range []string{"S02", "S04", "S06", "S09", "G01", "G02", "G03", "G04", "G05", "G06"} {
+	for _, id := range []string{"S02", "S04", "S06", "S09", "G01", "G02", "G03", "G04", "G05"} {
 		if !result(t, rep, id).NotRun {
 			t.Errorf("%s claims to have run on a corpus with nothing in it", id)
 		}
@@ -325,31 +325,6 @@ func TestG05StandsDownOnAFileWithNoTagsAtAll(t *testing.T) {
 	}
 }
 
-// G06 only compares two tags that came out of the same run, because a
-// section added next year takes a tag from the top of the register and sits
-// between two much lower ones, and that is what append only means.
-func TestG06WantsTagsToClimbWithinARun(t *testing.T) {
-	reg := "0001,vaswani-2017-attention-s1\n0002,vaswani-2017-attention-s2\n0100,vaswani-2017-attention-s1-1\n"
-	backwards := "## 1 One {#vaswani-2017-attention-s2 .section tag=0002}\n\ntext\n\n## 2 Two {#vaswani-2017-attention-s1 .section tag=0001}\n\ntext\n"
-	in := build(t, map[string]string{
-		"tags/tags": reg, "tags/runs": "0001,0002\n0100,0100\n", taggedPath: tagged(backwards),
-	})
-	res := result(t, Run(in, true), "G06")
-	if !res.Failed() {
-		t.Fatal("G06 allowed two tags from one run to go backwards")
-	}
-
-	// The same file, but the low tag is from a later run, which is a section
-	// somebody inserted and not a block somebody pasted.
-	inserted := "## 1 One {#vaswani-2017-attention-s1-1 .section tag=0100}\n\ntext\n\n## 2 Two {#vaswani-2017-attention-s2 .section tag=0002}\n\ntext\n"
-	in = build(t, map[string]string{
-		"tags/tags": reg, "tags/runs": "0001,0002\n0100,0100\n", taggedPath: tagged(inserted),
-	})
-	if res := result(t, Run(in, true), "G06"); res.Failed() {
-		t.Errorf("G06 refused a section inserted by a later run: %v", res.Findings)
-	}
-}
-
 // The section a file is has no heading line in the body, so its tag lives in
 // the front matter and the rules have to look there too.
 func TestG04AndG05ReadTheFrontMatterTag(t *testing.T) {
@@ -379,12 +354,6 @@ func TestG04AndG05ReadTheFrontMatterTag(t *testing.T) {
 	in = build(t, map[string]string{"tags/tags": reg, path: file(head+"tag: \"00GG\"\n", body)})
 	if res := result(t, Run(in, true), "G04"); !res.Failed() {
 		t.Error("G04 accepted a front matter tag that is not four hex characters")
-	}
-}
-
-func TestG06StandsDownWithNoRuns(t *testing.T) {
-	if res := result(t, Run(build(t, nil), true), "G06"); !res.NotRun {
-		t.Errorf("G06 ran on a corpus with no assignment behind it: %v", res.Findings)
 	}
 }
 

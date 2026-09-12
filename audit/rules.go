@@ -102,11 +102,24 @@ func Rules() []Rule {
 			What:  "every anchored item in a body carries a tag.",
 			Check: ruleG05,
 		},
-		{
-			ID: "G06", Hard: true,
-			What:  "tags climb in reading order within a run.",
-			Check: ruleG06,
-		},
+		// G06 was "tags climb in reading order within a run", and it is
+		// retired. The identifier is not reused.
+		//
+		// It was not an invariant of the corpus, only of the moment the tags
+		// were handed out. A paper read again can come back with its items in
+		// a different order, and their tags are permanent and come back with
+		// them, so the run no longer climbs and nothing is wrong. The BERT
+		// paper is the case: Table 4 sits at the top of a column above the
+		// heading of the section it belongs to, the earlier extraction had it
+		// the other way round, and after the re-read the rule called a
+		// faithful reading of the page a defect.
+		//
+		// What it was for is caught twice over. A block pasted with its
+		// anchor is a duplicate anchor, which is G03. A block pasted and
+		// given a new anchor carries a tag the register holds against
+		// something else, which is G04. What is left is the assigner handing
+		// out tags in the wrong order, which is pinned where it can be
+		// decided for certain, in the assigner's own test.
 	}...)
 }
 
@@ -623,45 +636,6 @@ func ruleG05(in *Input) ([]Finding, error) {
 	}
 	if files == 0 {
 		return nil, ErrNotRun
-	}
-	return out, nil
-}
-
-// ruleG06 asks whether the tags in a file climb.
-//
-// Within one assignment they do, because the assigner walks the corpus in
-// reading order and takes the next tag each time. Across assignments they do
-// not, and must not be made to: a section added to a paper next year gets a
-// tag from the top of the register and sits between two much lower ones, and
-// that is what append only means. So the comparison is only made between two
-// tags tags/runs says came out of the same run.
-//
-// What it catches is an attribute block copied from further down a file and
-// pasted further up, which otherwise looks exactly like a correct tag.
-func ruleG06(in *Input) ([]Finding, error) {
-	runs, err := tags.LoadRuns(filepath.Join(in.Corpus.Tags(), "runs"))
-	if err != nil {
-		return []Finding{{Rule: "G06", File: "tags/runs", Message: err.Error()}}, nil
-	}
-	if len(runs) == 0 {
-		return nil, ErrNotRun
-	}
-	var out []Finding
-	for _, f := range in.Content {
-		if f.Broken() {
-			continue
-		}
-		attrs := fileTags(f)
-		for i := 1; i < len(attrs); i++ {
-			a, b := attrs[i-1], attrs[i]
-			if !tags.Together(runs, a.Tag, b.Tag) || b.Tag.Value() > a.Tag.Value() {
-				continue
-			}
-			out = append(out, Finding{
-				Rule: "G06", File: f.Path,
-				Message: fmt.Sprintf("%s carries %s and comes after %s, which carries %s, and one run hands tags out in reading order", b.Anchor, b.Tag, a.Anchor, a.Tag),
-			})
-		}
 	}
 	return out, nil
 }

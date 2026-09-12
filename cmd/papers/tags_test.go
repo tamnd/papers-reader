@@ -223,3 +223,81 @@ func TestTwoHeadingsOfOneNameGetTwoTags(t *testing.T) {
 		seen[tag] = true
 	}
 }
+
+// A run hands its tags out in reading order, which is the order of the files
+// and then the order of the items down each file.
+//
+// The audit used to check this after the fact and cannot: a paper read again
+// can come back with its items in a different order, their permanent tags
+// come back with them, and the run no longer climbs with nothing wrong. This
+// is the place the question can be settled, because here the order the
+// assigner walked in is the order it walked in.
+func TestARunHandsOutItsTagsInReadingOrder(t *testing.T) {
+	root := tagsCorpus(t, section(""))
+	write := func(path, text string) {
+		t.Helper()
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A second and a third file, so that the file order is tested as well as
+	// the order within one file. The names sort the way a corpus sorts.
+	write("content/en/a-1970-paper/02_second.md", `---
+paper: a-1970-paper
+title: A Paper
+section: "2"
+section_title: The Second Section
+kind: section
+lang: en
+---
+
+Text.
+
+#### 2.1 A Subsection
+
+Text.
+
+#### 2.2 Another Subsection
+
+Text.
+`)
+	write("content/en/a-1970-paper/03_third.md", `---
+paper: a-1970-paper
+title: A Paper
+section: "3"
+section_title: The Third Section
+kind: section
+lang: en
+---
+
+Text.
+`)
+
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		"a-1970-paper-s1",
+		"a-1970-paper-s1-1",
+		"a-1970-paper-s2",
+		"a-1970-paper-s2-1",
+		"a-1970-paper-s2-2",
+		"a-1970-paper-s3",
+	}
+	var got []string
+	for _, line := range strings.Split(strings.TrimSpace(read(t, filepath.Join(root, "tags", "tags"))), "\n") {
+		_, anchor, ok := strings.Cut(line, ",")
+		if !ok {
+			t.Fatalf("the register has a line that is not tag,anchor: %q", line)
+		}
+		got = append(got, anchor)
+	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("the register reads\n  %s\nand reading order is\n  %s", strings.Join(got, " "), strings.Join(want, " "))
+	}
+}

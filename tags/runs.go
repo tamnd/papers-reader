@@ -17,10 +17,13 @@ import (
 // top of the register and sits between two much lower ones, and that is
 // correct and permanent and exactly what append only means.
 //
-// Without the runs file the audit has to choose between a rule that demands
-// tags climb everywhere, which forbids ever adding a section, and no rule at
-// all, which lets a copied and pasted block go unnoticed. With it, rule G06
-// can ask the useful question.
+// It records which tags were handed out together, which is what tells a
+// section added to a paper next year, sitting in the register between two
+// much lower tags, apart from a tag that was always there. Nothing in the
+// audit reads it today: rule G06 asked whether a run's tags still climb in
+// reading order and is retired, because a paper read again can come back with
+// its items in a different order and their permanent tags come back with
+// them.
 type Run struct {
 	First, Last Tag
 }
@@ -28,8 +31,7 @@ type Run struct {
 // Holds reports whether a tag was handed out by this run.
 func (r Run) Holds(t Tag) bool { return t.Value() >= r.First.Value() && t.Value() <= r.Last.Value() }
 
-// Together reports whether two tags came out of the same run, which is when
-// their order is something the audit may insist on.
+// Together reports whether two tags came out of the same run.
 func Together(runs []Run, a, b Tag) bool {
 	for _, r := range runs {
 		if r.Holds(a) && r.Holds(b) {
