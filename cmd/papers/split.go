@@ -223,9 +223,7 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, dry, 
 		// Restricted. The front matter and a short abstract is the whole of
 		// what may ever be published, so the rest of the paper is not written
 		// at all rather than written and then guarded by an audit rule.
-		files = files[:1]
-		files[0].Body = []byte(split.Abstract(string(files[0].Body), split.AbstractWords) + "\n")
-		files[0].Front.ContentSHA256 = corpus.ContentSHA(files[0].Body)
+		files = split.Restrict(files, split.AbstractWords)
 		n.notes = append(n.notes, "restricted: the front matter and an abstract, and nothing else")
 	}
 	n.sections = len(files)

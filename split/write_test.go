@@ -218,3 +218,141 @@ func edit(t *testing.T, path, body string) {
 		t.Fatal(err)
 	}
 }
+
+// cover is a title block of the kind a paper puts on a page of its own: a
+// title, an author and a citation, and no paragraph anywhere near long
+// enough to be an abstract. Three of the first eight papers in this corpus
+// open with one.
+const cover = "Notes on the Analytical Engine\n\nAda Lovelace\n\nThis article appeared in the Scientific Memoirs, volume 3.\n"
+
+// A restricted paper publishes one file, and the cap is applied to whatever
+// goes in it.
+func TestRestrictKeepsOneFileAndCapsIt(t *testing.T) {
+	fs := Restrict(files(t), 20)
+	if len(fs) != 1 {
+		t.Fatalf("Restrict left %d files, want 1", len(fs))
+	}
+	if n := len(strings.Fields(string(fs[0].Body))); n > 20 {
+		t.Errorf("the published file runs to %d words, want at most 20", n)
+	}
+	if fs[0].Front.ContentSHA256 != corpus.ContentSHA(fs[0].Body) {
+		t.Error("Restrict cut the body and left the hash of what it cut")
+	}
+}
+
+// The abstract is not always in the front block. A paper that opens with a
+// cover sheet used to publish the cover sheet, which is a catalogue entry
+// rather than a paper, and it is the whole of what the corpus would ever say
+// about a paper it may not redistribute.
+func TestRestrictFetchesTheAbstractFromPastTheCoverSheet(t *testing.T) {
+	fs := Restrict(Files(base(), Split(doc(
+		cover,
+		"Abstract", prose,
+		"1 Introduction", prose,
+	))), AbstractWords)
+	body := string(fs[0].Body)
+	if !strings.Contains(body, "Notes on the Analytical Engine") {
+		t.Error("the title did not survive")
+	}
+	if longestParagraph(body) < AbstractParagraph {
+		t.Errorf("the published file is still a cover sheet:\n%s", body)
+	}
+}
+
+// A front block that already carries an abstract is not given a second one
+// off the next page.
+func TestRestrictLeavesAFrontBlockThatAlreadyHasAnAbstract(t *testing.T) {
+	fs := Restrict(Files(base(), Split(doc(
+		"Notes on the Analytical Engine",
+		prose,
+		"1 Introduction", "A paragraph of the introduction that is quite distinctive and nothing at all like the abstract above it, so that it can be recognised.",
+		"2 Method", prose,
+		"3 Results", prose,
+	))), AbstractWords)
+	if strings.Contains(string(fs[0].Body), "quite distinctive") {
+		t.Errorf("Restrict took a paragraph it did not need:\n%s", fs[0].Body)
+	}
+}
+
+// The page range is a claim about where the published text came from, so it
+// has to cover the page the abstract was taken off.
+func TestRestrictRecordsThePagesThePublishedTextCameFrom(t *testing.T) {
+	fs := Restrict([]File{
+		{Name: "00_front.md", Front: corpus.Front{PDFPages: "1"}, Body: []byte(cover)},
+		{Name: "01_intro.md", Front: corpus.Front{PDFPages: "2-4"}, Body: []byte(prose + "\n")},
+	}, AbstractWords)
+	if got := fs[0].Front.PDFPages; got != "1-4" {
+		t.Errorf("pdf_pages is %q, want 1-4", got)
+	}
+}
+
+// A paper with nothing long enough anywhere is published as it stands, and
+// audit rule T06 is what says so. Silently writing nothing would lose the
+// title as well.
+func TestRestrictPublishesAShortPaperAsItStands(t *testing.T) {
+	fs := Restrict([]File{
+		{Name: "00_front.md", Front: corpus.Front{PDFPages: "1"}, Body: []byte(cover)},
+	}, AbstractWords)
+	if !strings.Contains(string(fs[0].Body), "Ada Lovelace") {
+		t.Errorf("the title block was dropped:\n%s", fs[0].Body)
+	}
+}
+
+// A title, a byline and a citation are separate things a reader looks for.
+// The first cut of this joined the first 250 words into one line and the
+// Paxos front matter came out as a paragraph of run-on prose.
+func TestAbstractKeepsTheParagraphsItFits(t *testing.T) {
+	body := strings.Join([]string{
+		"Notes on the Analytical Engine",
+		"Ada Lovelace",
+		"This article appeared in the Scientific Memoirs, volume 3.",
+		prose,
+	}, "\n\n")
+	got := Abstract(body, 30)
+	if strings.Count(got, "\n\n") < 2 {
+		t.Errorf("the paragraphs were run together:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "Notes on the Analytical Engine\n\nAda Lovelace\n\n") {
+		t.Errorf("the title block did not survive as a title block:\n%s", got)
+	}
+	if n := len(strings.Fields(got)); n > 30 {
+		t.Errorf("the cut runs to %d words, want at most 30", n)
+	}
+}
+
+// A paragraph that does not fit is cut where a sentence ends, and dropped
+// when nothing that fits ends one.
+func TestAbstractCutsAParagraphAtASentence(t *testing.T) {
+	body := "One two. Three four. Five six."
+	if got := Abstract(body, 5); got != "One two. Three four." {
+		t.Errorf("Abstract cut to %q, want %q", got, "One two. Three four.")
+	}
+	long := "a b c d e f g h i j"
+	if got := Abstract("Short one.\n\n"+long, 4); got != "Short one." {
+		t.Errorf("Abstract kept half a clause: %q", got)
+	}
+}
+
+// A block that is short enough is not touched at all.
+func TestAbstractLeavesAShortBlockAlone(t *testing.T) {
+	body := "Notes on the Analytical Engine\n\nAda Lovelace\n"
+	if got := Abstract(body, AbstractWords); got != strings.TrimRight(body, "\n") {
+		t.Errorf("Abstract rewrote a block it did not need to cut: %q", got)
+	}
+}
+
+func TestSpanPages(t *testing.T) {
+	cases := []struct{ a, b, want string }{
+		{"1", "2-4", "1-4"},
+		{"2-4", "1", "1-4"},
+		{"1", "", "1"},
+		{"", "2-4", "2-4"},
+		{"", "", ""},
+		{"3", "3", "3"},
+	}
+	for _, tc := range cases {
+		if got := spanPages(tc.a, tc.b); got != tc.want {
+			t.Errorf("spanPages(%q, %q) is %q, want %q", tc.a, tc.b, got, tc.want)
+		}
+	}
+}

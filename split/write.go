@@ -181,14 +181,172 @@ const AbstractWords = 250
 // The cut is at a sentence end, because an abstract that stops mid clause
 // reads as a file that got truncated and somebody will come looking for the
 // bug. A block already short enough comes back exactly as it went in.
+//
+// It counts a paragraph at a time and not a word at a time, so that the
+// paragraphs that fit come out as paragraphs. Joining the first 250 words of
+// the Paxos front matter into one string gave a published file in which the
+// title, the author, the journal citation and the abstract ran together into
+// a single line of prose, and every one of those is a separate thing a reader
+// is looking for.
 func Abstract(body string, words int) string {
-	fields := strings.Fields(body)
-	if len(fields) <= words {
+	if len(strings.Fields(body)) <= words {
 		return strings.TrimRight(body, "\n")
+	}
+	var out []string
+	left := words
+	for _, p := range paragraphs(body) {
+		n := len(strings.Fields(p))
+		if n <= left {
+			out = append(out, p)
+			left -= n
+			continue
+		}
+		if cut := sentences(p, left); cut != "" {
+			out = append(out, cut)
+		}
+		break
+	}
+	if len(out) == 0 {
+		// The block opens with one paragraph longer than the whole cap and
+		// with no sentence end inside it. There is nothing to keep whole, so
+		// the old word count is the only cut left.
+		return strings.Join(strings.Fields(body)[:words], " ")
+	}
+	return strings.Join(out, "\n\n")
+}
+
+// sentences is the opening of a paragraph, at most words words long and
+// stopping where a sentence stops. It is empty when nothing that fits ends a
+// sentence, because half a clause is not worth publishing when there are
+// whole paragraphs above it already.
+func sentences(p string, words int) string {
+	fields := strings.Fields(p)
+	if words <= 0 || len(fields) <= words {
+		return ""
 	}
 	cut := strings.Join(fields[:words], " ")
 	if i := strings.LastIndexAny(cut, ".!?"); i > 0 {
 		return cut[:i+1]
 	}
-	return cut
+	return ""
+}
+
+// paragraphs is the body's paragraphs, blanks dropped. A body written by this
+// toolchain is one paragraph to a line, which is what extract.Page.Text
+// writes and what the assembler preserves, so the lines are the structure.
+func paragraphs(body string) []string {
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+// AbstractParagraph is how long a paragraph has to run before it is taken for
+// an abstract rather than for a title, a byline, an affiliation or a
+// copyright line. Forty words is longer than any of those and shorter than
+// the shortest abstract in the corpus.
+//
+// Audit rule T06 reads the same number from here, because two opinions about
+// what an abstract looks like would mean the splitter writing a front file
+// the audit then refuses, over and over, with nobody able to say which of the
+// two was wrong.
+const AbstractParagraph = 40
+
+// Restrict cuts a split down to the one file a restricted paper may publish:
+// the front matter and an abstract of at most words words.
+//
+// The abstract is not always in the front block. A paper can open with a
+// cover sheet, and three of the first eight papers in this corpus do: the
+// Paxos paper's first page is Lamport's own note about where the article
+// appeared, and the abstract is on the page after it. Taking the front block
+// and stopping produced a published file that was a title, an author and a
+// citation, which is a catalogue entry rather than a paper, and it is the
+// whole of what the corpus would ever say about a paper it may not
+// redistribute.
+//
+// So the front block is kept whatever it holds, because the title and the
+// authors are in it, and if it carries no paragraph long enough to be an
+// abstract then the first one that is, from the sections after it, is
+// appended. The cap is applied last and to the result, so a paper whose front
+// block already runs long publishes no more than one whose abstract had to be
+// fetched from the next page.
+func Restrict(files []File, words int) []File {
+	if len(files) == 0 {
+		return nil
+	}
+	front := files[0]
+	body := string(front.Body)
+	if longestParagraph(body) < AbstractParagraph {
+		if p, from := firstParagraph(files[1:]); p != "" {
+			body = strings.TrimRight(body, "\n") + "\n\n" + p + "\n"
+			// The page range is a claim about where the published text came
+			// from, so it has to cover the page the abstract was taken off.
+			front.Front.PDFPages = spanPages(front.Front.PDFPages, from.Front.PDFPages)
+		}
+	}
+	front.Body = []byte(Abstract(body, words) + "\n")
+	front.Front.ContentSHA256 = corpus.ContentSHA(front.Body)
+	return []File{front}
+}
+
+// firstParagraph is the first paragraph of these files that is long enough to
+// be an abstract, and the file it came from.
+func firstParagraph(files []File) (string, File) {
+	for _, f := range files {
+		for _, p := range strings.Split(string(f.Body), "\n") {
+			p = strings.TrimSpace(p)
+			if len(strings.Fields(p)) >= AbstractParagraph {
+				return p, f
+			}
+		}
+	}
+	return "", File{}
+}
+
+// spanPages is the pdf_pages field that covers both of two others. A field
+// nobody recorded is not a page zero, so an empty one leaves the other as it
+// stands.
+func spanPages(a, b string) string {
+	af, al := pageRange(a)
+	bf, bl := pageRange(b)
+	if af == 0 {
+		return b
+	}
+	if bf == 0 {
+		return a
+	}
+	return pages(min(af, bf), max(al, bl))
+}
+
+// pageRange reads a pdf_pages field back, as one number or as a range. It
+// gives back zeroes for anything it does not recognise, which is the same
+// answer as a field nobody wrote.
+func pageRange(s string) (first, last int) {
+	from, to, ok := strings.Cut(strings.TrimSpace(s), "-")
+	a, err := strconv.Atoi(strings.TrimSpace(from))
+	if err != nil {
+		return 0, 0
+	}
+	if !ok {
+		return a, a
+	}
+	b, err := strconv.Atoi(strings.TrimSpace(to))
+	if err != nil || b < a {
+		return a, a
+	}
+	return a, b
+}
+
+// longestParagraph is the word count of the longest paragraph of a body.
+func longestParagraph(body string) int {
+	most := 0
+	for _, p := range paragraphs(body) {
+		if n := len(strings.Fields(p)); n > most {
+			most = n
+		}
+	}
+	return most
 }

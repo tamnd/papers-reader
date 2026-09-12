@@ -86,6 +86,35 @@ func ParseFront(b []byte) (Front, []byte, error) {
 	return f, []byte(body), nil
 }
 
+// StrictFront reads the front matter again with a decoder that refuses a
+// field it does not know, and returns what it made of it. It is what audit
+// rule T02 asks.
+//
+// ParseFront is deliberately lenient: a corpus half way through a milestone
+// has files written by an older version of this program, and a reader that
+// refused them would make the toolchain unable to look at its own output. The
+// audit is where that leniency stops. A field nobody reads is either a
+// misspelling of one somebody does, which means the value it holds is being
+// silently ignored, or a field somebody added without adding it here, which
+// means the schema and the corpus have drifted apart.
+func StrictFront(b []byte) error {
+	_, _, err := ParseFront(b)
+	if err != nil {
+		return err
+	}
+	text := string(b)
+	rest := text[len(fence)+1:]
+	head := rest[:strings.Index(rest, "\n"+fence)+1]
+
+	dec := yaml.NewDecoder(strings.NewReader(head))
+	dec.KnownFields(true)
+	var f Front
+	if err := dec.Decode(&f); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Render writes a content file: the front matter, then the body.
 func Render(f Front, body []byte) ([]byte, error) {
 	var buf bytes.Buffer
