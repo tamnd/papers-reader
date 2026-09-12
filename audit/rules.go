@@ -352,15 +352,24 @@ func ruleS07(in *Input) ([]Finding, error) {
 // PageChars is the most text one page of a PDF is taken to hold, and it is
 // the whole of rule S08.
 //
-// The densest paper in the corpus today is the Transformer paper at 2,656
-// characters a page, so the cap is near twice anything real. It is set that
-// wide because the rule is a tripwire for a model that answered about a
-// paper instead of reading one, and that failure is out by a factor rather
-// than by a fifth. A three column proceedings page from the 1960s is the one
-// thing that could reach it honestly, and when one does somebody has to look
-// at the paper and raise the number, which is the right amount of friction
-// for a rule that decides whether the corpus is telling the truth.
-const PageChars = 5000
+// It is near twice anything real, because the rule is a tripwire for a model
+// that answered about a paper instead of reading one, and that failure is
+// out by a factor rather than by a fifth.
+//
+// The number was 5,000, set against the Transformer paper at 2,656
+// characters a page, which turned out to be an airy paper and not a dense
+// one. The ResNet and Spanner papers then tripped the rule honestly. What
+// settled it was pdftotext over the PDFs themselves: ResNet's own text layer
+// holds 4,996 characters a page and Spanner's holds 5,030, against the 2,671
+// the Transformer paper holds, so a dense two column page really does carry
+// twice what the original measurement suggested and the Markdown of one is
+// that plus its markup.
+//
+// So the cap is twice the densest page anybody has measured, which is what
+// it was before. Raising it is meant to take this much work: the rule
+// decides whether the corpus is telling the truth, and the only honest way
+// past it is to go and read the paper.
+const PageChars = 10000
 
 // ruleS08 asks whether the text could have come out of the file it says it
 // came out of. Nothing else in the audit asks this: every other rule reads
