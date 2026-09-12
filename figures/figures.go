@@ -109,10 +109,23 @@ func (f Figure) Name() string { return f.ID + ".png" }
 // The budget. One line of the spec, and the only one of the four numbers
 // that is about anything but quality is the fraction.
 const (
-	// MinPixels is the shortest side a committed figure may have. Below this
+	// MinPixels is the longest side a committed figure must reach. Below this
 	// it is an inline glyph the extraction should have set as mathematics,
 	// not a diagram.
 	MinPixels = 100
+	// MinThin is the shortest side, and it is not the same number, because a
+	// figure can be a strip. Figure 3 of the GAN paper is one row of digits
+	// across the column: 1434 by 87 pixels, which is a diagram by every
+	// measure except the one that asked both sides to clear 100, and the old
+	// rule threw it away and left the paper citing a figure it did not have.
+	// It is the only region in the corpus either floor has ever refused.
+	//
+	// What the shorter side is really for is the hairlines: a table rule, a
+	// column border, an underline. At 300 dots per inch a two point rule is
+	// eight pixels and a line of nine point text is thirty seven, so a tenth
+	// of an inch sits below anything a paper prints and well below the
+	// thinnest figure in the corpus.
+	MinThin = 30
 	// MaxBytes is the cap on one figure. Half a megabyte of PNG is a large
 	// diagram at 300 dots per inch.
 	MaxBytes = 512 << 10
@@ -132,13 +145,14 @@ const (
 // caps rather than no caps at all.
 type Budget struct {
 	MinPixels   int
+	MinThin     int
 	MaxBytes    int
 	MaxFraction float64
 }
 
 // Default is the budget from the spec.
 func Default() Budget {
-	return Budget{MinPixels: MinPixels, MaxBytes: MaxBytes, MaxFraction: MaxFraction}
+	return Budget{MinPixels: MinPixels, MinThin: MinThin, MaxBytes: MaxBytes, MaxFraction: MaxFraction}
 }
 
 // Check applies the budget to a figure that is about to be written. The
@@ -149,9 +163,12 @@ func (b Budget) Check(f Figure) error {
 	case f.Fraction > b.MaxFraction:
 		return fmt.Errorf("it covers %.0f%% of the page and the cap is %.0f%%, which makes it a page image and not a figure",
 			f.Fraction*100, b.MaxFraction*100)
-	case f.Width < b.MinPixels || f.Height < b.MinPixels:
-		return fmt.Errorf("it is %dx%d pixels and the floor is %d on a side, which makes it a glyph and not a diagram",
+	case max(f.Width, f.Height) < b.MinPixels:
+		return fmt.Errorf("it is %dx%d pixels and the floor is %d on the long side, which makes it a glyph and not a diagram",
 			f.Width, f.Height, b.MinPixels)
+	case min(f.Width, f.Height) < b.MinThin:
+		return fmt.Errorf("it is %dx%d pixels and the floor is %d on the short side, which makes it a rule or a border and not a diagram",
+			f.Width, f.Height, b.MinThin)
 	case f.Bytes > b.MaxBytes:
 		return fmt.Errorf("it is %d KB and the cap is %d KB, even after taking the render down",
 			f.Bytes>>10, b.MaxBytes>>10)

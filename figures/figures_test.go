@@ -1,6 +1,7 @@
 package figures
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/tamnd/papers-reader/poppler"
@@ -35,6 +36,29 @@ func TestTheBudgetRefusesAGlyph(t *testing.T) {
 	b := Default()
 	if err := b.Check(Figure{Width: 64, Height: 64, Bytes: 900, Fraction: 0.01}); err == nil {
 		t.Fatal("a 64 by 64 image was accepted as a diagram")
+	}
+}
+
+// A figure can be a strip. Figure 3 of the GAN paper is one row of digits
+// across the column, 1434 by 87 pixels, and it is a diagram by every measure
+// except the one that asked both sides to clear the same floor.
+func TestTheBudgetTakesAStrip(t *testing.T) {
+	b := Default()
+	if err := b.Check(Figure{Width: 1434, Height: 87, Bytes: 60 << 10, Fraction: 0.08}); err != nil {
+		t.Fatalf("a row of digits across the column was refused: %v", err)
+	}
+}
+
+// What the short side is for is the hairlines: a rule under a table header,
+// a column border, an underline.
+func TestTheBudgetRefusesARule(t *testing.T) {
+	b := Default()
+	err := b.Check(Figure{Width: 1434, Height: 8, Bytes: 400, Fraction: 0.01})
+	if err == nil {
+		t.Fatal("a two point rule across the column was accepted as a diagram")
+	}
+	if !strings.Contains(err.Error(), "short side") {
+		t.Errorf("the refusal reads %q, and it is the short side that is wrong", err)
 	}
 }
 

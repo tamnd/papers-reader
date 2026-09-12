@@ -182,9 +182,8 @@ func ruleF02(in *Input) ([]Finding, error) {
 		if err != nil {
 			return fmt.Sprintf("it is not a PNG this can read: %v", err)
 		}
-		if cfg.Width < figures.MinPixels || cfg.Height < figures.MinPixels {
-			return fmt.Sprintf("it is %dx%d pixels and the floor is %d on a side",
-				cfg.Width, cfg.Height, figures.MinPixels)
+		if err := figures.Default().Check(figures.Figure{Width: cfg.Width, Height: cfg.Height}); err != nil {
+			return err.Error()
 		}
 		return ""
 	})
