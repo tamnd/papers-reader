@@ -328,6 +328,31 @@ func TestAnEmptyBodyHasNothingToProtect(t *testing.T) {
 	}
 }
 
+func TestProseIsTheBodyWithTheSpansTakenOut(t *testing.T) {
+	body := "The bound is $O(n \\log n)$ per query [12], as `sort()` shows."
+
+	got := Prose(body)
+	for _, gone := range []string{"$", "log", "[12]", "sort"} {
+		if strings.Contains(got, gone) {
+			t.Errorf("Prose kept %q: %q", gone, got)
+		}
+	}
+	for _, kept := range []string{"bound", "per query", "shows"} {
+		if !strings.Contains(got, kept) {
+			t.Errorf("Prose dropped %q: %q", kept, got)
+		}
+	}
+}
+
+func TestProseDoesNotJoinTheWordsEitherSideOfASpan(t *testing.T) {
+	// "each $x$ node" must not come back as "each node", which is a phrase
+	// the paper never wrote and one the glossary extractor would count.
+	got := Prose("each $x$ node")
+	if strings.Contains(got, "each node") {
+		t.Errorf("Prose closed the gap the formula left: %q", got)
+	}
+}
+
 func TestOffsetsPointAtTheSpan(t *testing.T) {
 	body := "chiều dài là $n$ đơn vị"
 

@@ -365,6 +365,30 @@ func fences(body string) []fence {
 	return out
 }
 
+// Prose is the body with every protected span taken out, which is the part
+// of a paper that is written in a language.
+//
+// Each span leaves a newline behind rather than nothing, so that the words
+// on either side of a formula do not run into one another and read as a
+// phrase. This is what the glossary extractor counts, and counting the
+// mathematics with it would fill the candidate list with variable names.
+func Prose(body string) string {
+	rs := []rune(body)
+	var b strings.Builder
+	at := 0
+	for _, s := range Protect(body) {
+		if s.Start > at {
+			b.WriteString(string(rs[at:s.Start]))
+		}
+		b.WriteByte('\n')
+		at = s.End
+	}
+	if at < len(rs) {
+		b.WriteString(string(rs[at:]))
+	}
+	return b.String()
+}
+
 func runeIndex(s string, byteAt int) int { return len([]rune(s[:byteAt])) }
 
 func sortByStart(spans []Span) {

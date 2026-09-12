@@ -48,7 +48,7 @@ var commands = []command{
 	{"refs", "M2", "parse bibliographies and link the citations", runRefs},
 	{"split", "M2", "cut a paper into one file per section", runSplit},
 	{"tags", "M2", "hand out permanent identifiers", runTags},
-	{"glossary", "M6", "manage the controlled vocabulary", nil},
+	{"glossary", "M6", "manage the controlled vocabulary", runGlossary},
 	{"translate", "M6", "produce Vietnamese, Chinese and Japanese", nil},
 	{"emit", "M8", "build the JSON the reading app consumes", nil},
 	{"graph", "M7", "build the citation graph over the corpus", nil},
