@@ -15,6 +15,7 @@ classify   measure what each PDF's text layer is worth, and pick the path
 render     rasterise the pages of the papers that need a model to read them
 extract    turn pages into Markdown, with the mathematics as LaTeX
 figures    crop the diagrams out of the pages
+pagemap    record which page of the file is which page of the paper
 refs       parse the bibliography and link the citations
 split      cut the paper into one file per section
 tags       hand out permanent identifiers
@@ -87,6 +88,7 @@ extract/         PDF to Markdown
 mathtex/         LaTeX repair, equation numbers and cross references
 katex/           the real KaTeX, run at build time to check and render
 figures/         cropping diagrams out of pages
+pagemap/         the page of the file against the page of the paper
 refs/            bibliography parsing and citation linking
 split/           one paper into one file per section
 tags/            the permanent identifier register

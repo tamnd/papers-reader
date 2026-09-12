@@ -83,6 +83,12 @@ func (c *Corpus) Refs(id string) string {
 	return filepath.Join(c.Manifests(), "refs", id+".yaml")
 }
 
+// PageMap is manifests/pages/<id>.yaml, which page of the file is which page
+// of the paper.
+func (c *Corpus) PageMap(id string) string {
+	return filepath.Join(c.Manifests(), "pages", id+".yaml")
+}
+
 // Content is the directory holding one paper in one language.
 func (c *Corpus) Content(lang Lang, id string) string {
 	return filepath.Join(c.Root, "content", string(lang), id)

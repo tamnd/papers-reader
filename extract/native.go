@@ -115,6 +115,18 @@ type Folios struct {
 	offsets []int
 }
 
+// Folio is the number a page printed, read out of its text: a line that is a
+// number and nothing else. The bool is false for the many pages that printed
+// none, and for the roman numerals of a thesis's front matter, which carry no
+// offset worth learning.
+//
+// It is exported because the page map is built from it in two places. A
+// native page arrives with its folio already separated out as furniture, and
+// a page a model read arrives as text with the folio still in it, and both
+// have to agree about what a folio looks like or a paper will have one page
+// map during extraction and a different one in its manifest.
+func Folio(text string) (int, bool) { return folioOf(text) }
+
 // Add records what a page printed. A page that printed no number, or printed
 // something that is not a number, teaches nothing and is not an error: most
 // pages of most papers are in that state.
