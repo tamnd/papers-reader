@@ -1,6 +1,8 @@
 package extract
 
 import (
+	"cmp"
+	"slices"
 	"strings"
 
 	"github.com/tamnd/papers-reader/poppler"
@@ -55,11 +57,12 @@ const proseWidth = 0.5
 // needs the page assembled, and this runs while the page is still being read.
 //
 // What it buys is the whole point of the rule, which is telling a page that
-// is fine from a page with a paragraph missing. Over the 78 pages of the
-// corpus where A9 runs at all, 54 score higher with this than without it and
-// one scores lower, seq2seq page 1 at 0.95 against 0.90, which is nowhere
-// near MinCoverage. One page was under MinCoverage before and none is now.
-// The two ends of that:
+// is fine from a page with a paragraph missing. Over the 111 pages of the
+// corpus where A9 runs at all, 79 score higher with this than without it and
+// two score lower. One page is under MinCoverage with this where five were
+// without it, and that page is a real defect: ResNet page 1 at 0.25, missing
+// have, series, breakthroughs, naturally, integrate, highlevel, which is a
+// stretch of the introduction the reader dropped. The two ends of the rest:
 //
 //	                     without      with
 //	bitcoin page 5          0.20      1.00
@@ -122,14 +125,71 @@ func meets(a, b poppler.Box) bool {
 
 // columnWidth is how wide one column of the page is, in points.
 //
+// Two ways of asking, and the narrower answer wins. Each is wrong on a page
+// the other is right about, and they are wrong in opposite directions, so the
+// smaller of the two is right on both.
+//
+// Being wrong small and being wrong large do not cost the same, which is the
+// other reason to take the smaller. Too small keeps a figure label, and the
+// rule reports a word a reader was never going to give it. Too large drops a
+// paragraph, and on a page where it drops all of them Prose comes back empty
+// and the rule stops running at all. The first is noise and the second is a
+// rule that has quietly switched itself off.
+func columnWidth(p poppler.Layout) float64 {
+	if w, ok := repeatedWidth(p); ok {
+		return min(w, spannedWidth(p))
+	}
+	return spannedWidth(p)
+}
+
+// spannedWidth divides the type area by the number of columns.
+//
 // The type area rather than the paper, because the margins are not type and a
 // paper's margins are a fifth of its width. Dividing the area by the columns
 // rather than measuring a column keeps this to the one thing Gutters already
 // knows, which is where the channels are and not what is either side of them.
-func columnWidth(p poppler.Layout) float64 {
+//
+// Where it is wrong is a page whose figure crosses the channel. Gutters wants
+// a clear vertical strip and the labels scattered through a diagram fill it,
+// so a two column page reads as one and a column comes back twice its width.
+// Page 3 of the MapReduce paper is that page: no gutter found, 503 points of
+// type area, 503 points of column, and its nine real 225 point paragraphs all
+// measured against half of 503 and thrown away.
+func spannedWidth(p poppler.Layout) float64 {
 	left, right := p.Blocks[0].XMin, p.Blocks[0].XMax
 	for _, b := range p.Blocks[1:] {
 		left, right = min(left, b.XMin), max(right, b.XMax)
 	}
 	return (right - left) / float64(len(Gutters(p))+1)
+}
+
+// repeatedWidth is the widest block width that two blocks share, and whether
+// any width is shared at all.
+//
+// A paragraph is as wide as its column and a page has several paragraphs, so
+// a column's width is a width that repeats. The things wider than a column
+// are the running foot, a title and a figure set across the page, and a page
+// has one of each at most, so the widest repeated width is the column and not
+// one of those. On MapReduce page 3 the widths in order are 408 for the foot
+// and then nine paragraphs between 224.7 and 224.9, and this returns 224.9.
+//
+// Where it is wrong is a page that repeats something wider than a column, a
+// title over a full width table, and a page with no two blocks alike at all,
+// which is a plate with one caption under it. The first is why the caller
+// takes the smaller of this and the span, and the second is what ok is for.
+func repeatedWidth(p poppler.Layout) (float64, bool) {
+	w := make([]float64, len(p.Blocks))
+	for i, b := range p.Blocks {
+		w[i] = b.Width()
+	}
+	slices.SortFunc(w, func(a, b float64) int { return cmp.Compare(b, a) })
+	for i := 0; i+1 < len(w); i++ {
+		// Within a twentieth, because a justified paragraph is as wide as
+		// its widest line and the last line of one is not justified, so two
+		// paragraphs of the same column differ by a fraction of a point.
+		if w[i+1] >= 0.95*w[i] {
+			return w[i], true
+		}
+	}
+	return 0, false
 }

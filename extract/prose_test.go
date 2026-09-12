@@ -170,6 +170,67 @@ func TestOnePageOnItsOwnKeepsItsHead(t *testing.T) {
 	hasWords(t, Prose(p, FindFurniture([]poppler.Layout{p})), "Proceedings")
 }
 
+// The defect the width sum was rewritten for. A figure whose labels are
+// scattered across the channel leaves Gutters nothing clear to find, so a two
+// column page reads as one, a column comes back at twice its width and every
+// real paragraph is measured against half of that and thrown away. Prose came
+// back empty on MapReduce page 3 and rule A9 stopped running on the one page
+// it was written for.
+func TestAFigureAcrossTheChannelDoesNotTakeTheParagraphsWithIt(t *testing.T) {
+	groups := [][]poppler.TextLine{
+		body(60, 100, 12, "a line of the left column of the paper"),
+		body(330, 100, 12, "a line of the right column of the paper"),
+	}
+	// Set across the channel and stacked down it. One label to a bin is not
+	// enough: a bin counts as clear while it holds under a share of the ink
+	// in the busiest bin on the page, and one label against twelve lines of
+	// body is under it. A diagram crosses a channel repeatedly.
+	for _, x := range []float64{230, 260, 290, 320} {
+		for i := range 6 {
+			groups = append(groups, marker(x, 300+float64(i)*14, "worker"))
+		}
+	}
+	p := blocked(groups...)
+	if len(Gutters(p)) != 0 {
+		t.Fatalf("the fixture no longer hides the channel: gutters %v", Gutters(p))
+	}
+	got := Prose(p, nil)
+	hasWords(t, got, "left column")
+	hasWords(t, got, "right column")
+	lacksWords(t, got, "worker")
+}
+
+// The other direction, and the reason the two sums are combined by taking the
+// smaller. A page that repeats something wider than a column, a title set over
+// a full width table, would have the repeated width believe the page is one
+// column wide. The span knows better here, because the channel is clear.
+func TestSomethingWiderThanAColumnRepeatingDoesNotWidenTheColumn(t *testing.T) {
+	wide := "a full width line running right across the type area of this page"
+	p := blocked(
+		column(60, 60, wide),
+		column(60, 740, wide),
+		body(60, 100, 12, "a line of the left column of the paper"),
+		body(330, 100, 12, "a line of the right column of the paper"),
+		marker(200, 400, "Master"),
+	)
+	got := Prose(p, nil)
+	hasWords(t, got, "left column")
+	hasWords(t, got, "right column")
+	lacksWords(t, got, "Master")
+}
+
+// A plate with one caption repeats nothing, so the span is all there is.
+func TestAPageWhereNoTwoBlocksAreAlikeFallsBackToTheSpan(t *testing.T) {
+	p := blocked(
+		marker(200, 200, "Nonce"),
+		column(60, 700, "Figure 4: the whole of the apparatus as it was built."),
+	)
+	if _, ok := repeatedWidth(p); ok {
+		t.Fatal("the fixture has two blocks of the same width after all")
+	}
+	hasWords(t, Prose(p, nil), "Figure 4")
+}
+
 func TestAPageWithNoBlocksIsNoProse(t *testing.T) {
 	if got := Prose(poppler.Layout{Number: 1, Width: pageWidth, Height: pageHeight}, nil); got != "" {
 		t.Errorf("an empty page has prose %q", got)
