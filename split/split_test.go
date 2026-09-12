@@ -373,3 +373,50 @@ func section(t *testing.T, r *Result, filename string) Section {
 	t.Fatalf("there is no %s in %v", filename, names(r))
 	return Section{}
 }
+
+// The title of a paper is in the front matter as title, and a file that also
+// carried it as a level one heading put 00_front.md a level above every
+// section it introduces. Rule T05 found the ResNet paper that way: a level
+// three Abstract under a level one title.
+func TestTheFrontMatterHasNoHeadingOverIt(t *testing.T) {
+	r := Titled(doc(
+		"arXiv:1000.00000v1 [cs.XX] 1 Jan 2000",
+		"# A Study of Something",
+		"Alice Adams, Bob Brown",
+		"# Abstract",
+		"We did a thing and it worked.",
+		"# 1 Introduction", prose,
+		"# 2 Method", prose,
+		"# 3 Results", prose,
+	), "A Study of Something")
+	front := section(t, r, "00_front.md")
+	if strings.Contains(front.Body, "#") {
+		t.Errorf("the front matter carries a heading marker:\n%s", front.Body)
+	}
+	for _, want := range []string{"A Study of Something", "Alice Adams", "Abstract", "it worked"} {
+		if !strings.Contains(front.Body, want) {
+			t.Errorf("the front matter lost %q:\n%s", want, front.Body)
+		}
+	}
+}
+
+// The marker comes off the two headings the front matter is made of and off
+// nothing else, so a subheading inside a section still gets one.
+func TestOnlyTheFrontMattersOwnHeadingsGoBare(t *testing.T) {
+	r := Titled(doc(
+		"# A Study of Something",
+		"# Abstract",
+		"We did a thing and it worked.",
+		"# 1 Introduction", prose,
+		"## 1.1 Background", prose,
+		"# 2 Method", prose,
+		"# 3 Results", prose,
+	), "A Study of Something")
+	if front := section(t, r, "00_front.md"); strings.Contains(front.Body, "#") {
+		t.Errorf("the front matter carries a heading marker:\n%s", front.Body)
+	}
+	intro := section(t, r, "01_introduction.md")
+	if !strings.Contains(intro.Body, "### 1.1 Background") {
+		t.Errorf("the subheading lost its marker too:\n%s", intro.Body)
+	}
+}

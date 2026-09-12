@@ -92,9 +92,17 @@ func Titled(d *assemble.Document, title string) *Result {
 		}
 		sub[h.Index] = h
 	}
+	// bare is the headings that are headings on the page and are not
+	// headings here. They keep their words and lose their marker: the title
+	// is in the front matter as title, the paper's name is not a level of
+	// anything, and a level one heading over 00_front.md puts the whole file
+	// a level above the sections it introduces. Rule T05 read the pair the
+	// ResNet paper published as a level three under a level one.
+	bare := map[int]bool{}
 	// The title goes before the abstract on the page, so it comes off the
 	// front of the cuts before the abstract does.
 	if len(cuts) > 0 && sameText(cuts[0].Title, title) {
+		bare[cuts[0].Index] = true
 		cuts = cuts[1:]
 	}
 	// The abstract is not a section. It is what 00_front.md is for, along
@@ -102,6 +110,7 @@ func Titled(d *assemble.Document, title string) *Result {
 	// a paper that is quoted on its own and a reader who wants it should not
 	// have to know whether this paper happened to head it.
 	if len(cuts) > 0 && cuts[0].Title == "Abstract" {
+		bare[cuts[0].Index] = true
 		cuts = cuts[1:]
 	}
 
@@ -126,7 +135,7 @@ func Titled(d *assemble.Document, title string) *Result {
 			start++
 		}
 		s.Ordinal = ordinal
-		s.Body, s.First, s.Last = body(paragraphs, start, end, sub)
+		s.Body, s.First, s.Last = body(paragraphs, start, end, sub, bare)
 		r.Sections = append(r.Sections, s)
 	}
 	if len(r.Sections) == 1 {
@@ -184,7 +193,10 @@ func headingAt(cuts []Heading, index int) (Heading, bool) {
 // The section's own heading is not in the body. It is in the front matter, as
 // section and section_title, and a file that carried it in both would make
 // the reading app choose which one to believe.
-func body(paragraphs []assemble.Paragraph, start, end int, sub map[int]Heading) (text string, first, last int) {
+//
+// bare is the paragraphs whose heading marker comes off and whose words stay,
+// which is what happens to the two headings 00_front.md is made of.
+func body(paragraphs []assemble.Paragraph, start, end int, sub map[int]Heading, bare map[int]bool) (text string, first, last int) {
 	var b strings.Builder
 	for i := start; i < end; i++ {
 		p := paragraphs[i]
@@ -198,6 +210,9 @@ func body(paragraphs []assemble.Paragraph, start, end int, sub map[int]Heading) 
 			b.WriteString("\n\n")
 		}
 		text := p.Text
+		if bare[i] {
+			text, _ = unmark(text)
+		}
 		if _, ok := sub[i]; ok {
 			// Level three because the section's own heading is level two and
 			// is in the front matter rather than in the file.
