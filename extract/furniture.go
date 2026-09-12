@@ -2,6 +2,7 @@ package extract
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -38,6 +39,11 @@ type Furniture struct {
 	// head also says it once in the body, and only one of those is furniture.
 	repeated map[string]bool
 	pages    int
+	// folios is the page number each page prints, as it printed it, for the
+	// pages whose margin number counts with the file. It is learned from the
+	// whole paper by folios below, and it is empty for a paper whose margin
+	// numbers do not count.
+	folios map[int]string
 }
 
 // FindFurniture learns what is furniture from the pages it is given.
@@ -47,7 +53,7 @@ type Furniture struct {
 // and learn nothing about the first page, which is the page that has a
 // different one.
 func FindFurniture(pages []poppler.Layout) *Furniture {
-	f := &Furniture{repeated: map[string]bool{}, pages: len(pages)}
+	f := &Furniture{repeated: map[string]bool{}, pages: len(pages), folios: foliosOf(pages)}
 	if len(pages) < minPages {
 		return f
 	}
@@ -132,16 +138,148 @@ func (f *Furniture) Count() int {
 // toolchain wants it for the page map: a paper pulled out of a journal
 // starts at 483 and its PDF starts at 1, and the reading app shows the
 // reader the number that is on the paper.
-func Printed(p poppler.Layout) string {
-	for _, l := range Lines(p) {
-		if _, ok := key(p, l); !ok {
-			continue
-		}
-		if s := strings.TrimSpace(l.Text()); folio.MatchString(s) {
-			return s
+func (f *Furniture) Printed(p poppler.Layout) string {
+	if f == nil {
+		return ""
+	}
+	return f.folios[p.Number]
+}
+
+// foliosOf works out which of the numbers in the margins are page numbers.
+//
+// A bare number in the margin is not enough on its own. A two column paper
+// sets its footnotes at the foot of the columns and a footnote marker is a
+// bare number in the bottom margin, which is how this used to read pages 3
+// to 6 of the BERT paper as printing 4, 6, 8 and 10. That paper prints no
+// page numbers anywhere, and the map built from those four markers put its
+// first page at page 3 of a paper with no page 3.
+//
+// What separates a folio from a footnote marker is that a folio counts with
+// the file: the number on the page after this one is this one plus one. So
+// every margin number on every page is a candidate, the offsets between the
+// candidates and the page they are on are counted, and the offset the most
+// pages agree on wins. A page keeps the candidate that agrees with it and
+// drops the rest, which is also what picks the folio out of a page that
+// prints a folio and a footnote marker both.
+//
+// How many pages have to agree is the same third of the paper that a
+// running head has to be on, and for a related reason. Two agreeing is not
+// enough here: a paper with a footnote on page nine and the next footnote on
+// page ten has two markers a page apart, which is exactly what a folio looks
+// like, and that pair should not be allowed to number a sixteen page paper.
+// A folio is on nearly every page of the paper that has one, so a third is
+// already generous.
+func foliosOf(pages []poppler.Layout) map[int]string {
+	type candidate struct {
+		text   string
+		offset int
+	}
+	found := map[int][]candidate{}
+	agree := map[int]int{}
+	for _, p := range pages {
+		for _, l := range Lines(p) {
+			if _, ok := key(p, l); !ok {
+				continue
+			}
+			s := strings.TrimSpace(l.Text())
+			n, ok := counts(s)
+			if !ok {
+				continue
+			}
+			found[p.Number] = append(found[p.Number], candidate{s, n - p.Number})
+			agree[n-p.Number]++
 		}
 	}
-	return ""
+	best, most := 0, 0
+	for offset, n := range agree {
+		// Ties go to the smaller offset, so that a run over a paper twice
+		// gives the same answer twice. Ranging over a map does not.
+		if n > most || (n == most && offset < best) {
+			best, most = offset, n
+		}
+	}
+	if most < max(len(pages)/3, 2) {
+		return nil
+	}
+	out := map[int]string{}
+	for page, cs := range found {
+		for _, c := range cs {
+			if c.offset == best {
+				out[page] = c.text
+				break
+			}
+		}
+	}
+	return out
+}
+
+// counts is the value of a margin number for the purpose of counting pages
+// with. Roman numerals count, because the front matter of a thesis is
+// numbered in them, and they are still not what PrintedNumber gives back: a
+// page printed "iv" prints "iv" and not 4.
+func counts(s string) (int, bool) {
+	s = strings.Trim(s, "-[]() ")
+	if !folio.MatchString(s) {
+		return 0, false
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return n, true
+	}
+	return roman(s)
+}
+
+// roman reads a roman numeral. It is here for the front matter of a thesis,
+// which is the one place in the hundred papers they are used for pages, and
+// it is deliberately strict: "iiii" is four to a lenient reader and is a
+// misread scan to this one.
+func roman(s string) (int, bool) {
+	values := map[rune]int{'i': 1, 'v': 5, 'x': 10, 'l': 50, 'c': 100, 'd': 500, 'm': 1000}
+	// The five, the fifty and the five hundred are written once or not at
+	// all. Nobody ever wrote "vv" for ten, and a scan that reads one is a
+	// scan that read something else.
+	once := map[rune]bool{'v': true, 'l': true, 'd': true}
+	n, last, repeat := 0, 0, 0
+	for _, r := range reverse(strings.ToLower(s)) {
+		v, ok := values[r]
+		if !ok {
+			return 0, false
+		}
+		switch {
+		case v == last:
+			repeat++
+			if repeat > 2 || once[r] {
+				return 0, false
+			}
+			n += v
+		case v < last:
+			// The subtractive pair, which is only ever the next two symbols
+			// up: iv and ix and not il, and never twice over.
+			if v*10 < last {
+				return 0, false
+			}
+			n -= v
+		default:
+			repeat = 0
+			n += v
+		}
+		if v >= last {
+			last = v
+		}
+	}
+	if n <= 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// reverse is a string back to front, which is how a roman numeral is read:
+// a symbol is subtracted when something bigger came after it.
+func reverse(s string) string {
+	r := []rune(s)
+	for i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {
+		r[i], r[j] = r[j], r[i]
+	}
+	return string(r)
 }
 
 var folio = regexp.MustCompile(`^[-\[\(]?\s*(?:[0-9]{1,4}|[ivxlcdmIVXLCDM]{1,7})\s*[-\]\)]?$`)

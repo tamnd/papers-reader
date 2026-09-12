@@ -154,6 +154,131 @@ func TestAFolioIsRecognisedHoweverItIsPrinted(t *testing.T) {
 	}
 }
 
+func TestThePageNumbersAPaperPrintsAreRead(t *testing.T) {
+	// A paper pulled out of a volume: the file starts at 1 and the paper
+	// starts at 481.
+	pages := paper(6, func(i int) []poppler.TextLine {
+		return []poppler.TextLine{put(300, 740, itoa(480+i))}
+	})
+	f := FindFurniture(pages)
+	for _, p := range pages {
+		want := itoa(480 + p.Number)
+		if got := f.Printed(p); got != want {
+			t.Errorf("page %d printed %q, want %q", p.Number, got, want)
+		}
+	}
+}
+
+func TestAFootnoteMarkerIsNotAPageNumber(t *testing.T) {
+	// The BERT paper, which prints no page numbers at all. Its footnotes are
+	// at the foot of a column and their markers are bare numbers in the
+	// bottom margin, and reading those as folios put page 1 of the paper at
+	// page 3. A footnote marker does not count with the file, which is the
+	// whole of what makes a folio a folio.
+	//
+	// Two of these agree, because a footnote on one page and the next
+	// footnote on the page after it are a page apart and that is what a
+	// folio looks like. A pair is not a page numbering.
+	markers := map[int]string{3: "4", 4: "6", 5: "8", 6: "10", 9: "12", 10: "13"}
+	pages := paper(12, func(i int) []poppler.TextLine {
+		if markers[i] == "" {
+			return nil
+		}
+		return []poppler.TextLine{put(320, 745, markers[i])}
+	})
+	f := FindFurniture(pages)
+	for _, p := range pages {
+		if got := f.Printed(p); got != "" {
+			t.Errorf("page %d was read as printing %q", p.Number, got)
+		}
+	}
+	if m := LearnMap(readAll(pages, f)); m.Known {
+		t.Errorf("learned an offset of %d from a paper with no page numbers", m.Offset)
+	}
+}
+
+func TestAFolioIsPickedOutOfAPageThatAlsoCarriesAMarker(t *testing.T) {
+	// The common case in a two column paper that does number its pages: the
+	// folio is centred at the foot and the footnote marker is at the foot of
+	// a column, and both are bare numbers in the bottom margin.
+	markers := []string{"1", "2", "2", "3", "5", "8"}
+	pages := paper(6, func(i int) []poppler.TextLine {
+		return []poppler.TextLine{
+			put(80, 720, markers[i-1]),
+			put(300, 760, itoa(100+i)),
+		}
+	})
+	f := FindFurniture(pages)
+	for _, p := range pages {
+		want := itoa(100 + p.Number)
+		if got := f.Printed(p); got != want {
+			t.Errorf("page %d printed %q, want %q", p.Number, got, want)
+		}
+	}
+}
+
+func TestOneMisreadFolioDoesNotMoveTheRest(t *testing.T) {
+	// A scan reads one folio wrong now and then. The page that disagrees
+	// with the paper keeps no number rather than a wrong one, and the pages
+	// around it are untouched.
+	pages := paper(6, func(i int) []poppler.TextLine {
+		if i == 3 {
+			return []poppler.TextLine{put(300, 740, "9")}
+		}
+		return []poppler.TextLine{put(300, 740, itoa(480+i))}
+	})
+	f := FindFurniture(pages)
+	if got := f.Printed(pages[2]); got != "" {
+		t.Errorf("page 3 printed %q, want nothing", got)
+	}
+	if got := f.Printed(pages[3]); got != "484" {
+		t.Errorf("page 4 printed %q, want 484", got)
+	}
+}
+
+func TestTheFrontMatterOfAThesisCountsInRomanNumerals(t *testing.T) {
+	numerals := []string{"i", "ii", "iii", "iv", "v", "vi"}
+	pages := paper(6, func(i int) []poppler.TextLine {
+		return []poppler.TextLine{put(300, 740, numerals[i-1])}
+	})
+	f := FindFurniture(pages)
+	for _, p := range pages {
+		if got := f.Printed(p); got != numerals[p.Number-1] {
+			t.Errorf("page %d printed %q, want %q", p.Number, got, numerals[p.Number-1])
+		}
+	}
+}
+
+func TestARomanNumeralIsReadTheWayRomansWroteThem(t *testing.T) {
+	for _, c := range []struct {
+		s string
+		n int
+	}{
+		{"i", 1}, {"iv", 4}, {"ix", 9}, {"xiv", 14}, {"xl", 40},
+		{"XVII", 17}, {"mcmxcix", 1999},
+	} {
+		if n, ok := roman(c.s); !ok || n != c.n {
+			t.Errorf("roman(%q) is %d %v, want %d", c.s, n, ok, c.n)
+		}
+	}
+	// A scan reads "iii" as "iiii" and "ix" as "ic" often enough to be worth
+	// refusing. A numeral nobody wrote is a misread, not a page.
+	for _, s := range []string{"iiii", "ic", "vv", "abc", "", "1"} {
+		if n, ok := roman(s); ok {
+			t.Errorf("roman(%q) is %d, want a refusal", s, n)
+		}
+	}
+}
+
+// readAll is every page read, which is what LearnMap wants.
+func readAll(pages []poppler.Layout, f *Furniture) []Page {
+	out := make([]Page, 0, len(pages))
+	for _, p := range pages {
+		out = append(out, Read(p, f))
+	}
+	return out
+}
+
 // itoa keeps the fixtures readable without pulling strconv into the test for
 // one call.
 func itoa(n int) string {

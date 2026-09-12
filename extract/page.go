@@ -151,7 +151,7 @@ func (p Page) Empty() bool { return len(p.Paragraphs) == 0 }
 // deleted because it looked like one.
 func Read(p poppler.Layout, f *Furniture) Page {
 	cuts := Gutters(p)
-	out := Page{Number: p.Number, Columns: len(cuts) + 1, Printed: Printed(p)}
+	out := Page{Number: p.Number, Columns: len(cuts) + 1, Printed: f.Printed(p)}
 	lines := f.Lines(p)
 	if len(lines) == 0 {
 		return out
