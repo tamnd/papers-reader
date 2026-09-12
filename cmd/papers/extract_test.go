@@ -250,3 +250,47 @@ func TestRetidyOverAPaperWithNoPagesIsQuiet(t *testing.T) {
 		t.Fatalf("a paper with no pages returned %v", err)
 	}
 }
+
+// The window a restricted paper is read through is three pages long, and it
+// starts where --pages says rather than always at the front of the file. No
+// Silver Bullet is the UNC tech report: a cover sheet, a page holding one
+// line of legal notice, and a second title page, with the abstract on page 4.
+func TestARestrictedPaperIsReadThreePagesFromWhereItStarts(t *testing.T) {
+	for _, c := range []struct{ first, last int }{
+		{0, 3},
+		{1, 3},
+		{4, 6},
+		{11, 13},
+	} {
+		if got := restrictedWindow(c.first); got != c.last {
+			t.Errorf("reading a restricted paper from page %d stops at page %d, want %d", c.first, got, c.last)
+		}
+	}
+}
+
+func TestTheWindowNeverRunsOffTheEndOfThePaper(t *testing.T) {
+	e := &extraction{source: &corpus.Source{Pages: 5}, first: 4, last: restrictedWindow(4)}
+	if err := e.pageRange(t.Context(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if e.first != 4 || e.last != 5 {
+		t.Errorf("read pages %d to %d of a 5 page paper, want 4 to 5", e.first, e.last)
+	}
+}
+
+func TestAPageRangeThatStartsAfterTheEndIsAnError(t *testing.T) {
+	e := &extraction{source: &corpus.Source{Pages: 5}, first: 9, last: restrictedWindow(9)}
+	if err := e.pageRange(t.Context(), ""); err == nil {
+		t.Fatal("reading from page 9 of a 5 page paper was accepted")
+	}
+}
+
+func TestNoPageRangeReadsTheWholePaper(t *testing.T) {
+	e := &extraction{source: &corpus.Source{Pages: 14}}
+	if err := e.pageRange(t.Context(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if e.first != 1 || e.last != 14 {
+		t.Errorf("read pages %d to %d, want 1 to 14", e.first, e.last)
+	}
+}

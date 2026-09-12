@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/mathtex"
 )
 
 func base() corpus.Front {
@@ -333,6 +334,38 @@ func TestAbstractCutsAParagraphAtASentence(t *testing.T) {
 	}
 }
 
+// The cap fell one line into a displayed equation on the Cooley paper, and
+// the published front matter ended on a $$ that nothing ever closed.
+// Everything after an open dollar is mathematics, so the whole file read as
+// a formula somebody had cut in half.
+func TestAbstractDoesNotStopInsideTheMathematics(t *testing.T) {
+	body := strings.Join([]string{
+		"Notes on the Analytical Engine",
+		"Ada Lovelace",
+		"Consider the series",
+		"$$",
+		"B_n = \\sum_{k=0}^{n} a_k x^k",
+		"$$",
+	}, "\n\n")
+	got := Abstract(body, 11)
+	if _, unclosed := mathtex.Split(got); unclosed != nil {
+		t.Errorf("the cut left a math span open:\n%s", got)
+	}
+	if !strings.HasSuffix(got, "Consider the series") {
+		t.Errorf("the cut is at %q, want it above the display", got)
+	}
+}
+
+// The display survives when the whole of it fits, because the point is not
+// to drop mathematics, it is to not stop in the middle of it.
+func TestAbstractKeepsADisplayThatFits(t *testing.T) {
+	body := "Ada Lovelace\n\n$$\n\nB_n = a_k\n\n$$\n\nAnd then a great deal more text that does not fit."
+	got := Abstract(body, 7)
+	if !strings.HasSuffix(got, "$$") {
+		t.Errorf("a display that fits was dropped:\n%s", got)
+	}
+}
+
 // A block that is short enough is not touched at all.
 func TestAbstractLeavesAShortBlockAlone(t *testing.T) {
 	body := "Notes on the Analytical Engine\n\nAda Lovelace\n"
@@ -486,5 +519,59 @@ func TestAcceptIsIdempotent(t *testing.T) {
 	}
 	if len(names) != 0 {
 		t.Errorf("the second run accepted %v, want nothing", names)
+	}
+}
+
+// The tail of the article before this one is not part of this one. IEEE
+// Journal of Solid-State Circuits sets one article straight after another, so
+// the first page of the Dennard paper carries the closing references of a
+// paper about CMOS on sapphire and then the Dennard title.
+func TestRestrictDropsTheTailOfThePreviousArticle(t *testing.T) {
+	before := "[3] E. J. Boleky, \"Subnanosecond switching delays using CMOS/SOS silicon-gate technology,\" in 1971 Int. Solid-State Circuit Conf., Dig. Tech. Papers, p. 225."
+	fs := Restrict([]File{{
+		Name:  "00_front.md",
+		Front: base(),
+		Body:  []byte(before + "\n\nNotes on the Analytical Engine\n\nAda Lovelace\n\n" + prose + "\n"),
+	}}, AbstractWords)
+	body := string(fs[0].Body)
+	if strings.Contains(body, "Boleky") {
+		t.Errorf("the previous article's references were published:\n%s", body)
+	}
+	if !strings.Contains(body, "Notes on the Analytical Engine") {
+		t.Errorf("the title did not survive:\n%s", body)
+	}
+	if longestParagraph(body) < AbstractParagraph {
+		t.Errorf("the abstract did not survive:\n%s", body)
+	}
+}
+
+// The page and the manifest disagree about punctuation and case, and the
+// match has to survive that. MOSFET's is set with a typographic apostrophe on
+// the page and a typewriter one in the manifest.
+func TestTheTitleIsMatchedOnItsLettersAlone(t *testing.T) {
+	const title = "Design of Ion-Implanted MOSFET's with Very Small Physical Dimensions"
+	body := "[14] F. F. Fang and H. Rupprecht.\nDESIGN OF ION IMPLANTED MOSFET’S WITH VERY SMALL PHYSICAL DIMENSIONS\nRobert H. Dennard"
+	got := fromTitle(body, title)
+	if strings.Contains(got, "Rupprecht") {
+		t.Errorf("the title was not matched through its punctuation:\n%s", got)
+	}
+	if !strings.Contains(got, "Dennard") {
+		t.Errorf("the block was cut past the title:\n%s", got)
+	}
+}
+
+// A page that does not print the title is a page this knows nothing about,
+// and a cover sheet is a real one. Dropping the block would publish nothing.
+func TestATitleThatIsNotOnThePageLeavesTheBlockAlone(t *testing.T) {
+	body := "Technical Report TR86-020\n\nSeptember 1986\n"
+	if got := fromTitle(body, "Notes on the Analytical Engine"); got != body {
+		t.Errorf("a page with no title was cut down to:\n%s", got)
+	}
+}
+
+func TestAPaperWithNoTitleRecordedLeavesTheBlockAlone(t *testing.T) {
+	body := "Some front matter.\n"
+	if got := fromTitle(body, ""); got != body {
+		t.Errorf("a paper with no title was cut down to:\n%s", got)
 	}
 }

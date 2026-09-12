@@ -257,8 +257,8 @@ type extraction struct {
 	long        bool
 }
 
-// restrictedPages is how far into a paper that may not be redistributed this
-// program reads.
+// restrictedPages is how many pages of a paper that may not be redistributed
+// this program reads.
 //
 // Everything published from such a paper is its front matter and an abstract
 // of at most 250 words, and it used to stop at one page on the reasoning that
@@ -266,9 +266,15 @@ type extraction struct {
 // something else there: the Paxos paper opens with Lamport's own note about
 // where the article appeared, and the abstract is on the page after it, so
 // the published file was a title, an author and a citation. Three pages is
-// past every cover sheet in the corpus and is still nothing anybody could
-// mistake for a copy of the paper. What may be published is capped by
-// split.Restrict and by audit rule S07, not by this.
+// still nothing anybody could mistake for a copy of the paper. What may be
+// published is capped by split.Restrict and by audit rule S07, not by this.
+//
+// It is a count and not the fixed window 1 to 3, because three pages from the
+// front of the file is not three pages of the paper. No Silver Bullet is the
+// UNC tech report, and its first three pages are a cover sheet, a page whose
+// only line is an equal opportunity notice, and a second title page. The
+// abstract is on page 4. Read from the front, that paper published eight
+// words and tripped two audit rules, both of them right to complain.
 const restrictedPages = 3
 
 // seed feeds the pages already on disk through the checker, and through the
@@ -508,8 +514,11 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 		return n, fmt.Errorf("nothing is known about what may be published from it, so it is not read")
 	case corpus.AccessRestricted:
 		// Front matter and an abstract under 250 words is the whole of what
-		// this paper can ever publish, so the rest of it is never read.
-		e.last = restrictedPages
+		// this paper can ever publish, so the rest of it is never read. The
+		// cap moves with --pages, so --pages 4 reads 4 to 6, because where a
+		// paper starts is not something this can work out and a cover sheet
+		// is not front matter.
+		e.last = restrictedWindow(e.first)
 	}
 	file := e.corpus.PDF(e.paper.ID)
 	if _, err := os.Stat(file); err != nil {
@@ -651,23 +660,46 @@ func (e *extraction) layer(ctx context.Context, file string) func(int) (string, 
 
 // pageRange fills in the ends of the range that were not given.
 func (e *extraction) pageRange(ctx context.Context, file string) error {
-	if e.last == 0 {
-		e.last = e.source.Pages
-	}
-	if e.last == 0 {
+	pages := e.source.Pages
+	if pages == 0 {
 		doc, err := poppler.Info(ctx, file)
 		if err != nil {
 			return err
 		}
-		e.last = doc.Pages
+		pages = doc.Pages
 	}
-	if e.first == 0 {
-		e.first = 1
+	if e.last == 0 {
+		e.last = pages
 	}
+	// A restricted paper's window is three pages from wherever it starts, so
+	// asking for the last page of a short paper now runs off the end of it.
+	// Reading a page that is not there is a tool error a long way from here.
+	if e.last > pages {
+		e.last = pages
+	}
+	e.first = e.firstPage()
 	if e.last < e.first {
 		return fmt.Errorf("page %d comes before page %d", e.last, e.first)
 	}
 	return nil
+}
+
+// firstPage is where reading starts, which is page 1 unless --pages moved it.
+func (e *extraction) firstPage() int {
+	if e.first < 1 {
+		return 1
+	}
+	return e.first
+}
+
+// restrictedWindow is the last page a restricted paper is read to, given
+// where reading starts. It is a count of pages and not the fixed range 1 to
+// 3, which is the whole of what --pages is for on such a paper.
+func restrictedWindow(first int) int {
+	if first < 1 {
+		first = 1
+	}
+	return first + restrictedPages - 1
 }
 
 // A rendered page is one page of either path, ready to be checked and

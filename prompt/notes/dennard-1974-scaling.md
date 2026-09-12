@@ -1,0 +1,8 @@
+This page is from Dennard, Gaensslen, Yu, Rideout, Bassous and LeBlanc, Design of Ion-Implanted MOSFET's with Very Small Physical Dimensions, IEEE Journal of Solid-State Circuits, volume SC-9 number 5, October 1974. The following are about this paper and this printing of it.
+
+- The paper starts partway down the first page it was given. The journal sets one article straight after another, so the first page carries the closing reference list of the article before this one, numbered [3] to [14] and about CMOS on sapphire, and then the title of this paper. None of that reference list is part of this paper. Begin the transcription at the title and leave everything above it out.
+- The running head is the authors and a short title in capitals, DENNARD et al.: ION-IMPLANTED MOSFET'S, with the page number at the outer edge. The numbers run from 256 to 268.
+- The list of symbols under the abstract is a glossary and not a table of data. Each entry is a symbol and the sentence that defines it. Set it as a description list, one symbol and its definition to a line, and not as a pipe table.
+- Every symbol in it is mathematics and is written as mathematics: `$\Psi_b$`, `$Q_{eff}$`, `$t_{ox}$`, `$V_{sub}$`, `$\epsilon_{Si}$`, `$\mu_{eff}$`, `$N_a$`, `$n_i$`. The unitless scaling constant is `$\kappa$` and it is the subject of the paper, so it appears on nearly every page.
+- The scan is a poor one and the text layer under it is worse: it reads the running head as DENN.4m and the journal name as SOLID-ST.iTE. Read the page from the image. Where a character is genuinely unreadable, leave the word out rather than guessing a plausible one.
+- Micron is printed as a bare mu, 1 μ and 0.5 μ, without an m after it. Keep it as printed.

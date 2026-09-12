@@ -52,8 +52,8 @@ out of the pages extraction already wrote, and a paper that has been neither
 extracted nor given a text layer gets a map with sizes and no numbers, which
 is honest and is still worth having.
 
-A restricted paper is mapped as far as its third page, which is as far as it
-is read.
+A restricted paper is mapped over the three pages it was read on, wherever
+in the file those are.
 
 A run that would write the file it already wrote writes nothing, so this is
 cheap to put in a pipeline.
@@ -149,8 +149,9 @@ func mapPaper(ctx context.Context, c *corpus.Corpus, id string, rec *corpus.Sour
 		}
 		last = doc.Pages
 	}
-	if rec.Access == corpus.AccessRestricted && last > restrictedPages {
-		last = restrictedPages
+	first := 1
+	if rec.Access == corpus.AccessRestricted {
+		first, last = restrictedRange(c, id, last)
 	}
 
 	// One pdftotext run for the whole paper, because the folio is furniture
@@ -158,7 +159,7 @@ func mapPaper(ctx context.Context, c *corpus.Corpus, id string, rec *corpus.Sour
 	// scanned paper comes back from this with the page sizes and no words on
 	// any page, which is not an error here: the sizes are the half of this
 	// file that does not depend on there being a text layer.
-	native, err := extract.ReadNative(ctx, file, 1, last)
+	native, err := extract.ReadNative(ctx, file, first, last)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +195,31 @@ func mapPaper(ctx context.Context, c *corpus.Corpus, id string, rec *corpus.Sour
 	}
 	sort.Slice(pages, func(i, j int) bool { return pages[i].PDF < pages[j].PDF })
 	return pagemap.Build(id, pages), nil
+}
+
+// restrictedRange is the pages of a restricted paper that are mapped, which
+// is the window that was read and nothing else.
+//
+// It used to be pages 1 to 3, and that is wrong for the reason it was wrong
+// in papers extract: three pages from the front of a file is not three pages
+// of a paper. The UNC tech report of No Silver Bullet opens with a cover
+// sheet, a page whose only line is an equal opportunity notice, and a second
+// title page, so it is read from page 4, and its map described three pages
+// nothing was published from.
+//
+// The extraction record is what says where the window is, because where it
+// starts is a decision the extraction made and nothing else knows it. A
+// paper with no record has not been read at all, and the front of the file
+// is then the only guess available.
+func restrictedRange(c *corpus.Corpus, id string, pages int) (first, last int) {
+	first, last = 1, restrictedWindow(1)
+	if r, err := extract.ReadRecord(c.Work(id)); err == nil && r != nil && r.First > 0 {
+		first, last = r.First, r.Last
+	}
+	if pages > 0 && last > pages {
+		last = pages
+	}
+	return first, last
 }
 
 // figuresByPage is this paper's committed figures, by the page they were cut

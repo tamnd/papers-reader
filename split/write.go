@@ -8,8 +8,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/mathtex"
 )
 
 // A File is one content file, ready to be written.
@@ -262,13 +264,34 @@ func Abstract(body string, words int) string {
 		}
 		break
 	}
-	if len(out) == 0 {
+	if out = closeMath(out); len(out) == 0 {
 		// The block opens with one paragraph longer than the whole cap and
 		// with no sentence end inside it. There is nothing to keep whole, so
 		// the old word count is the only cut left.
 		return strings.Join(strings.Fields(body)[:words], " ")
 	}
 	return strings.Join(out, "\n\n")
+}
+
+// closeMath drops paragraphs off the end of a cut abstract until nothing in
+// it has an open math span.
+//
+// The cap falls where the words run out, and on the Cooley paper they ran
+// out one line into a displayed equation. The published front matter ended
+// on a $$ that nothing ever closed, and everything after an open dollar is
+// mathematics, so the file read as a formula somebody had cut in half.
+// Audit rules M01 and M03 both said so and both were right.
+//
+// Nothing is lost by stopping above it. A displayed equation is not part of
+// an abstract, and a restricted paper publishes an abstract and no more.
+func closeMath(out []string) []string {
+	for len(out) > 0 {
+		if _, unclosed := mathtex.Split(strings.Join(out, "\n\n")); unclosed == nil {
+			return out
+		}
+		out = out[:len(out)-1]
+	}
+	return out
 }
 
 // sentences is the opening of a paragraph, at most words words long and
@@ -334,7 +357,7 @@ func Restrict(files []File, words int) []File {
 		return nil
 	}
 	front := files[0]
-	body := string(front.Body)
+	body := fromTitle(string(front.Body), front.Front.Title)
 	if longestParagraph(body) < AbstractParagraph {
 		if p, from := firstParagraph(files[1:]); p != "" {
 			body = strings.TrimRight(body, "\n") + "\n\n" + p + "\n"
@@ -346,6 +369,53 @@ func Restrict(files []File, words int) []File {
 	front.Body = []byte(Abstract(body, words) + "\n")
 	front.Front.ContentSHA256 = corpus.ContentSHA(front.Body)
 	return []File{front}
+}
+
+// fromTitle is the front block from this paper's title onwards.
+//
+// A journal that sets one article straight after another puts the tail of the
+// previous one above this paper's title, and the reader transcribes the page
+// it was given. The first page of the Dennard paper is the closing reference
+// list of an article about CMOS on sapphire, numbered [3] to [14], and then
+// the title of the Dennard paper in the last column. The cap spent all 250
+// words on that bibliography, so the whole of what the corpus published
+// about a paper it may not redistribute was somebody else's references.
+//
+// The match is on letters alone, lowercased, because the page and the
+// manifest disagree about case, about the apostrophe in MOSFET's, and about
+// the hyphen in Ion-Implanted.
+//
+// A title that is not found leaves the block exactly as it was. A page that
+// does not print the title is a page this knows nothing about, and there are
+// real ones: a cover sheet carries the title alone with no abstract under it,
+// and a paper whose first page is a plate carries neither. Keeping too much
+// is a rule the audit will complain about, and dropping the whole block would
+// publish nothing at all and look like the paper was read and found empty.
+func fromTitle(body, title string) string {
+	want := onlyLetters(title)
+	if want == "" {
+		return body
+	}
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if strings.Contains(onlyLetters(line), want) {
+			return strings.Join(lines[i:], "\n")
+		}
+	}
+	return body
+}
+
+// onlyLetters is the lowercase letters and digits of a string, everything
+// else dropped, for comparing a title on a page against a title in a
+// manifest.
+func onlyLetters(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // firstParagraph is the first paragraph of these files that is long enough to

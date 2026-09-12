@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tamnd/papers-reader/assemble"
+	"github.com/tamnd/papers-reader/classify"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
 	"github.com/tamnd/papers-reader/refs"
@@ -341,15 +342,52 @@ func document(c *corpus.Corpus, id string) (*assemble.Document, error) {
 	if len(numbers) == 0 {
 		return nil, nil
 	}
-	pages := make([]assemble.Page, 0, len(numbers))
+	text := make(map[int]string, len(numbers))
 	for _, page := range numbers {
-		text, err := store.Read(page)
+		s, err := store.Read(page)
 		if err != nil {
 			return nil, err
 		}
-		pages = append(pages, assemble.Page{Number: page, Text: text})
+		text[page] = s
+	}
+	undress, err := modelRead(c, id)
+	if err != nil {
+		return nil, err
+	}
+	if undress {
+		text = extract.Undress(text)
+	}
+	pages := make([]assemble.Page, 0, len(numbers))
+	for _, page := range numbers {
+		// Unalign runs whatever read the paper. A line the page set to its
+		// two margins collapses in Markdown the same way however it was
+		// read, and the repair is in the assembly rather than in the reading
+		// so that fixing it does not mean reading a hundred papers again.
+		pages = append(pages, assemble.Page{Number: page, Text: extract.Unalign(text[page])})
 	}
 	return assemble.Join(pages), nil
+}
+
+// modelRead is whether a paper's pages came out of a model rather than out
+// of the PDF's own text layer.
+//
+// What it decides is whether the running heads and the folios are still on
+// the pages. The native path takes them off while it reads, because it has
+// the coordinates of every line and can see which of them are in the
+// margin. A model has no such thing to hand, so the prompt asks it to
+// transcribe them where they are and says a later program takes them out,
+// and extract.Undress is that program.
+//
+// A paper with no record at all is read as a model's work. That was the
+// state of every work directory written before records existed, there are
+// none of those left in the corpus, and of the two ways to be wrong here,
+// leaving a running head in the published text is the one a reader sees.
+func modelRead(c *corpus.Corpus, id string) (bool, error) {
+	record, err := extract.ReadRecord(c.Work(id))
+	if err != nil {
+		return false, err
+	}
+	return record == nil || record.Path != string(classify.PathNative), nil
 }
 
 // sourceRef is the source field of the front matter: where this text came
