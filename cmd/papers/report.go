@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tamnd/llm/ledger"
@@ -49,6 +50,7 @@ func runReportUsage(args []string) error {
 	since := fs.String("since", "", "count the asks since a date (2026-09-01) or a window (168h)")
 	path := fs.String("ledger", "", "read this ledger rather than the one beside the route file")
 	quiet := fs.Bool("quiet", false, "print the summary line only")
+	force := fs.Bool("force", false, "write a report with no asks in it over one that has some")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `usage: papers report usage [flags]
 
@@ -137,11 +139,39 @@ be claiming a measurement nobody made.
 		return err
 	}
 	out := filepath.Join(c.Reports(), "usage.md")
+	if err := keep(out, u, *force); err != nil {
+		return err
+	}
 	if err := os.WriteFile(out, []byte(u.Markdown()), 0o644); err != nil {
 		return err
 	}
 	fmt.Println("wrote", out)
 	return nil
+}
+
+// keep refuses to write a report with nothing in it over one that has a
+// night of work in it.
+//
+// The ledger is on the machine that did the work and the report is in the
+// corpus, so the two come apart as soon as anybody pulls the corpus onto a
+// second machine. Running this there would otherwise turn a report full of
+// numbers into a page of zeroes, and it would look like a stage that had
+// been reverted rather than a report that had been rebuilt from nothing.
+func keep(path string, u *report.Usage, force bool) error {
+	if force || u.Asks > 0 {
+		return nil
+	}
+	old, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(old), report.NoAsks) {
+		return nil
+	}
+	return fmt.Errorf("%s counts asks this machine has no record of, and this run has none to put there: run it where the ledger is, or pass -force to overwrite it", path)
 }
 
 // askingStages is every stage that puts a question to a model, so that the

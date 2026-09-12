@@ -22,6 +22,14 @@ import (
 // named after a host.
 const LedgerPath = "~/.config/papers/ledger.jsonl"
 
+// NoAsks is how a report with an empty ledger behind it opens.
+//
+// It is a constant because a caller needs to tell such a report from one
+// with a night of work in it: the ledger is on the machine that did the
+// work and the report is in the corpus, so a run somewhere else would
+// otherwise quietly overwrite real numbers with zeroes.
+const NoAsks = "Nothing has been asked of a model yet"
+
 // A Price is what a model costs, in dollars per million tokens.
 //
 // Cached input is charged here at the full input price. Every vendor
@@ -301,7 +309,7 @@ func (u *Usage) Markdown() string {
 	b.WriteString("` on the machine that did the work. The ledger is not in this repository and will not be: it names the hosts that were asked. Nothing below names a host.\n\n")
 
 	if u.Asks == 0 {
-		b.WriteString("Nothing has been asked of a model yet, so there is nothing to count. A paper that came through the native extraction path never puts a question to a model, by design, and a corpus built entirely that way has an empty ledger and an honest zero here.\n")
+		b.WriteString(NoAsks + ", so there is nothing to count. A paper that came through the native extraction path never puts a question to a model, by design, and a corpus built entirely that way has an empty ledger and an honest zero here.\n")
 		u.writeReads(&b)
 		u.writeStages(&b)
 		return b.String()
