@@ -308,3 +308,68 @@ func TestAPaperWithNoTitleOnRecordKeepsItsFirstSection(t *testing.T) {
 		t.Errorf("split into %v, want %v", got, want)
 	}
 }
+
+// A model that writes its headings in Markdown hands the splitter a
+// subheading that already carries a marker, and the splitter used to put
+// another one in front of it. The ResNet paper came back from gpt-5 with
+// eleven headings reading "### ## Something".
+func TestASubheadingGetsOneMarkerAndNotTwo(t *testing.T) {
+	r := Titled(doc(
+		"# 1 Introduction", prose,
+		"## 1.1 Background", prose,
+		"# 2 Method", prose,
+		"# 3 Results", prose,
+	), "")
+	s := section(t, r, "01_introduction.md")
+	if strings.Contains(s.Body, "### ##") {
+		t.Errorf("the subheading is written twice over:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "### 1.1 Background") {
+		t.Errorf("the subheading is not in the section:\n%s", s.Body)
+	}
+}
+
+// The other notation a model writes a heading in, which PR 57 taught the
+// splitter to read and which has the same problem.
+func TestABoldSubheadingLosesItsEmphasisWhenItBecomesAHeading(t *testing.T) {
+	r := Titled(doc(
+		"# 1 Introduction", prose,
+		"**1.1 Background**", prose,
+		"# 2 Method", prose,
+		"# 3 Results", prose,
+	), "")
+	s := section(t, r, "01_introduction.md")
+	if strings.Contains(s.Body, "**") {
+		t.Errorf("the emphasis is still on the heading:\n%s", s.Body)
+	}
+	if !strings.Contains(s.Body, "### 1.1 Background") {
+		t.Errorf("the subheading is not in the section:\n%s", s.Body)
+	}
+}
+
+// A paragraph that only looks like a heading keeps every character it came
+// with, because taking a marker off something that is not a heading loses
+// what the paper said.
+func TestAParagraphThatIsNotAHeadingIsNotTouched(t *testing.T) {
+	const emphasised = "*Deeper neural networks are more difficult to train.* We say so below."
+	r := Titled(doc(
+		"# 1 Introduction", emphasised,
+		"# 2 Method", prose,
+		"# 3 Results", prose,
+	), "")
+	s := section(t, r, "01_introduction.md")
+	if !strings.Contains(s.Body, emphasised) {
+		t.Errorf("the paragraph was rewritten:\n%s", s.Body)
+	}
+}
+
+func section(t *testing.T, r *Result, filename string) Section {
+	t.Helper()
+	for _, s := range r.Sections {
+		if s.Filename() == filename {
+			return s
+		}
+	}
+	t.Fatalf("there is no %s in %v", filename, names(r))
+	return Section{}
+}

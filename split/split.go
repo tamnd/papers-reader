@@ -197,12 +197,22 @@ func body(paragraphs []assemble.Paragraph, start, end int, sub map[int]Heading) 
 		if b.Len() > 0 {
 			b.WriteString("\n\n")
 		}
-		// Level three because the section's own heading is level two and is
-		// in the front matter rather than in the file.
+		text := p.Text
 		if _, ok := sub[i]; ok {
+			// Level three because the section's own heading is level two and
+			// is in the front matter rather than in the file.
+			//
+			// Whichever notation the extractor wrote the heading in comes off
+			// first. A model that writes its headings in Markdown hands this a
+			// paragraph that already reads "## Abstract", and putting a level
+			// in front of that wrote "### ## Abstract" into the file. The
+			// reading app shows the second marker as text and rule T05 reads
+			// the first one as a level one heading with a level three under
+			// it, which is neither what the paper says nor what this meant.
+			text, _ = unmark(text)
 			b.WriteString("### ")
 		}
-		b.WriteString(p.Text)
+		b.WriteString(text)
 	}
 	return b.String(), first, last
 }
