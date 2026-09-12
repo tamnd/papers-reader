@@ -126,6 +126,44 @@ func TestThePageRangeIsOnlyReadWhereTheEntrySaysItIsOne(t *testing.T) {
 	}
 }
 
+// The journals that set a bibliography the way Communications of the ACM set
+// one in 1970 never write pp. The range is the last thing in the entry and its
+// position is what says what it is.
+func TestABarePageRangeIsReadAtTheEndOfAnEntry(t *testing.T) {
+	if got := one(StyleNumber, "CHALMERS, W. E. A notation for ordered pairs. Comm. ACM 12, 9 (Sept. 1969), 501-507.").Pages; got != "501-507" {
+		t.Errorf("the pages are %q", got)
+	}
+	// Two four figure numbers at the end of an entry are the years a
+	// collection ran between and not the pages of anything.
+	if got := one(StyleNumber, "CHALMERS, W. E. Collected papers. Some Press, 1968-1972.").Pages; got != "" {
+		t.Errorf("the pages are %q", got)
+	}
+	// Anywhere but the end it is a volume, an issue or a report number.
+	if got := one(StyleNumber, "CHALMERS, W. E. A notation. Report 12-14, Some Lab, 1969.").Pages; got != "" {
+		t.Errorf("the pages are %q", got)
+	}
+}
+
+// A journal that sets its author names in small capitals sets the word
+// between them in small capitals too, and an extractor reads small capitals as
+// capitals.
+func TestTheWordBetweenTwoAuthorsIsReadInAnyCase(t *testing.T) {
+	for _, raw := range []string{
+		"BRIGHTWELL, M. T., AND DUNNE, R. Q. On the composition of binary relations. J. ACM 15, 2 (Apr. 1968), 201-215.",
+		"Brightwell, M. T., and Dunne, R. Q. On the composition of binary relations. J. ACM 15, 2 (Apr. 1968), 201-215.",
+		"Brightwell, M. T., & Dunne, R. Q. On the composition of binary relations. J. ACM 15, 2 (Apr. 1968), 201-215.",
+	} {
+		e := one(StyleNumber, raw)
+		if len(e.Authors) != 2 || e.Authors[1] != "R. Q. Dunne" && e.Authors[1] != "R. Q. DUNNE" {
+			t.Errorf("%q has authors %q", raw, e.Authors)
+		}
+	}
+	// A surname that ends in those three letters is a surname.
+	if e := one(StyleNumber, "STRAND, P. A theory of slow indexes. Some Journal 4, 1 (1969), 1-9."); len(e.Authors) != 1 {
+		t.Errorf("the authors are %q", e.Authors)
+	}
+}
+
 func TestTheYearIsTheLastOneInTheEntry(t *testing.T) {
 	// The volume year comes first and the publication year comes last.
 	e := one(StyleBracket, "A. Nkemelu. A theory of slow indexes. Journal of Made Up Results, 27, 1948.")

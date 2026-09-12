@@ -88,6 +88,40 @@ func TestANumberedBibliographyIsCutAtItsLabels(t *testing.T) {
 	}
 }
 
+// The shape a 1970 journal sets a numbered bibliography in: surnames first
+// and in small capitals, the word between two authors in small capitals with
+// them, the venue abbreviated to within an inch of its life, and the page
+// range at the end with nothing to say that is what it is.
+func TestANumberedBibliographyInTheOlderJournalStyle(t *testing.T) {
+	r := parse(
+		"1. ASHWORTH, P. K. A set-theoretic store for tuples. Proc. Summer Meeting of the",
+		"Soc. for Machine Filing, Providence, R.I., July 1968, pp. 12-31.",
+		"2. BRIGHTWELL, M. T., AND DUNNE, R. Q. On the composition of binary relations.",
+		"J. Assoc. Comput. Mach. 15, 2 (Apr. 1968), 201-215.",
+		"3. CHALMERS, W. E. Notation for a stored file of ordered pairs. Comm. ACM 12,",
+		"9 (Sept. 1969), 501-507.",
+	)
+	if r.Style != StyleNumber {
+		t.Fatalf("read the style as %s", r.Style)
+	}
+	if got := keys(r); got != "1 2 3" {
+		t.Fatalf("the keys are %q", got)
+	}
+	second := r.Entries[1]
+	if got := strings.Join(second.Authors, "; "); got != "M. T. BRIGHTWELL; R. Q. DUNNE" {
+		t.Errorf("entry 2 has the authors %q", got)
+	}
+	if second.Title != "On the composition of binary relations" {
+		t.Errorf("entry 2 has the title %q", second.Title)
+	}
+	if second.Year != 1968 || second.Pages != "201-215" {
+		t.Errorf("entry 2 is dated %d at pages %q", second.Year, second.Pages)
+	}
+	if got := r.Entries[0].Pages; got != "12-31" {
+		t.Errorf("entry 1 has the pages %q", got)
+	}
+}
+
 func TestAnAuthorYearBibliographyIsCutAtTheAuthors(t *testing.T) {
 	r := parse(
 		"Nkemelu, A. (1991). A theory of slow indexes. Journal of Made Up Results, 3, 1-12.",

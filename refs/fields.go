@@ -70,16 +70,43 @@ func year(s string) int {
 	return n
 }
 
-// pageRange is the page span, and only when the entry says it is one. A bare
-// pair of numbers with a dash between them is as likely to be a year range
-// or part of a report number, and a wrong page range in a citation is the
-// kind of mistake nobody catches by reading.
+// pageRange is the page span. It is read from the entry saying so where the
+// entry says so, because a bare pair of numbers with a dash between them is
+// as likely to be a year range or part of a report number, and a wrong page
+// range in a citation is the kind of mistake nobody catches by reading.
+//
+// The older journals say so by position instead of in words. A 1970
+// Communications of the ACM entry ends "Comm. ACM 12, 9 (Sept. 1969),
+// 501-507." and there is no "pp." anywhere in it, which is the style half the
+// bibliographies in this corpus are set in. So a bare range is believed in the
+// one place it is unambiguous: at the very end of the entry, after a comma,
+// and not reading as a span of years.
 func pageRange(s string) string {
-	m := pagesPattern.FindStringSubmatch(s)
-	if m == nil {
+	if m := pagesPattern.FindStringSubmatch(s); m != nil {
+		return m[1] + "-" + m[2]
+	}
+	m := trailingPages.FindStringSubmatch(s)
+	if m == nil || looksLikeYears(m[1], m[2]) {
 		return ""
 	}
 	return m[1] + "-" + m[2]
+}
+
+// trailingPages is a page span written as the last thing in the entry with
+// nothing in front of it to say that is what it is.
+var trailingPages = regexp.MustCompile(`,\s*(\d{1,4})\s*[-–—]+\s*(\d{1,4})\.?\s*$`)
+
+// looksLikeYears says whether a bare range is a span of years rather than of
+// pages, as in a journal that ran from 1968 to 1972. Both ends have to read as
+// a year: a paper really can start on page 1948, and one that does is at the
+// end of a volume whose other end is a four figure number too.
+func looksLikeYears(from, to string) bool {
+	return isYear(from) && isYear(to)
+}
+
+func isYear(s string) bool {
+	n, err := strconv.Atoi(s)
+	return err == nil && len(s) == 4 && n >= 1600 && n <= 2099
 }
 
 // listFields parses an entry from a numbered or bracketed bibliography,
@@ -245,7 +272,7 @@ func looksLikeAuthors(s string) bool {
 	if r := []rune(s); !unicode.IsUpper(r[0]) {
 		return false
 	}
-	if strings.Contains(s, ",") || strings.Contains(s, " and ") || strings.Contains(s, " & ") {
+	if strings.Contains(s, ",") || conjunction.MatchString(s) {
 		return true
 	}
 	// One author, written out: two or three capitalised words, no more.
@@ -300,6 +327,16 @@ func bareSurname(s string) bool {
 	return unicode.IsUpper([]rune(s)[0])
 }
 
+// conjunction is what joins the last two authors of a list. Case insensitive
+// because the journals that set author names in small capitals set the word
+// between them in small capitals too, and an extractor reads small capitals
+// as capitals: "BRIGHTWELL, M. T., AND DUNNE, R. Q." is two authors, and read
+// case sensitively the second of them is called "R. Q. AND DUNNE".
+//
+// The spaces are required on both sides, so a surname that ends in those three
+// letters and a corporation called Rand are left alone.
+var conjunction = regexp.MustCompile(`(?i)\s+and\s+|\s*&\s*`)
+
 // names splits an author list into one name per author.
 //
 // Both orders turn up and they have to be told apart: "Jimmy Lei Ba, Jamie
@@ -313,7 +350,7 @@ func names(s string) []string {
 	if s == "" {
 		return nil
 	}
-	s = strings.NewReplacer(" and ", ", ", " & ", ", ", "&", ", ").Replace(s)
+	s = conjunction.ReplaceAllString(s, ", ")
 	var out []string
 	for _, part := range strings.Split(s, ",") {
 		part = strings.TrimSpace(part)
