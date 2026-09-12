@@ -244,6 +244,46 @@ type extraction struct {
 // split.Restrict and by audit rule S07, not by this.
 const restrictedPages = 3
 
+// seed feeds the pages already on disk through the checker, and through the
+// folio learner where there is one, before anything is asked.
+//
+// Acceptance rule A5 is about how long this paper's pages usually are and
+// rule A6 is about where its printed numbering starts, and neither question
+// can be answered out of the pages of one run. A resumed run that saw only
+// the last three pages of a paper knows neither.
+//
+// Every page on disk, and not the range the run was given. Walking the range
+// is right for a resumed run over a whole paper and wrong for every other use
+// of -pages, which is how a good page came to be thrown away: `-pages 7
+// -again` gave the loop a range of exactly one page, that page was the page
+// being re-read, so nothing at all was seeded, A5 stood down for want of a
+// sample, and an answer that stopped after one sentence replaced a page that
+// was correct. A rule that is off whenever it is asked about a single page is
+// off exactly when a person is looking hardest at that page.
+//
+// A page in want is left out, because its old text is what the new text is
+// about to replace and a page should not set the standard it is judged
+// against.
+func seed(store extract.Store, want map[int]bool, checker *extract.Checker, folios *extract.Folios) {
+	pages, err := store.Pages()
+	if err != nil {
+		return
+	}
+	for _, page := range pages {
+		if want[page] {
+			continue
+		}
+		done, err := store.Read(page)
+		if err != nil {
+			continue
+		}
+		checker.Check(page, done)
+		if folios != nil {
+			folios.Add(page, done)
+		}
+	}
+}
+
 func (e *extraction) do(ctx context.Context) (count, error) {
 	var n count
 	if e.source == nil {
@@ -298,19 +338,13 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 	}
 	read, checker := got.pages, got.checker
 
-	// The pages are checked in order and the ones that are already done are
-	// checked too, because acceptance rule A5 is about how long this paper's
-	// pages usually are and a resumed run that only saw the last three pages
-	// would have no idea.
 	want := map[int]bool{}
 	for _, page := range todo {
 		want[page] = true
 	}
+	seed(store, want, checker, nil)
 	for _, page := range read {
 		if !want[page.number] {
-			if done, err := store.Read(page.number); err == nil {
-				checker.Check(page.number, done)
-			}
 			continue
 		}
 		if faults := checker.Check(page.number, page.text); len(faults) > 0 {
@@ -524,21 +558,7 @@ func (e *extraction) vision(ctx context.Context, file string, store extract.Stor
 	for _, page := range todo {
 		want[page] = true
 	}
-	// The pages that are already done are fed through both before anything is
-	// asked. A5 is about how long this paper's pages usually are and A6 is
-	// about where its numbering starts, and a resumed run that saw only the
-	// last three pages knows neither.
-	for page := e.first; page <= e.last; page++ {
-		if want[page] {
-			continue
-		}
-		done, err := store.Read(page)
-		if err != nil {
-			continue
-		}
-		checker.Check(page, done)
-		folios.Add(page, done)
-	}
+	seed(store, want, checker, folios)
 
 	v := &extract.Vision{
 		Ask: func(ctx context.Context, target string, req llm.Request) (extract.Reply, error) {
