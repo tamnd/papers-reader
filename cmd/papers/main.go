@@ -50,6 +50,7 @@ var commands = []command{
 	{"tags", "M2", "hand out permanent identifiers", runTags},
 	{"glossary", "M6", "manage the controlled vocabulary", runGlossary},
 	{"translate", "M6", "produce Vietnamese, Chinese and Japanese", runTranslate},
+	{"book", "M6", "set a paper as LaTeX, a PDF and an EPUB", runBook},
 	{"emit", "M8", "build the JSON the reading app consumes", nil},
 	{"graph", "M7", "build the citation graph over the corpus", nil},
 	{"report", "M7", "write the coverage, usage and citation reports", runReport},
