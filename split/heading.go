@@ -1,7 +1,9 @@
 package split
 
 import (
+	"maps"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -73,7 +75,52 @@ var (
 	// writes none at all, so a # at the start of a paragraph is a statement
 	// and not a guess.
 	atx = regexp.MustCompile(`^(#{1,6})[ \t]+(\S.*)$`)
+	// bold is a whole paragraph inside one pair of emphasis markers, which is
+	// the other way a vision model writes a heading.
+	bold = regexp.MustCompile(`^(\*\*|__|\*|_)([^*_].*[^*_])(\*\*|__|\*|_)$`)
 )
+
+// boldParts takes the emphasis off a paragraph that is nothing but emphasis.
+//
+// A vision model asked for Markdown picks its own notation for a heading and
+// does not always pick the same one twice. The ResNet paper came back with 2,
+// 3, 3.1, 3.2, 3.3 and 4.2 in bold and 3.4, 4, 4.1 and 4.3 as plain lines, so
+// the numbering had a hole at every bold heading, no scheme explained three
+// sections in a row, and a twelve page paper split into one file of thirty
+// eight thousand characters. Four papers of the six read that week did it.
+//
+// This is weaker evidence than a hash and the caller treats it that way. A
+// hash is a statement by something that read the page, and markedHeading takes
+// it on its own. Emphasis is also how a paper sets a theorem label, a figure
+// caption's lead in and the first words of a run in paragraph, so what comes
+// back from here is offered to the same numbering and name tests as a plain
+// line and is a heading only if one of them agrees.
+//
+// The markers have to match and there must be none inside, so a paragraph with
+// two emphasised phrases in it is left alone rather than read as one span from
+// the first marker to the last.
+func boldParts(text string) (rest string, ok bool) {
+	if strings.ContainsRune(text, '\n') {
+		return text, false
+	}
+	m := bold.FindStringSubmatch(text)
+	if m == nil || m[1] != m[3] {
+		return text, false
+	}
+	if strings.ContainsAny(m[2], "*_") {
+		return text, false
+	}
+	return strings.TrimSpace(m[2]), true
+}
+
+// unmark takes off whichever heading notation the extractor used, and says
+// whether the paragraph carried one at all.
+func unmark(raw string) (text string, marked bool) {
+	if _, rest, ok := atxParts(raw); ok {
+		return rest, true
+	}
+	return boldParts(raw)
+}
 
 // atxParts takes the marker off a heading the extractor wrote.
 //
@@ -192,16 +239,65 @@ func DetectScheme(paragraphs []string) Scheme {
 
 // chain is the run of headings one scheme explains, in document order, each
 // one continuing the numbering of the one before it.
+//
+// A paper numbers its sections from one and this tries that first, because it
+// is what almost every paper does and a chain that starts anywhere is a chain
+// that can start in the wrong place. Only when one explains fewer than minChain
+// headings does this go looking for a later start.
+//
+// Which happens when the extraction loses the first heading. Page 1 of the
+// ResNet paper came back without "1. Introduction" in it, along with the
+// stretch of the introduction under it, and the rest of the paper numbers 2,
+// 3, 3.1, 3.2, 3.3, 3.4, 4, 4.1, 4.2, 4.3 in order. Insisting on the one made
+// that no scheme at all, which is a whole paper filed as a single section over
+// one missing line. Numbering from two is still numbering.
+//
+// Every start the document offers is tried and the longest run wins, rather
+// than seeding from the first number seen. A cross-reference or a table row
+// that happens to read as section 5 is one heading, and taking it as the start
+// would refuse the four real sections in front of it.
 func chain(s Scheme, paragraphs []string) []Heading {
+	if out := chainFrom(s, paragraphs, 1); len(out) >= minChain {
+		return out
+	}
+	var best []Heading
+	for _, start := range starts(s, paragraphs) {
+		if out := chainFrom(s, paragraphs, start); len(out) > len(best) {
+			best = out
+		}
+	}
+	return best
+}
+
+// starts is every top level number the document offers as a first section, in
+// ascending order. One is not among them because the caller has tried it.
+func starts(s Scheme, paragraphs []string) []int {
+	seen := map[int]bool{}
+	for _, raw := range paragraphs {
+		text, _ := unmark(raw)
+		if !candidate(text) {
+			continue
+		}
+		if _, parts, _, ok := parseNumber(s, text); ok && len(parts) == 1 && parts[0] > 1 {
+			seen[parts[0]] = true
+		}
+	}
+	out := slices.Sorted(maps.Keys(seen))
+	return out
+}
+
+// chainFrom is chain with the number the first top level section is expected
+// to carry.
+func chainFrom(s Scheme, paragraphs []string, start int) []Heading {
 	var out []Heading
 	// last is the last number accepted under each parent: the empty key for
 	// top level sections, "3" for the subsections of section 3.
-	last := map[string]int{}
+	last := map[string]int{"": start - 1}
 	for i, raw := range paragraphs {
 		// A heading the extractor marked keeps its printed number in its
 		// title, so the marker comes off before the number is read and the
 		// numbering of a paper reads the same down either path.
-		_, text, marked := atxParts(raw)
+		text, marked := unmark(raw)
 		if !candidate(text) {
 			continue
 		}
@@ -273,7 +369,9 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 			found[i] = h
 			continue
 		}
-		text := raw
+		// Emphasis comes off here rather than in markedHeading, because it is
+		// not on its own a reason to cut a file: what follows has to agree.
+		text, _ := boldParts(raw)
 		if !candidate(text) {
 			continue
 		}

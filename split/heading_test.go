@@ -376,3 +376,121 @@ func TestAMarkedHeadingIsTitleCasedWhenThePaperShouted(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+// The bug this was written for. A vision model asked for Markdown wrote some
+// of the ResNet paper's headings in bold and the rest as plain lines, so the
+// numbering had a hole at every bold one, no scheme explained three sections
+// in a row, and a twelve page paper came out as one file.
+func TestABoldHeadingIsAHeading(t *testing.T) {
+	s, hs := Headings([]string{
+		"1 Introduction", prose,
+		"**2 Background**", prose,
+		"3 Results", prose,
+		"**3.1 The First Run**", prose,
+		"4 Conclusion", prose,
+	})
+	if s != SchemeArabic {
+		t.Fatalf("the paper numbers its sections %q, want arabic", s)
+	}
+	want := []string{"Introduction", "Background", "Results", "The First Run", "Conclusion"}
+	if got := titles(hs); !equal(got, want) {
+		t.Errorf("found %v, want %v", got, want)
+	}
+	if hs[1].How != Marked {
+		t.Errorf("the bold heading was found by %q, want marked", hs[1].How)
+	}
+}
+
+// The other notations, and the one that is not a heading. A paragraph with two
+// emphasised phrases in it is not one span from the first marker to the last.
+func TestWhatCountsAsAParagraphOfNothingButEmphasis(t *testing.T) {
+	for _, c := range []struct {
+		text string
+		want string
+	}{
+		{"**Related Work**", "Related Work"},
+		{"__Related Work__", "Related Work"},
+		{"*Related Work*", "Related Work"},
+		{"_Related Work_", "Related Work"},
+		{"**Related Work", ""},
+		{"*Related Work**", ""},
+		{"**Related** and **Prior** Work", ""},
+		{"**Related Work**\nand what came after it", ""},
+		{"Related Work", ""},
+		{"****", ""},
+	} {
+		got, ok := boldParts(c.text)
+		if c.want == "" {
+			if ok {
+				t.Errorf("%q was read as emphasis around %q", c.text, got)
+			}
+			continue
+		}
+		if !ok || got != c.want {
+			t.Errorf("%q came back as %q %v, want %q true", c.text, got, ok, c.want)
+		}
+	}
+}
+
+// Emphasis on its own is not a reason to cut a file, because a paper sets a
+// theorem label and a run in heading the same way it sets a real one.
+func TestABoldLineThatNothingElseAgreesWithIsNotAHeading(t *testing.T) {
+	_, hs := Headings([]string{
+		"1 Introduction", prose,
+		"**Proof**", prose,
+		"2 Background", prose,
+		"3 Results", prose,
+	})
+	want := []string{"Introduction", "Background", "Results"}
+	if got := titles(hs); !equal(got, want) {
+		t.Errorf("found %v, want %v", got, want)
+	}
+}
+
+// Page 1 of the ResNet paper came back without "1. Introduction" on it, and
+// insisting the numbering start at one made the other ten headings no scheme
+// at all. Numbering from two is still numbering.
+func TestAPaperThatLostItsFirstHeadingIsStillNumbered(t *testing.T) {
+	s, hs := Headings([]string{
+		prose,
+		"2 Background", prose,
+		"3 Results", prose,
+		"4 Conclusion", prose,
+	})
+	if s != SchemeArabic {
+		t.Fatalf("the paper numbers its sections %q, want arabic", s)
+	}
+	want := []string{"Background", "Results", "Conclusion"}
+	if got := titles(hs); !equal(got, want) {
+		t.Errorf("found %v, want %v", got, want)
+	}
+}
+
+// The reason every start is tried rather than the first number seen. A line
+// that happens to read as section 9 before the paper has got to section 1
+// would otherwise throw the real chain away.
+func TestAStrayNumberDoesNotDecideWhereTheNumberingStarts(t *testing.T) {
+	_, hs := Headings([]string{
+		"9 is the number of machines in the cluster", prose,
+		"1 Introduction", prose,
+		"2 Background", prose,
+		"3 Results", prose,
+	})
+	want := []string{"Introduction", "Background", "Results"}
+	if got := titles(hs); !equal(got, want) {
+		t.Errorf("found %v, want %v", got, want)
+	}
+}
+
+// A run of two is a coincidence however it starts, and the later start must
+// not be a way around minChain.
+func TestALaterStartStillHasToExplainThreeSections(t *testing.T) {
+	s, _ := Headings([]string{
+		prose,
+		"7 of the 12 runs converged", prose,
+		"8 machines were used", prose,
+	})
+	if s != SchemeNone {
+		t.Errorf("the paper numbers its sections %q, want none", s)
+	}
+}
