@@ -211,3 +211,82 @@ func TestAFenceThatIsNeverClosedIsStillRefused(t *testing.T) {
 		t.Error("a fence that was never closed was accepted")
 	}
 }
+
+// layerOf is a Checker.Layer over one page, which is all any of these need.
+func layerOf(page int, text string) func(int) (string, bool) {
+	return func(p int) (string, bool) {
+		if p != page {
+			return "", false
+		}
+		return text, true
+	}
+}
+
+func TestAPageThatDroppedAParagraphIsRefused(t *testing.T) {
+	first, second, ok := strings.Cut(layer, "\n\n")
+	if !ok {
+		t.Fatal("the fixture no longer has two paragraphs in it")
+	}
+	c := Checker{Layer: layerOf(1, layer)}
+	faults := c.Check(1, first+"\n")
+	if !has(faults, A9) {
+		t.Fatalf("a page with a paragraph missing was accepted: %v", faults)
+	}
+	// The fault has to name enough of the passage for somebody reading the
+	// queue to find it in the paper, so the words it names come out of it.
+	for _, f := range faults {
+		if !strings.HasPrefix(f.Rule, "A9") {
+			continue
+		}
+		_, named, _ := strings.Cut(f.Detail, "missing ")
+		if named == "" {
+			t.Fatalf("the fault names no missing words: %q", f.Detail)
+		}
+		for _, w := range strings.Split(named, ", ") {
+			if !strings.Contains(strings.ToLower(second), w) {
+				t.Errorf("the fault names %q, which is not in the dropped paragraph", w)
+			}
+		}
+	}
+}
+
+func TestAPageReadCorrectlyPassesA9(t *testing.T) {
+	c := Checker{Layer: layerOf(1, layer)}
+	if faults := c.Check(1, layer+"\n"); has(faults, A9) {
+		t.Errorf("a page read correctly was refused: %v", faults)
+	}
+}
+
+func TestA9SaysNothingAboutAPageWithNoLayer(t *testing.T) {
+	// Most pages of most papers. The rule is off by default and off for any
+	// page the caller has nothing to compare against.
+	var c Checker
+	first, _, _ := strings.Cut(layer, "\n\n")
+	if faults := c.Check(1, first+"\n"); has(faults, A9) {
+		t.Errorf("A9 ran with no layer at all: %v", faults)
+	}
+	c = Checker{Layer: layerOf(2, layer)}
+	if faults := c.Check(1, first+"\n"); has(faults, A9) {
+		t.Errorf("A9 ran on a page the layer function declined: %v", faults)
+	}
+}
+
+func TestFaultsAppliesTheRulesWithoutCountingThePage(t *testing.T) {
+	// Rechecking pages already on disk runs over each of them twice, once to
+	// give A5 its statistics and once to ask. Counting them both times would
+	// narrow the variance A5 works from and it would stop firing.
+	var c Checker
+	text := "A page of quite ordinary length, long enough to have an opinion about.\n"
+	if faults := c.Faults(1, text); len(faults) != 0 {
+		t.Fatalf("a sound page was refused: %v", faults)
+	}
+	if c.Pages() != 0 {
+		t.Errorf("Faults counted %d pages toward the statistics, want 0", c.Pages())
+	}
+	c.Check(1, text)
+	before := c.Pages()
+	c.Faults(1, text)
+	if c.Pages() != before {
+		t.Errorf("Faults changed the page count from %d to %d", before, c.Pages())
+	}
+}

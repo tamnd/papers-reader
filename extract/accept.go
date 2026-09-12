@@ -11,7 +11,7 @@ import (
 	"github.com/tamnd/papers-reader/mathtex"
 )
 
-// The eight acceptance rules. A page is checked before it is written, and a
+// The nine acceptance rules. A page is checked before it is written, and a
 // page that fails goes back on the queue rather than into the corpus.
 //
 // They are numbered because the numbers end up in the queue, in the reports
@@ -29,6 +29,7 @@ const (
 	A6 = "A6 the printed page number is not the one expected here"
 	A7 = "A7 a code fence was left open"
 	A8 = "A8 the page is marked illegible and is not recorded as damaged"
+	A9 = "A9 the page skips a stretch of the file's own text layer"
 )
 
 // A Fault is one rule one page broke.
@@ -70,6 +71,23 @@ type Checker struct {
 	// Damaged is the pages of this paper that are genuinely unreadable, from
 	// errata.yaml. A page in here is allowed exactly one illegible marker.
 	Damaged map[int]bool
+	// Layer is the page's own text layer, for A9, and nil turns A9 off.
+	//
+	// It is a function and not a map because reading a text layer is a
+	// process per page and most pages never need one: the rule only runs on a
+	// page a model read, on a paper whose layer is worth comparing against.
+	// The second return says there is no layer for that page, which is not
+	// the same as an empty one.
+	//
+	// Whether a layer is worth comparing against is the caller's to decide
+	// and it is not a detail. A scan's OCR layer is itself a reading, and a
+	// worse one, so where the two disagree the layer is as likely to be the
+	// wrong one: over the Codd paper the words it says are missing are
+	// "ficlds", "fczc" and "segnren". That scan is a good scan and it stays
+	// well clear of MinCoverage, but nothing says the next one will, and a
+	// rule that refuses a page for not reproducing a typo would be worse than
+	// no rule. Born digital only.
+	Layer func(page int) (string, bool)
 	// Model says these pages were read by a model, which is what turns on
 	// rule A5.
 	//
@@ -125,6 +143,15 @@ func (c *Checker) Check(page int, text string) []Fault {
 	}
 	return faults
 }
+
+// Faults is Check without counting the page toward the length statistics.
+//
+// It is for a caller that has already shown the checker every page and is
+// now going back over them to report. Counting a page twice would make rule
+// A5's sample half of it the same pages over again, which narrows the
+// variance it is measured against and is a quiet way of making the rule
+// stricter than it was written to be.
+func (c *Checker) Faults(page int, text string) []Fault { return c.faults(page, text) }
 
 // Accept is Check for a caller that wants one error or nil.
 func (c *Checker) Accept(page int, text string) error {
@@ -219,6 +246,15 @@ func (c *Checker) faults(page int, text string) []Fault {
 		}
 	}
 
+	if c.Layer != nil {
+		if layer, ok := c.Layer(page); ok {
+			if share, missing := Coverage(layer, text); share < MinCoverage {
+				add(A9, fmt.Sprintf("a run of %d words in the page's own text layer comes back only %.0f%% accounted for, missing %s",
+					Window, share*100, quoteFew(missing)), 0)
+			}
+		}
+	}
+
 	if markers := Illegible.FindAllString(text, -1); len(markers) > 0 {
 		switch {
 		case !c.Damaged[page]:
@@ -228,6 +264,18 @@ func (c *Checker) faults(page int, text string) []Fault {
 		}
 	}
 	return out
+}
+
+// quoteFew is a handful of the missing words, for a queue entry somebody has
+// to read. Six of them out of a window of twenty is enough to recognise a
+// sentence by, and on the page this rule was written for they read "should
+// noted where depends several those", which is the dropped paragraph.
+func quoteFew(words []string) string {
+	const few = 6
+	if len(words) > few {
+		words = words[:few]
+	}
+	return strings.Join(words, ", ")
 }
 
 func (c *Checker) stddev() float64 {

@@ -34,6 +34,7 @@ func runExtract(args []string) error {
 	pages := fs.String("pages", "", "extract these pages only, as N or N-M")
 	again := fs.Bool("again", false, "extract pages that are already done too")
 	retidy := fs.Bool("retidy", false, "run the tidier over the pages on disk and ask no model")
+	recheck := fs.Bool("recheck", false, "run the acceptance rules over the pages on disk and ask no model")
 	dry := fs.Bool("dry-run", false, "print what would be extracted and write nothing")
 	long := fs.Bool("v", false, "print every page and every refusal")
 	fs.Usage = func() {
@@ -94,6 +95,13 @@ translation between two spellings and none of them changes a page that is
 already in the second spelling, so running it again over a tidy page writes
 nothing.
 
+--recheck runs the acceptance rules over the pages on disk, asks no model
+and writes nothing. It is for the day a rule is added: every page in the
+corpus was accepted by the rules as they stood when it was read, and a new
+rule has never seen any of them. A9 was added this way and found a
+paragraph that a reader had dropped under a figure four pages into a paper
+that was already published.
+
 A restricted paper is read as far as its third page and no further. Nothing
 but its front matter and a short abstract can ever be published, so the
 rest of it would be work done to fill a directory nobody may read.
@@ -142,6 +150,9 @@ papers doctor to see what is installed.
 
 	if *retidy {
 		return retidyPages(c, todo, first, last, *dry, *long)
+	}
+	if *recheck {
+		return recheckPages(c, recorded, todo, first, last, *long)
 	}
 
 	// One renderer for the whole run. Building it reads and hashes the KaTeX
@@ -297,6 +308,134 @@ func seed(store extract.Store, want map[int]bool, checker *extract.Checker, foli
 		if folios != nil {
 			folios.Add(page, done)
 		}
+	}
+}
+
+// recheckPages runs the acceptance rules over the pages that are already on
+// disk, and writes nothing.
+//
+// Every page in a corpus was accepted by the rules as they stood on the day
+// it was read, which means a rule added since has never been applied to any
+// of them. Re-extracting to find out costs a model run per page and comes
+// back with different text, so the answer would be about the new text and not
+// about what is in the corpus. This reads what is there.
+//
+// The checker is built the way the path that wrote the pages built it. Model
+// is on for a paper a model read, because A5 and A9 are about a reader that
+// can stop halfway down a page and pdftotext cannot. A6 needs the paper's
+// folios, which are learned from the pages themselves, so every page is fed
+// in before any of them is judged.
+func recheckPages(c *corpus.Corpus, recorded *corpus.Sources, todo []corpus.Paper, first, last int, long bool) error {
+	math, err := katex.New()
+	if err != nil {
+		fmt.Printf("KaTeX is not usable here, so acceptance rule A4 will not run: %v\n", err)
+	}
+	ctx := context.Background()
+	var checked, faulted, skipped int
+	for _, p := range todo {
+		store := extract.Store{Dir: c.Work(p.ID, "pages")}
+		pages, err := store.Pages()
+		if err != nil || len(pages) == 0 {
+			skipped++
+			continue
+		}
+		record, err := extract.ReadRecord(c.Work(p.ID))
+		if err != nil {
+			fmt.Printf("  %-34s %v\n", p.ID, err)
+			skipped++
+			continue
+		}
+		text := map[int]string{}
+		folios := &extract.Folios{}
+		for _, page := range pages {
+			body, err := store.Read(page)
+			if err != nil {
+				continue
+			}
+			text[page] = body
+			folios.Add(page, body)
+		}
+		model := record != nil && record.Path != string(classify.PathNative)
+		checker := &extract.Checker{Math: math, Model: model, Map: folios.Map()}
+		if rec, ok := recorded.ByID(p.ID); ok && model {
+			switch classify.Layer(rec.TextLayer) {
+			case classify.Native, classify.Digital:
+				checker.Layer = pageLayer(ctx, c.PDF(p.ID))
+			}
+		}
+		var n int
+		faults := judge(checker, pages, text)
+		for _, page := range pages {
+			if first > 0 && (page < first || page > last) {
+				continue
+			}
+			checked++
+			for _, f := range faults[page] {
+				n++
+				fmt.Printf("  %-34s page %d: %s\n", p.ID, page, f)
+			}
+		}
+		faulted += n
+		if long && n == 0 {
+			fmt.Printf("  %-34s %d pages, nothing to report\n", p.ID, len(pages))
+		}
+	}
+	fmt.Printf("%d pages rechecked, %d faults, %d papers skipped\n", checked, faulted, skipped)
+	return nil
+}
+
+// judge applies the acceptance rules to every page of a paper and says what
+// each page broke.
+//
+// Two passes, because rule A5 is about this paper's pages and has no opinion
+// about any of them until it has seen all of them. The first pass only
+// observes and the second only asks, which is what extract.Checker.Faults is
+// for: one pass that did both would count every page twice, and a sample with
+// each page in it twice has the same mean and a narrower variance, so A5 would
+// stand further and further off until it stopped firing.
+//
+// Each page is still measured against a sample that includes itself, which
+// widens the mean by one page in however many. That is the price of not asking
+// a model, and it is small on any paper long enough for A5 to run at all.
+func judge(checker *extract.Checker, pages []int, text map[int]string) map[int][]extract.Fault {
+	for _, page := range pages {
+		checker.Check(page, text[page])
+	}
+	out := map[int][]extract.Fault{}
+	for _, page := range pages {
+		if faults := checker.Faults(page, text[page]); len(faults) > 0 {
+			out[page] = faults
+		}
+	}
+	return out
+}
+
+// pageLayer is the text layer of one page of a file, for rule A9 outside a
+// live extraction run.
+func pageLayer(ctx context.Context, file string) func(int) (string, bool) {
+	return keepLayer(func(page int) (string, error) {
+		return poppler.Page(ctx, file, page, page)
+	})
+}
+
+// keepLayer reads a page's text layer once and keeps it.
+//
+// Reading one is a pdftotext process, and judge asks for every page twice, so
+// without this a recheck of the corpus would fork twice per page for an answer
+// that cannot have changed in between. A page pdftotext could not read is kept
+// as absent rather than as empty, so the second ask does not retry it either.
+func keepLayer(read func(int) (string, error)) func(int) (string, bool) {
+	seen := map[int]string{}
+	return func(page int) (string, bool) {
+		body, ok := seen[page]
+		if !ok {
+			var err error
+			if body, err = read(page); err != nil {
+				body = ""
+			}
+			seen[page] = body
+		}
+		return body, body != ""
 	}
 }
 
@@ -477,6 +616,39 @@ func (e *extraction) path() (classify.Path, error) {
 	}
 }
 
+// layer is what rule A9 compares a model's reading against, and nil for a
+// paper that has nothing worth comparing it to.
+//
+// Only a born digital file. A scan's OCR layer is itself a reading and a bad
+// one, so comparing a good reading against it reports the good reading as
+// wrong, and those are precisely the papers the vision path exists for. A
+// file with no layer at all has nothing to say either way.
+//
+// pdftotext is asked per page and the answer is kept, because the rule runs
+// again on every retry of the same page and a paper is read once per run.
+func (e *extraction) layer(ctx context.Context, file string) func(int) (string, bool) {
+	switch classify.Layer(e.source.TextLayer) {
+	case classify.Native, classify.Digital:
+	default:
+		return nil
+	}
+	seen := map[int]string{}
+	return func(page int) (string, bool) {
+		if text, ok := seen[page]; ok {
+			return text, text != ""
+		}
+		text, err := poppler.Page(ctx, file, page, page)
+		if err != nil {
+			// A layer that will not come out is a rule that does not run,
+			// not a page that is refused. Everything else about the page has
+			// already been checked by the time this is asked.
+			text = ""
+		}
+		seen[page] = text
+		return text, text != ""
+	}
+}
+
 // pageRange fills in the ends of the range that were not given.
 func (e *extraction) pageRange(ctx context.Context, file string) error {
 	if e.last == 0 {
@@ -626,8 +798,9 @@ func (e *extraction) vision(ctx context.Context, file string, store extract.Stor
 
 	// A5 is on because these pages came from a model and a model can stop
 	// halfway down a page. A6 is on once the paper has taught it where its
-	// numbering starts, which is what Folios is for.
-	checker := &extract.Checker{Math: e.math, Model: true}
+	// numbering starts, which is what Folios is for. A9 is on for a paper
+	// whose own text layer is worth comparing an answer against.
+	checker := &extract.Checker{Math: e.math, Model: true, Layer: e.layer(ctx, file)}
 	folios := &extract.Folios{}
 	want := map[int]bool{}
 	for _, page := range todo {

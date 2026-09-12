@@ -63,6 +63,12 @@ The year is a hint and nothing more: there are 1980 papers with a clean text lay
 Pages read by `pdftotext` on a born digital file are marked `native` and were never guessed by a model.
 Pages read by a layout model or a vision model say so, and the audit treats them differently.
 
+**A model that drops a paragraph is caught by the file it was reading.**
+Nine rules decide whether a page is accepted, and eight of them ask whether the answer is well formed, which a page missing its last paragraph still is.
+The ninth compares the reading against the page's own text layer and refuses a page that has no answer for twenty consecutive words the file was typeset from.
+It was written for page 5 of the Bitcoin paper, where the reader stopped at the transaction diagram and left the paragraph under it out, and that page had passed everything else.
+`papers extract --recheck` runs the rules over pages already on disk and asks no model, which is how a rule added this late gets applied to everything read before it.
+
 **Tags are permanent.**
 A section keeps its tag across re-extraction, re-splitting and renumbering, which is what lets a link written today survive the paper being read again by a better model next year.
 

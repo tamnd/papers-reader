@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"sort"
 	"strings"
 	"testing"
 
@@ -96,6 +98,72 @@ func TestSeedingCountsPagesOutsideTheRange(t *testing.T) {
 	seed(s, map[int]bool{8: true, 9: true}, checker, nil)
 	if got := checker.Pages(); got != 7 {
 		t.Fatalf("seeded %d pages, want 7", got)
+	}
+}
+
+// The regression judge is written against. A recheck reads every page twice,
+// and if both reads counted, A5's sample would have every page in it twice.
+// That leaves the mean where it was and halves the variance the rule works
+// from, so the rule that is supposed to notice a page at a third of the usual
+// length stops noticing anything.
+func TestRecheckingDoesNotBluntTheLengthRule(t *testing.T) {
+	pages := map[int]string{}
+	for n := 1; n <= 9; n++ {
+		pages[n] = page(60)
+	}
+	pages[7] = page(4)
+	var ids []int
+	for n := range pages {
+		ids = append(ids, n)
+	}
+	sort.Ints(ids)
+
+	checker := &extract.Checker{Model: true}
+	faults := judge(checker, ids, pages)
+	if len(faults[7]) == 0 {
+		t.Error("the short page was not reported")
+	}
+	for _, n := range ids {
+		if n != 7 && len(faults[n]) > 0 {
+			t.Errorf("page %d was reported: %v", n, faults[n])
+		}
+	}
+	// Eight and not nine, because the seeding pass refuses the short page too
+	// and Check only counts a page it accepted. A5's sample is the pages that
+	// look like pages, which is what it should be measured against.
+	if got := checker.Pages(); got != len(ids)-1 {
+		t.Errorf("the checker counted %d pages over a paper of %d with one short one", got, len(ids))
+	}
+}
+
+// A paper of one page has no sample for A5 and has to come back quiet rather
+// than come back with every page refused.
+func TestJudgingAPaperOfOnePageIsQuiet(t *testing.T) {
+	checker := &extract.Checker{Model: true}
+	if faults := judge(checker, []int{1}, map[int]string{1: page(60)}); len(faults) > 0 {
+		t.Errorf("a paper of one page was refused: %v", faults)
+	}
+}
+
+func TestATextLayerIsReadOncePerPage(t *testing.T) {
+	var reads int
+	layer := keepLayer(func(page int) (string, error) {
+		reads++
+		if page == 2 {
+			return "", errors.New("pdftotext found nothing on this page")
+		}
+		return "the words this page was typeset from", nil
+	})
+	for range 3 {
+		if body, ok := layer(1); !ok || body == "" {
+			t.Errorf("page 1 came back %q %v, want its text layer", body, ok)
+		}
+		if _, ok := layer(2); ok {
+			t.Error("a page pdftotext could not read came back as having a layer")
+		}
+	}
+	if reads != 2 {
+		t.Errorf("the layer was read %d times over two pages asked for three times each, want 2", reads)
 	}
 }
 
