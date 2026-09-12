@@ -14,9 +14,10 @@ import (
 // Rules is every rule the toolchain implements today, in id order.
 //
 // The full set is nine groups and eighty-four rules. The ones here are the
-// ones that can run before anything has been extracted: the licensing rules
-// that decide what may be published at all, and the tag register rules. The
-// rest arrive with the milestone that produces the files they read.
+// licensing rules that decide what may be published at all, the tag register
+// rules, and the groups whose files the toolchain can already produce:
+// figures and references. The rest arrive with the milestone that produces
+// the files they read.
 func Rules() []Rule {
 	out := []Rule{
 		{
@@ -45,6 +46,7 @@ func Rules() []Rule {
 			Check: ruleS06,
 		},
 	}
+	out = append(out, figuresRules()...)
 	out = append(out, refsRules()...)
 	return append(out, []Rule{
 		{

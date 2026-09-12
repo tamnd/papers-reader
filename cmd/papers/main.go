@@ -42,7 +42,7 @@ var commands = []command{
 	{"classify", "M1", "measure what each PDF's text layer is worth", runClassify},
 	{"render", "M2", "rasterise pages for the pages that need a model", nil},
 	{"extract", "M2", "turn pages into Markdown with LaTeX mathematics", runExtract},
-	{"figures", "M3", "crop the diagrams out of the pages", nil},
+	{"figures", "M2", "crop the diagrams out of the pages", runFigures},
 	{"pagemap", "M3", "record which figure came from which page and box", nil},
 	{"assemble", "M2", "join the extracted pages into one document", runAssemble},
 	{"refs", "M2", "parse bibliographies and link the citations", runRefs},

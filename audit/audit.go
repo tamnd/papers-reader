@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/figures"
 	"github.com/tamnd/papers-reader/refs"
 )
 
@@ -97,6 +98,11 @@ type Input struct {
 	// and slash separated. Rules S03 and F04 are about what git holds rather
 	// than about what is on the disk, so they need this rather than a walk.
 	Tracked []string
+	// Figures is manifests/figures.yaml, which is one flat list over the
+	// whole corpus. A corpus that has never cropped anything gets an empty
+	// manifest rather than a nil one, so the rules can say "nothing to look
+	// at" themselves instead of every one of them having to check.
+	Figures *figures.Manifest
 	// Refs is the parsed bibliography of every paper that has one, keyed by
 	// paper id. A paper with no bibliography yet is missing from the map
 	// rather than present and empty, so that group R can tell "nothing to
@@ -118,6 +124,9 @@ func Load(c *corpus.Corpus) (*Input, error) {
 		return nil, err
 	}
 	if in.Tracked, err = trackedFiles(c.Root); err != nil {
+		return nil, err
+	}
+	if in.Figures, err = figures.Load(c.FiguresManifest()); err != nil {
 		return nil, err
 	}
 	if in.Refs, err = loadRefs(c, in.Papers); err != nil {
