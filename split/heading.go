@@ -63,18 +63,30 @@ const maxHeading = 90
 // its own; three in sequence is a paper that numbers its sections.
 const minChain = 3
 
+// gap is the space between a section number and the name of the section.
+//
+// It is not always a space. A paper sets that gap with a quad, and a model
+// transcribing the page writes the quad it sees: the BERT paper came back
+// with an em space after every number, and "4\u2003Experiments" is a
+// heading nothing here could read a number off. Section 4 of that paper
+// disappeared into section 3, and so did its three subsections, and nothing
+// said so because a section folded into the one above it is still in the
+// document. All of the Unicode spaces are here rather than the two that
+// turned up, because the next paper will use the third.
+const gap = `[ \t\x{00A0}\x{1680}\x{2000}-\x{200A}\x{202F}\x{205F}\x{3000}]`
+
 var (
-	arabic = regexp.MustCompile(`^(\d+(?:\.\d+)*)\.?[ \t]+(\S.*)$`)
+	arabic = regexp.MustCompile(`^(\d+(?:\.\d+)*)\.?` + gap + `+(\S.*)$`)
 	// A roman numeral without the full stop is the word I, the roman numeral
 	// with it is a section, and the papers that use roman numerals all print
 	// the stop.
-	roman = regexp.MustCompile(`^([IVXL]+)\.[ \t]+(\S.*)$`)
-	sign  = regexp.MustCompile(`^§[ \t]*(\d+(?:\.\d+)*)\.?[ \t]*(\S.*)$`)
+	roman = regexp.MustCompile(`^([IVXL]+)\.` + gap + `+(\S.*)$`)
+	sign  = regexp.MustCompile(`^§` + gap + `*(\d+(?:\.\d+)*)\.?` + gap + `*(\S.*)$`)
 	// atx is a heading the extractor already found. The layout path writes
 	// one for every block its model labelled a heading, and the native path
 	// writes none at all, so a # at the start of a paragraph is a statement
 	// and not a guess.
-	atx = regexp.MustCompile(`^(#{1,6})[ \t]+(\S.*)$`)
+	atx = regexp.MustCompile(`^(#{1,6})` + gap + `+(\S.*)$`)
 	// bold is a whole paragraph inside one pair of emphasis markers, which is
 	// the other way a vision model writes a heading.
 	bold = regexp.MustCompile(`^(\*\*|__|\*|_)([^*_].*[^*_])(\*\*|__|\*|_)$`)

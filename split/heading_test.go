@@ -573,3 +573,50 @@ func TestOneSectionIsStillASection(t *testing.T) {
 		t.Errorf("the only heading came back at level %d, want 1", hs[0].Level)
 	}
 }
+
+// A paper sets the gap between a section number and its name with a quad,
+// and a model transcribing the page writes the quad it sees. The BERT paper
+// came back with an em space after every number, and section 4 and its four
+// subsections disappeared into section 3.
+func TestASectionNumberSetOffWithAQuadIsStillANumber(t *testing.T) {
+	for _, space := range []string{" ", " ", " ", " ", " ", "  "} {
+		_, hs := Headings([]string{
+			"1" + space + "Introduction", prose,
+			"2" + space + "Related Work", prose,
+			"3" + space + "The Model", prose,
+			"3.1" + space + "Encoder", prose,
+			"4" + space + "Experiments", prose,
+		})
+		if len(hs) != 5 {
+			t.Fatalf("with %q between the number and the name, found %d headings: %v", space, len(hs), titles(hs))
+		}
+		if hs[4].Number != "4" || hs[4].Title != "Experiments" || hs[4].Level != 1 {
+			t.Errorf("with %q, section 4 came back as %q numbered %q at level %d",
+				space, hs[4].Title, hs[4].Number, hs[4].Level)
+		}
+		if hs[3].Number != "3.1" || hs[3].Level != 2 {
+			t.Errorf("with %q, 3.1 came back numbered %q at level %d", space, hs[3].Number, hs[3].Level)
+		}
+	}
+}
+
+// The same gap inside a heading the extractor marked, which is how the
+// BERT paper prints it.
+func TestAMarkedHeadingSetOffWithAQuadIsStillAHeading(t *testing.T) {
+	_, hs := Headings([]string{
+		"# A Paper About Something", prose,
+		"## 1 Introduction", prose,
+		"## 2 Background", prose,
+		"## 3 The Model", prose,
+		"### 3.1 Encoder", prose,
+	})
+	if len(hs) != 5 {
+		t.Fatalf("found %d headings, want 5: %v", len(hs), titles(hs))
+	}
+	if hs[1].Number != "1" || hs[1].Title != "Introduction" || hs[1].Level != 1 {
+		t.Errorf("the second heading is %q numbered %q at level %d", hs[1].Title, hs[1].Number, hs[1].Level)
+	}
+	if hs[4].Number != "3.1" || hs[4].Level != 2 {
+		t.Errorf("3.1 came back numbered %q at level %d", hs[4].Number, hs[4].Level)
+	}
+}
