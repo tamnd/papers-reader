@@ -475,3 +475,49 @@ func TestByPaperSeparatesTheLanguages(t *testing.T) {
 		t.Errorf("the groups come back as %s, which is not a fixed order", got)
 	}
 }
+
+func TestT11FindsRawHTML(t *testing.T) {
+	long := strings.Repeat("a sentence of the paper. ", 12)
+	cases := []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{"clean", long + "\n", false},
+		{"a table", long + "\n\n<table>\n<tr><td>1</td></tr>\n</table>\n", true},
+		{"a subscript", long + "\n\nthe term d<sub>k</sub> is the width.\n", true},
+		{"a line break", long + "\n\nfirst line<br>second line\n", true},
+		{"a tag in a fence is a listing", long + "\n\n```html\n<table>\n```\n", false},
+		{"a tag in inline code is the word", long + "\n\nthe `<table>` element is a grid.\n", false},
+		{"a tag in a display is mathematics", long + "\n\n$$\\langle a, b \\rangle < c$$\n", false},
+		{"an email address is not a tag", long + "\n\nwrite to <someone@example.com> about it.\n", false},
+		{"a comparison is not a tag", long + "\n\nwhenever n < k and k > 0 the bound holds.\n", false},
+		{"a pipe table is not HTML", long + "\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n", false},
+	}
+	for _, tc := range cases {
+		files := map[string]string{
+			"manifests/sources.yaml":                          openSources,
+			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), tc.body),
+		}
+		res := result(t, Run(in(t, files), true), "T11")
+		if res.Failed() != tc.fails {
+			t.Errorf("%s: T11 failed=%v, want %v (%v)", tc.name, res.Failed(), tc.fails, res.Findings)
+		}
+	}
+}
+
+// One table is forty tags and one defect. A rule that reported all forty is a
+// rule people learn to scroll past, so the file is reported once with the
+// count on it.
+func TestT11ReportsAFileOnceWithACount(t *testing.T) {
+	body := strings.Repeat("a sentence of the paper. ", 12) +
+		"\n\n<table>\n<tr><th>a</th><th>b</th></tr>\n<tr><td>1</td><td>2</td></tr>\n</table>\n"
+	res := result(t, onePaper(t, body), "T11")
+	if len(res.Findings) != 1 {
+		t.Fatalf("T11 reported %d findings, want 1: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.Contains(res.Findings[0].Message, "14 tags") {
+		t.Errorf("the message is %q, want the tag count in it", res.Findings[0].Message)
+	}
+}

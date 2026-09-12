@@ -18,7 +18,7 @@ import (
 
 // Rules is every rule the toolchain implements today, in id order.
 //
-// The full set is nine groups and eighty-seven rules. The ones here are the
+// The full set is nine groups and eighty-eight rules. The ones here are the
 // licensing rules that decide what may be published at all, the tag register
 // rules, and the groups whose files the toolchain can already produce: code,
 // figures and references. The rest arrive with the milestone that produces

@@ -1,0 +1,210 @@
+package extract
+
+import "testing"
+
+// Every table here is typeset in the test. The shapes are the ones that came
+// back from the reader, a heading that spans two columns and a label that
+// spans four rows, but the numbers and the words are made up, because a test
+// file is committed to a public repository and a table out of somebody's
+// paper is not ours to put there.
+
+func TestAPlainTableBecomesAPipeTable(t *testing.T) {
+	in := "Before.\n\n" +
+		"<table>\n" +
+		"<tr><th>Model</th><th>Score</th></tr>\n" +
+		"<tr><td>base</td><td>27.3</td></tr>\n" +
+		"</table>\n\n" +
+		"After."
+	want := "Before.\n\n" +
+		"| Model | Score |\n" +
+		"| --- | --- |\n" +
+		"| base | 27.3 |\n\n" +
+		"After."
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// Every row of the table is on its own line in the answers that prompted
+// this, with the cells on lines of their own under it.
+func TestATableSpreadOverManyLinesIsStillOneTable(t *testing.T) {
+	in := "<table>\n" +
+		"<tr>\n<th>Model</th>\n<th>Score</th>\n</tr>\n" +
+		"<tr>\n<td>base</td>\n<td>27.3</td>\n</tr>\n" +
+		"</table>"
+	want := "| Model | Score |\n| --- | --- |\n| base | 27.3 |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A cell that spans rows is written once and the rows under it get an empty
+// cell in that column, because GitHub Flavored Markdown has no way to write a
+// span and every renderer flattens one anyway.
+func TestARowspanLeavesAnEmptyCellUnderneath(t *testing.T) {
+	in := "<table>\n" +
+		`<tr><td rowspan="2">A</td><td>one</td></tr>` + "\n" +
+		"<tr><td>two</td></tr>\n" +
+		"</table>"
+	want := "| A | one |\n| --- | --- |\n|  | two |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A cell that spans columns is followed by as many empty cells as it covers,
+// which keeps every row the same width and keeps the numbers under the
+// heading they belong to.
+func TestAColspanIsFollowedByEmptyCells(t *testing.T) {
+	in := "<table>\n" +
+		`<tr><th rowspan="2">Model</th><th colspan="2">Score</th></tr>` + "\n" +
+		"<tr><th>one</th><th>two</th></tr>\n" +
+		"<tr><td>base</td><td>27.3</td><td>38.1</td></tr>\n" +
+		"</table>"
+	want := "| Model | Score |  |\n" +
+		"| --- | --- | --- |\n" +
+		"|  | one | two |\n" +
+		"| base | 27.3 | 38.1 |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A subscript is mathematics wherever it turns up in these tables, and
+// leaving it as a tag would hide it from mathtex and from the M rules as well
+// as from the renderer.
+func TestSubscriptsAndSuperscriptsBecomeMathematics(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>d<sub>model</sub></th><th>params ×10<sup>6</sup></th></tr>\n" +
+		"<tr><td>512</td><td>65</td></tr>\n" +
+		"</table>"
+	want := "| $d_{model}$ | params ×$10^{6}$ |\n| --- | --- |\n| 512 | 65 |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestBoldAndItalicAndLineBreaksSurvive(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>Model</th><th>Score</th></tr>\n" +
+		"<tr><td>base<br>large</td><td><b>41.29</b> <i>ours</i></td></tr>\n" +
+		"</table>"
+	want := "| Model | Score |\n| --- | --- |\n| base large | **41.29** *ours* |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A pipe in a cell is escaped once. grid.Pipe does the escaping, and doing it
+// here as well would put a backslash in the table.
+func TestAPipeInACellIsEscapedOnce(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>Operator</th><th>Meaning</th></tr>\n" +
+		"<tr><td>a | b</td><td>either</td></tr>\n" +
+		"</table>"
+	want := "| Operator | Meaning |\n| --- | --- |\n| a \\| b | either |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// The whole point of saying no. A table with a tag in it that this code does
+// not understand comes back exactly as it went in, so that rule T11 reports
+// it and a person looks at it.
+func TestATableWithATagItCannotReadIsLeftAlone(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>Figure</th></tr>\n" +
+		`<tr><td><img src="plot.png"></td></tr>` + "\n" +
+		"</table>"
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it left alone", got)
+	}
+}
+
+func TestATableWithOneRowIsLeftAlone(t *testing.T) {
+	in := "<table>\n<tr><th>Model</th><th>Score</th></tr>\n</table>"
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it left alone", got)
+	}
+}
+
+func TestATableWithARowThatHasNoCellsIsLeftAlone(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>Model</th></tr>\n" +
+		"<tr></tr>\n" +
+		"<tr><td>base</td></tr>\n" +
+		"</table>"
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it left alone", got)
+	}
+}
+
+// A table that runs off the end of the page is a page that went wrong
+// somewhere else, and finishing it here would be guessing where it ended.
+func TestAnUnclosedTableIsLeftAlone(t *testing.T) {
+	in := "<table>\n<tr><td>base</td></tr>\n<tr><td>large</td></tr>"
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it left alone", got)
+	}
+}
+
+// A paper about HTML has the markup in a listing and none of it is a table.
+func TestATableInsideAFenceIsLeftAlone(t *testing.T) {
+	in := "```html\n" +
+		"<table>\n" +
+		"<tr><th>Model</th></tr>\n" +
+		"<tr><td>base</td></tr>\n" +
+		"</table>\n" +
+		"```"
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it left alone", got)
+	}
+}
+
+// A table that opens outside a fence and appears to close inside one is not a
+// table, it is two different things that happen to be next to each other.
+func TestATableThatWouldCloseInsideAFenceIsLeftAlone(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><td>base</td></tr>\n" +
+		"```html\n" +
+		"</table>\n" +
+		"```"
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it left alone", got)
+	}
+}
+
+func TestTwoTablesOnAPageAreBothConverted(t *testing.T) {
+	in := "<table>\n<tr><th>A</th></tr>\n<tr><td>1</td></tr>\n</table>\n" +
+		"\n" +
+		"<table>\n<tr><th>B</th></tr>\n<tr><td>2</td></tr>\n</table>"
+	want := "| A |\n| --- |\n| 1 |\n\n| B |\n| --- |\n| 2 |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestAPageWithNoTableIsUntouched(t *testing.T) {
+	in := "One paragraph.\n\nAnother one, with a `<table>` mentioned in it."
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it untouched", got)
+	}
+}
+
+// Tidy does the conversion in the same pass as the rest of the unwrapping,
+// and it does it before Dollars so that TeX inside a cell is treated like TeX
+// anywhere else on the page.
+func TestTidyConvertsTablesAndThenTheMathematics(t *testing.T) {
+	in := "Here is the transcription of the page:\n" +
+		"\n" +
+		"<table>\n" +
+		"<tr><th>Term</th><th>Value</th></tr>\n" +
+		`<tr><td>\(d_k\)</td><td>64</td></tr>` + "\n" +
+		"</table>\n" +
+		"\n" +
+		"Let me know if you need anything else."
+	want := "| Term | Value |\n| --- | --- |\n| $d_k$ | 64 |"
+	if got := Tidy(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
