@@ -77,10 +77,12 @@ The ledger lives beside the routing table rather than in the corpus, because it 
 A model that is not in a price table gets a dash in the money column rather than a zero, because a subscription costs a turn and not a sum of money, and printing zero dollars would be claiming a measurement nobody made.
 
 **The audit is a contract, not a lint.**
-Eighty-five numbered rules in nine groups, each one a sentence you can argue with.
+Eighty-seven numbered rules in nine groups, each one a sentence you can argue with.
 A rule reports pass, fail, or not run, and those are three different states.
 Hard rules fail the build.
-One of them, M14, exists because the other three states can hide the worst outcome: a paper whose formulas were flattened into the prose has no mathematics left to check, so every rule about mathematics reports that it had nothing to look at and the audit comes back green over a paper that was destroyed.
+Two of them exist because the other three states can hide the worst outcome.
+M14 is for a paper whose formulas were flattened into the prose: there is no mathematics left to check, so every rule about mathematics reports that it had nothing to look at and the audit comes back green over a paper that was destroyed.
+C08 is the same failure in the C group, where a listing that never got a fence passes every rule about fences by not having one.
 
 ## Layout
 
@@ -99,6 +101,7 @@ prompt/          what the models are asked, pinned and hashed
 extract/         PDF to Markdown
 mathtex/         LaTeX repair, equation numbers and cross references
 katex/           the real KaTeX, run at build time to check and render
+code/            where the program text of a page starts and stops
 figures/         cropping diagrams out of pages
 pagemap/         the page of the file against the page of the paper
 refs/            bibliography parsing and citation linking
