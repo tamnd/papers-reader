@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tamnd/papers-reader/mathtex"
 	"github.com/tamnd/papers-reader/poppler"
 )
 
@@ -214,5 +215,36 @@ func TestTheFurnitureIsGoneBeforeTheParagraphsAreMade(t *testing.T) {
 	got := Read(pages[0], f).Text()
 	if strings.Contains(got, "Journal") {
 		t.Errorf("the running head is in the page file: %q", got)
+	}
+}
+
+// A ligature is the typesetter's decision about two letters that collide,
+// and a Type 1 era journal puts it in the text layer. A search for "filing"
+// should find it and a translator should not be handed a glyph it has no
+// word for.
+func TestALigatureIsWrittenOutAsItsLetters(t *testing.T) {
+	p := read([]poppler.TextLine{put(60, 100, "Found behind a ﬁling cabinet in the editorial oﬃce.")})
+	if got := p.Text(); !strings.Contains(got, "filing cabinet") || !strings.Contains(got, "editorial office") {
+		t.Errorf("the ligatures survived: %q", got)
+	}
+	if got := Ligatures("no ligatures here"); got != "no ligatures here" {
+		t.Errorf("Ligatures rewrote text with none in it: %q", got)
+	}
+	if got := Ligatures("Ærø and œuvre"); got != "Ærø and œuvre" {
+		t.Errorf("Ligatures folded letters rather than typesetting: %q", got)
+	}
+}
+
+// The native path produces no TeX, so a dollar sign in the text is one
+// somebody printed. Left bare it opens a math span: the copyright line at the
+// foot of the Paxos paper's first page failed acceptance rule A2 over one.
+func TestADollarSignOnANativePageIsMoneyAndNotADelimiter(t *testing.T) {
+	p := read([]poppler.TextLine{put(60, 100, "Permission to copy is granted for a fee of $00.00 per copy.")})
+	text := p.Text()
+	if !strings.Contains(text, `\$00.00`) {
+		t.Errorf("the dollar sign was left bare: %q", text)
+	}
+	if _, unclosed := mathtex.Split(text); unclosed != nil {
+		t.Errorf("a printed dollar sign opened a math span: %q", text)
 	}
 }

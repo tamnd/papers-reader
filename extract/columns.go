@@ -29,11 +29,12 @@ const (
 	minShare = 0.1
 	// spanGap is how many ordinary word spaces the gap at a gutter has to be
 	// before the words either side of it are on different lines rather than
-	// on one line that spans the columns. A title set across the page has a
-	// word space there; two columns have a gutter. Three rather than four
-	// because a scanned page's word boxes are loose and the step across its
-	// gutter measures smaller than it looks.
-	spanGap = 3
+	// on one line that spans the columns. It is the second of the two tests
+	// in cut and the weaker one: what decides is whether the gap covers the
+	// whole channel. This is here for the sparse page whose channel comes out
+	// narrower than the word space of the face set across it, so it only has
+	// to be a number a title clears and a gutter does not.
+	spanGap = 1.5
 	// minWords is how many words a page needs before its shape says
 	// anything. A title page has forty and is one column anyway.
 	minWords = 60
@@ -45,6 +46,23 @@ const (
 
 // Gutters finds the clear vertical channels that divide a page into columns,
 // as x positions in page points, left to right. A one column page has none.
+// It is the middle of each channel Channels found, which is what a caller
+// that only wants to know which column something is in needs.
+func Gutters(p poppler.Layout) []float64 {
+	ch := Channels(p)
+	if len(ch) == 0 {
+		return nil
+	}
+	out := make([]float64, len(ch))
+	for i, c := range ch {
+		out[i] = (c[0] + c[1]) / 2
+	}
+	return out
+}
+
+// Channels finds the clear vertical channels that divide a page into
+// columns, as the pair of x positions each one runs between, left to right.
+// A one column page has none.
 //
 // It is a projection: every word paints the bins it covers, and a column
 // boundary is a run of bins almost nothing painted. That is a different test
@@ -61,7 +79,7 @@ const (
 // It is a per page test and not a per paper one, because a two column paper
 // still sets its title across the full width and puts its references in two
 // columns under a heading that spans both.
-func Gutters(p poppler.Layout) []float64 {
+func Channels(p poppler.Layout) [][2]float64 {
 	if p.Width <= 0 {
 		return nil
 	}
@@ -101,7 +119,10 @@ func Gutters(p poppler.Layout) []float64 {
 		return nil
 	}
 
-	var cuts []int
+	// A channel is kept as the run of bins it covers and not as its middle,
+	// because how wide it is is what tells a step across a gutter from the
+	// word space of a title set across the page.
+	var runs [][2]int
 	for i := first + 1; i < last; i++ {
 		if ink[i] > clear {
 			continue
@@ -111,7 +132,7 @@ func Gutters(p poppler.Layout) []float64 {
 			j++
 		}
 		if float64(j-i)/bins >= minGutter {
-			cuts = append(cuts, (i+j)/2)
+			runs = append(runs, [2]int{i, j})
 		}
 		i = j
 	}
@@ -121,8 +142,8 @@ func Gutters(p poppler.Layout) []float64 {
 	// where a marginal note has left a wide channel beside the body: the
 	// note is not a column, and the gutter between the real columns still
 	// is.
-	for len(cuts) > 0 {
-		share := shares(words, cuts, p.Width)
+	for len(runs) > 0 {
+		share := shares(words, runs, p.Width)
 		worst, at := 1.0, -1
 		for i, s := range share {
 			if s < worst {
@@ -135,17 +156,17 @@ func Gutters(p poppler.Layout) []float64 {
 		// A thin column at the left is the fault of the cut to its right,
 		// and one at the right is the fault of the cut to its left.
 		if at == 0 {
-			cuts = cuts[1:]
+			runs = runs[1:]
 		} else if at == len(share)-1 {
-			cuts = cuts[:len(cuts)-1]
+			runs = runs[:len(runs)-1]
 		} else {
-			cuts = append(cuts[:at-1], cuts[at:]...)
+			runs = append(runs[:at-1], runs[at:]...)
 		}
 	}
 
-	out := make([]float64, len(cuts))
-	for i, c := range cuts {
-		out[i] = float64(c) / bins * p.Width
+	out := make([][2]float64, len(runs))
+	for i, r := range runs {
+		out[i] = [2]float64{float64(r[0]) / bins * p.Width, float64(r[1]) / bins * p.Width}
 	}
 	return out
 }
@@ -153,12 +174,12 @@ func Gutters(p poppler.Layout) []float64 {
 func bin(x, width float64) int { return int(x / width * bins) }
 
 // shares is how much of the text each column holds.
-func shares(words []poppler.Word, cuts []int, width float64) []float64 {
-	counts := make([]float64, len(cuts)+1)
+func shares(words []poppler.Word, runs [][2]int, width float64) []float64 {
+	counts := make([]float64, len(runs)+1)
 	for _, w := range words {
 		n := 0
-		for _, c := range cuts {
-			if bin(w.XMid(), width) >= c {
+		for _, r := range runs {
+			if bin(w.XMid(), width) >= (r[0]+r[1])/2 {
 				n++
 			}
 		}
@@ -251,9 +272,13 @@ func medianHeight(words []poppler.Word) float64 {
 // paragraphs past a heading that introduces them.
 func Lines(p poppler.Layout) []poppler.TextLine {
 	all := rows(Words(p))
-	cuts := Gutters(p)
-	if len(cuts) == 0 {
+	channels := Channels(p)
+	if len(channels) == 0 {
 		return all
+	}
+	cuts := make([]float64, len(channels))
+	for i, c := range channels {
+		cuts[i] = (c[0] + c[1]) / 2
 	}
 	page := medianWordGap(all)
 
@@ -267,7 +292,7 @@ func Lines(p poppler.Layout) []poppler.TextLine {
 		if len(l.Words) > 4 {
 			gap = medianWordGap([]poppler.TextLine{l})
 		}
-		for _, piece := range cut(l, cuts, spanGap*gap) {
+		for _, piece := range cut(l, channels, spanGap*gap) {
 			if crosses(piece.Box, cuts) {
 				spans = append(spans, piece)
 			} else {
@@ -316,22 +341,31 @@ func Lines(p poppler.Layout) []poppler.TextLine {
 
 // cut splits a row where it steps across a gutter.
 //
-// This is the whole of the two column problem and it comes down to one
-// measurement. A row that crosses a gutter is either a title set across the
-// page or the end of a line in one column followed by the start of an
-// unrelated line in the next, and what tells them apart is the size of the
-// gap at the crossing: a word space in the first, the width of the gutter
-// and the ragged edge of the column in the second.
+// This is the whole of the two column problem. A row that crosses a gutter is
+// either a title set across the page or the end of a line in one column
+// followed by the start of an unrelated line in the next, and what tells them
+// apart is the gap at the crossing: a word space in the first, the whole
+// width of the channel in the second.
 //
-// Measuring it against the page's own word spacing rather than against a
-// number of points is what makes it work on a 1967 proceedings set in three
-// narrow columns and on a modern preprint alike.
-func cut(l poppler.TextLine, cuts []float64, tol float64) []poppler.TextLine {
+// The test is that the gap covers the channel, end to end, and that is the
+// part that has to be exact. Measuring it as a multiple of the page's word
+// space instead was close enough for a modern two column preprint and wrong
+// on the 1967 proceedings, which set three columns with a twelve point gutter
+// and a four and a half point word space: two and a half word spaces, under
+// any threshold that leaves a title alone. Every body row of Amdahl's first
+// page came through uncut, each one became a line that spans the columns,
+// each spanning line closed a band, and the page was published with its three
+// columns interleaved a sentence at a time.
+//
+// The multiple is kept as well and lowered to something a title comfortably
+// clears, because a channel found on a sparse page can be narrower than the
+// word space of the display face set across it.
+func cut(l poppler.TextLine, channels [][2]float64, tol float64) []poppler.TextLine {
 	var out []poppler.TextLine
 	from := 0
 	for i := 1; i < len(l.Words); i++ {
-		gap := l.Words[i].XMin - l.Words[i-1].XMax
-		if gap <= tol || !crosses(poppler.Box{XMin: l.Words[i-1].XMax, XMax: l.Words[i].XMin}, cuts) {
+		left, right := l.Words[i-1].XMax, l.Words[i].XMin
+		if right-left <= tol || !covers(left, right, channels) {
 			continue
 		}
 		out = append(out, line(l.Words[from:i]))
@@ -341,6 +375,16 @@ func cut(l poppler.TextLine, cuts []float64, tol float64) []poppler.TextLine {
 		return []poppler.TextLine{l}
 	}
 	return append(out, line(l.Words[from:]))
+}
+
+// covers says whether the gap from left to right holds a whole channel.
+func covers(left, right float64, channels [][2]float64) bool {
+	for _, c := range channels {
+		if left <= c[0] && right >= c[1] {
+			return true
+		}
+	}
+	return false
 }
 
 // line makes a text line out of a run of words that are already in order.

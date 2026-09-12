@@ -60,10 +60,64 @@ type Page struct {
 func (p Page) Text() string {
 	parts := make([]string, len(p.Paragraphs))
 	for i, par := range p.Paragraphs {
-		parts[i] = par.Text
+		parts[i] = escapeDollars(par.Text)
 	}
 	return strings.Join(parts, "\n\n") + "\n"
 }
+
+// escapeDollars writes every dollar sign on a natively read page as \$.
+//
+// This path produces no TeX. pdftotext hands over the glyphs the PDF holds
+// and nothing turns a run of them into a formula, so a dollar in the text is
+// a dollar somebody printed and never a delimiter. Left bare it opens a math
+// span: the ACM copyright line at the foot of the Paxos paper's first page
+// reads "0000-0000/98/0000-0000 $00.00", and that one dollar sign was enough
+// to fail acceptance rule A2 and stop the paper being extracted at all.
+//
+// The layout path is not this function's business. There a dollar is usually
+// a delimiter the tool wrote on purpose, and escaping those would turn every
+// formula in the paper into prose.
+func escapeDollars(s string) string {
+	if !strings.Contains(s, "$") {
+		return s
+	}
+	return strings.ReplaceAll(s, "$", `\$`)
+}
+
+// Ligatures writes the Latin typographic ligatures out as the letters they
+// stand for.
+//
+// A ligature is a decision the typesetter made about two letters that collide
+// in a particular face, and a PDF from a Type 1 era journal puts the decision
+// in the text layer: the Paxos paper's editorial note comes off pdftotext as
+// "behind a ﬁling cabinet in the TOCS editorial oﬃce". Nothing downstream
+// wants it. A search for "filing" misses it, a spell check flags it, a
+// translator is handed a character it has no word for, and a reader who
+// copies a sentence out of the corpus pastes a glyph that will not match
+// anything. The author wrote "filing" and the corpus should say so.
+//
+// Only the six Latin ligatures in the alphabetic presentation forms block are
+// folded. Æ and œ are letters in the languages that use them and not
+// typesetting, and the Greek and Arabic presentation forms are somebody
+// else's problem and not one this corpus has.
+func Ligatures(s string) string {
+	if !strings.ContainsFunc(s, isLigature) {
+		return s
+	}
+	return ligatures.Replace(s)
+}
+
+func isLigature(r rune) bool { return r >= 'ﬀ' && r <= 'ﬆ' }
+
+var ligatures = strings.NewReplacer(
+	"ﬀ", "ff",
+	"ﬁ", "fi",
+	"ﬂ", "fl",
+	"ﬃ", "ffi",
+	"ﬄ", "ffl",
+	"ﬅ", "st", // the long s ligature, which a 19th century reprint sets
+	"ﬆ", "st",
+)
 
 // PrintedNumber is the page's own number as an integer, for the page map.
 // The bool is false for a page that printed none and for the roman numerals
@@ -208,7 +262,7 @@ func join(lines []poppler.TextLine, cuts []float64) Paragraph {
 	var b strings.Builder
 	for i, l := range lines {
 		p.Box = union(p.Box, l.Box)
-		text := strings.TrimSpace(l.Text())
+		text := Ligatures(strings.TrimSpace(l.Text()))
 		if i == 0 {
 			b.WriteString(text)
 			continue

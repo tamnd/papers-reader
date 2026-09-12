@@ -165,6 +165,61 @@ func TestATitleAcrossTheTopStaysOneLineAndComesFirst(t *testing.T) {
 	}
 }
 
+// looseSpace is the word space of a page set in a face with generous
+// spacing, and it is most of two thirds of the gutter below. That ratio is
+// the 1967 proceedings: three columns, a twelve point gutter and a four and a
+// half point word space.
+const looseSpace = 6
+
+// loose sets one line the way put does, with wide word spaces.
+func loose(x, y float64, s string) poppler.TextLine {
+	l := poppler.TextLine{Box: poppler.Box{XMin: x, YMin: y, XMax: x, YMax: y + fontSize}}
+	for _, word := range strings.Fields(s) {
+		w := poppler.Word{
+			Box:  poppler.Box{XMin: x, YMin: y, XMax: x + float64(len(word))*charWidth, YMax: y + fontSize},
+			Text: word,
+		}
+		l.Words = append(l.Words, w)
+		l.XMax = w.XMax
+		x = w.XMax + looseSpace
+	}
+	return l
+}
+
+// A gutter only a little wider than a word space is still a gutter.
+//
+// Measuring the crossing as a multiple of the word space was what this used
+// to do, and it read every body row of Amdahl's first page as one line
+// spanning three columns. Every one of those closed a band, and the paper was
+// published with its columns interleaved a sentence at a time.
+func TestANarrowGutterIsStillAGutter(t *testing.T) {
+	const gutter = 14
+	var one, two, three []poppler.TextLine
+	for i := 0; i < 16; i++ {
+		y := 100 + float64(i)*linePitch
+		a := loose(50, y, "first column line")
+		b := loose(a.XMax+gutter, y, "second column line")
+		c := loose(b.XMax+gutter, y, "third column line")
+		one = append(one, a)
+		two = append(two, b)
+		three = append(three, c)
+	}
+	p := page(1, one, two, three)
+	if got := Gutters(p); len(got) != 2 {
+		t.Fatalf("found %d gutters, want 2: %v", len(got), got)
+	}
+	got := texts(Lines(p))
+	if len(got) != 48 {
+		t.Fatalf("read %d lines, set 48: %v", len(got), got)
+	}
+	for i, s := range got {
+		want := []string{"first", "second", "third"}[i/16]
+		if !strings.Contains(s, want) {
+			t.Fatalf("line %d is %q, want one of the %s column", i, s, want)
+		}
+	}
+}
+
 func TestAHeadingInOneColumnDoesNotSwallowTheLineBesideIt(t *testing.T) {
 	// The failure this package exists to prevent. A heading at the top of
 	// the right column sits on the same row as a line of the left column,

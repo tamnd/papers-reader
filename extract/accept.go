@@ -208,7 +208,7 @@ func (c *Checker) faults(page int, text string) []Fault {
 		}
 	}
 
-	if markers := illegible.FindAllString(text, -1); len(markers) > 0 {
+	if markers := Illegible.FindAllString(text, -1); len(markers) > 0 {
 		switch {
 		case !c.Damaged[page]:
 			add(A8, fmt.Sprintf("the page is marked %s and is not in errata.yaml", markers[0]), 0)
@@ -235,9 +235,14 @@ func (c *Checker) stddev() float64 {
 // algorithm.
 var fence = regexp.MustCompile("(?m)^[ \t]*(```|~~~)")
 
-// illegible is the markers the prompt asks a reader to leave where a page is
+// Illegible is the markers the prompt asks a reader to leave where a page is
 // unreadable. Anything else it invents is caught by A1 or by a person.
-var illegible = regexp.MustCompile(`\[\?\]|⟨illegible⟩|\[illegible\]`)
+//
+// Exported because audit rule M05 reads the committed corpus for the same
+// markers, and a second list of them would be a list that drifted from this
+// one. The marker is allowed here, on a page recorded as damaged, and it is
+// allowed nowhere in what gets published.
+var Illegible = regexp.MustCompile(`\[\?\]|⟨illegible⟩|\[illegible\]`)
 
 // refusals is what a model says when it will not do the work, and what a
 // gateway says when it is the one answering. Matched case insensitively

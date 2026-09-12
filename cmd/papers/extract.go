@@ -65,7 +65,7 @@ thing to try is the other path, with --path.
 A page that is already extracted is left alone, so running this twice costs
 one read of the file and no writes. Pass --again to do the work over.
 
-A restricted paper is read as far as its first page and no further. Nothing
+A restricted paper is read as far as its third page and no further. Nothing
 but its front matter and a short abstract can ever be published, so the
 rest of it would be work done to fill a directory nobody may read.
 
@@ -187,6 +187,20 @@ type extraction struct {
 	long        bool
 }
 
+// restrictedPages is how far into a paper that may not be redistributed this
+// program reads.
+//
+// Everything published from such a paper is its front matter and an abstract
+// of at most 250 words, and it used to stop at one page on the reasoning that
+// both are on the first. Three of the first eight papers in this corpus put
+// something else there: the Paxos paper opens with Lamport's own note about
+// where the article appeared, and the abstract is on the page after it, so
+// the published file was a title, an author and a citation. Three pages is
+// past every cover sheet in the corpus and is still nothing anybody could
+// mistake for a copy of the paper. What may be published is capped by
+// split.Restrict and by audit rule S07, not by this.
+const restrictedPages = 3
+
 func (e *extraction) do(ctx context.Context) (count, error) {
 	var n count
 	if e.source == nil {
@@ -197,8 +211,8 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 		return n, fmt.Errorf("nothing is known about what may be published from it, so it is not read")
 	case corpus.AccessRestricted:
 		// Front matter and an abstract under 250 words is the whole of what
-		// this paper can ever publish, and both are on the first page.
-		e.last = 1
+		// this paper can ever publish, so the rest of it is never read.
+		e.last = restrictedPages
 	}
 	file := e.corpus.PDF(e.paper.ID)
 	if _, err := os.Stat(file); err != nil {
