@@ -137,12 +137,40 @@ func listFields(e *Entry) {
 			e.Venue = venue(strings.Join(parts[1:], ". "))
 			return
 		}
-		e.Title = clean(parts[1])
-		e.Venue = venue(strings.Join(parts[2:], ". "))
+		rest := parts[1:]
+		// "Akbik, Blythe, and Vollgraf. 2018. Contextual string embeddings.
+		// In Proceedings of COLING." is how the ACL proceedings set a
+		// reference, and the year stands on its own between the authors and
+		// the title. Without this the year is filed as the title and the
+		// title as the venue, and the entry resolves to nothing: every one of
+		// the fifty six references in the BERT paper is set this way.
+		if len(rest) > 1 {
+			if y := bareYear(rest[0]); y != 0 {
+				e.Year, rest = y, rest[1:]
+			}
+		}
+		e.Title = clean(rest[0])
+		e.Venue = venue(strings.Join(rest[1:], ". "))
 		return
 	}
 	e.Title = clean(parts[0])
 	e.Venue = venue(strings.Join(parts[1:], ". "))
+}
+
+// bareYear reads a sentence that is nothing but a year, with the letter a
+// bibliography adds to tell two papers of the same year apart. Anything else
+// in the sentence and it is not a year, it is a title that opens with one.
+func bareYear(s string) int {
+	s = strings.TrimSpace(s)
+	s = strings.TrimRight(s, "abcdefgh")
+	if len(s) != 4 {
+		return 0
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n < 1600 || n > 2099 {
+		return 0
+	}
+	return n
 }
 
 // authorYearFields parses "Shannon, C. E. (1948). A mathematical theory of

@@ -88,16 +88,27 @@ func endsBibliography(text string) bool {
 	if !ok {
 		return false
 	}
-	return afterNames[key] || strings.HasPrefix(key, "appendix ")
+	return afterNames[key] || strings.HasPrefix(key, "appendix")
 }
 
 // headingKey reduces a paragraph to the words of its heading, or says it is
 // not short enough to be one.
 func headingKey(text string) (string, bool) {
 	text = strings.TrimSpace(text)
-	if text == "" || len([]rune(text)) > 60 {
+	if text == "" {
 		return "", false
 	}
+	// The length cap is a guess at what a heading looks like, and it only has
+	// to be guessed at for a paragraph with no marker on it. A line that
+	// starts with an ATX marker is a heading whatever its length, and some of
+	// them are long: BERT heads its appendix with the whole title of the
+	// paper in quotation marks, a hundred and two characters of it, and under
+	// the cap that heading did not end the bibliography and the parse ran on
+	// through the appendix.
+	if !strings.HasPrefix(text, "#") && len([]rune(text)) > 60 {
+		return "", false
+	}
+	text = strings.TrimLeft(text, "# \t")
 	text = strings.TrimLeft(text, "§ \t")
 	// Drop a leading section number in any of the schemes package split
 	// knows: "6", "6.", "A.", "VII.".

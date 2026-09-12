@@ -103,3 +103,28 @@ func TestALongParagraphIsNeverAHeading(t *testing.T) {
 		t.Errorf("found %v", got(section))
 	}
 }
+
+func TestALongMarkedHeadingStillEndsTheBibliography(t *testing.T) {
+	// A paper that heads its appendix with its own title, which is what BERT
+	// does and what ran the parse on through the appendix: the heading is a
+	// hundred and two characters long and the cap is sixty.
+	long := "## Appendix for “A Very Long Title Repeated in Full at the Head of the Appendix of This Paper”"
+	d := doc("the body of the paper.", "## References", "[1] an entry.", long, "the appendix.")
+
+	section := Bibliography(d)
+	if len(section) != 1 || section[0].Text != "[1] an entry." {
+		t.Errorf("the bibliography is %v and the appendix is not part of it", got(section))
+	}
+}
+
+func TestALongUnmarkedParagraphIsStillNotAHeading(t *testing.T) {
+	// The cap is what stops a reference from being read as a heading, and a
+	// paragraph with no marker on it is still held to it.
+	entry := "[2] R. Q. Appendix and T. Author. 1994. A paper whose first author is unfortunately named. In Proceedings of Somewhere, pages 1 to 12."
+	d := doc("the body of the paper.", "References", "[1] an entry.", entry)
+
+	section := Bibliography(d)
+	if len(section) != 2 {
+		t.Errorf("the bibliography is %v and both entries belong to it", got(section))
+	}
+}

@@ -271,3 +271,46 @@ func TestAnEmptyBibliographyParsesIntoNothing(t *testing.T) {
 		t.Errorf("got %d entries and %v", len(r.Entries), r.Notes)
 	}
 }
+
+func TestABracketedWordIsNotAnEntryLabel(t *testing.T) {
+	// The BERT paper's appendix repeats the masked language model examples,
+	// and its bracketed tokens were read as the labels of a bibliography
+	// seventeen entries long, none of which was a reference.
+	r := parse(
+		"The input uses the [CLS] token first.",
+		"A word is replaced by the [MASK] token.",
+		"The two sentences are divided by the [SEP] token.",
+		"A fourth sentence with the [CLS] token again.",
+	)
+
+	if r.Style == StyleBracket {
+		t.Fatalf("the style is %s and none of those brackets is a label", r.Style)
+	}
+	for _, e := range r.Entries {
+		switch e.Key {
+		case "CLS", "MASK", "SEP":
+			t.Errorf("entry %q is a token of the paper's input and not a reference", e.Key)
+		}
+	}
+}
+
+func TestAnInitialsAndYearLabelIsStillAnEntryLabel(t *testing.T) {
+	r := parse(
+		"[Sha48] C. Shannon. A mathematical theory of nothing. 1948.",
+		"[BL04] B. Lee and C. Lee. Another paper that does not exist. 2004.",
+		"[AB+12] A. Bee, C. Dee, and E. Eff. A third one. 2012.",
+	)
+
+	if r.Style != StyleBracket {
+		t.Fatalf("the style is %s and the labels are brackets", r.Style)
+	}
+	want := []string{"Sha48", "BL04", "AB+12"}
+	if len(r.Entries) != len(want) {
+		t.Fatalf("the parse found %d entries and the list has %d", len(r.Entries), len(want))
+	}
+	for i, key := range want {
+		if r.Entries[i].Key != key {
+			t.Errorf("entry %d is keyed %q and the paper keyed it %q", i+1, r.Entries[i].Key, key)
+		}
+	}
+}

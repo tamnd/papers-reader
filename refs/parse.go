@@ -126,7 +126,14 @@ func stream(texts []string) string {
 var (
 	// A bracket key is usually a number and is sometimes the initials and
 	// year the older ACM papers use, as in [Sha48].
-	bracketLabel = regexp.MustCompile(`(?:^|[ \n])\[([\p{L}\d+.\-]{1,16})\][ \n]\s*`)
+	//
+	// A key that is all letters is not a key. Every alphabetic scheme in use
+	// carries the year, so the digits are what tells [Sha48] and [BL04] apart
+	// from the bracketed tokens a paper writes in its prose. The BERT paper
+	// is the reason: its appendix repeats the masked language model examples,
+	// and [MASK], [CLS] and [SEP] were read as the labels of a bibliography
+	// seventeen entries long, none of which was a reference.
+	bracketLabel = regexp.MustCompile(`(?:^|[ \n])\[(\d{1,3}|[\p{L}\d+.\-]{0,12}\d{2,4}[a-z]?)\][ \n]\s*`)
 	numberLabel  = regexp.MustCompile(`(?:^|[ \n])(\d{1,3})[.)][ \n]\s*`)
 	yearLabel    = regexp.MustCompile(`(?m)^(\p{Lu}[^()\n]{0,200}?)\(((?:1[6-9]|20)\d{2}[a-z]?)\)[.,]?\s*`)
 )

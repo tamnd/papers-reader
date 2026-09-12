@@ -200,3 +200,28 @@ func TestAnEntryThatParsesIntoNothingStillHasItsRaw(t *testing.T) {
 		t.Errorf("raw reads %q", e.Raw)
 	}
 }
+
+func TestAYearStandingOnItsOwnIsNotTheTitle(t *testing.T) {
+	// The style the ACL proceedings set their references in, which is every
+	// one of the fifty six in the BERT paper.
+	e := one(StyleHanging, "A. Nkemelu, B. Oyelaran, and C. Fairweather. 2018. A theory of slow indexes. In *Proceedings of Somewhere*, pages 1638–1649.")
+	if got := strings.Join(e.Authors, "; "); got != "A. Nkemelu; B. Oyelaran; C. Fairweather" {
+		t.Errorf("the authors are %q", got)
+	}
+	if e.Title != "A theory of slow indexes" {
+		t.Errorf("the title is %q and the year is not a title", e.Title)
+	}
+	if e.Year != 2018 {
+		t.Errorf("the year is %d", e.Year)
+	}
+	if e.Pages != "1638-1649" {
+		t.Errorf("the pages are %q", e.Pages)
+	}
+}
+
+func TestATitleThatOpensWithAYearIsStillATitle(t *testing.T) {
+	e := one(StyleBracket, "A. Nkemelu. 1968 and the indexes that followed. Journal of Made Up Results, 1991.")
+	if e.Title != "1968 and the indexes that followed" {
+		t.Errorf("the title is %q", e.Title)
+	}
+}
