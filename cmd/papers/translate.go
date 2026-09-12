@@ -15,6 +15,7 @@ import (
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/glossary"
 	"github.com/tamnd/papers-reader/prompt"
+	"github.com/tamnd/papers-reader/roundtrip"
 	"github.com/tamnd/papers-reader/split"
 	"github.com/tamnd/papers-reader/translate"
 	"github.com/tamnd/papers-reader/work"
@@ -281,6 +282,12 @@ func current(c *corpus.Corpus, l corpus.Lang, id string, f job) bool {
 	}
 	if front.Edited {
 		return true
+	}
+	// A page the back translation check read and disagreed with is owed
+	// again, whatever its hashes say. It is the one kind of staleness that
+	// is about what the page means rather than about what produced it.
+	if front.Roundtrip == string(roundtrip.Material) {
+		return false
 	}
 	if p, err := prompt.Get(prompt.Translate); err == nil && front.PromptSHA256 != p.SHA {
 		return false

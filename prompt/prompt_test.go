@@ -52,8 +52,10 @@ func TestTheReadingPromptIsNamedCorrectly(t *testing.T) {
 // case and the one to keep common.
 func TestEveryPlaceholderIsOneSomebodyFills(t *testing.T) {
 	want := map[string][]string{
-		GlossaryTerm: {"LANGUAGE", "RULES", "TERMS"},
-		Translate:    {"ABSTRACT", "BODY", "FIELD", "GLOSSARY", "LANGUAGE", "NOTE", "RULES", "SOURCE"},
+		GlossaryTerm:   {"LANGUAGE", "RULES", "TERMS"},
+		Translate:      {"ABSTRACT", "BODY", "FIELD", "GLOSSARY", "LANGUAGE", "NOTE", "RULES", "SOURCE"},
+		RoundtripBack:  {"BODY", "FIELD", "SOURCE"},
+		RoundtripJudge: {"BACK", "ENGLISH", "LANGUAGE"},
 	}
 	all, err := All()
 	if err != nil {

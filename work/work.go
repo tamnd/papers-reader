@@ -52,11 +52,12 @@ const (
 	Refs      queue.Stage = "refs"
 	Glossary  queue.Stage = "glossary"
 	Translate queue.Stage = "translate"
+	Roundtrip queue.Stage = "roundtrip"
 )
 
 // Stages is every stage, in pipeline order rather than alphabetical order,
 // because the order is what a board should be read in.
-var Stages = []queue.Stage{Extract, Figures, Refs, Glossary, Translate}
+var Stages = []queue.Stage{Extract, Figures, Refs, Glossary, Translate, Roundtrip}
 
 // Queue opens the corpus's work list.
 //

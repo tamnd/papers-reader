@@ -60,6 +60,12 @@ const (
 	GlossaryTerm = "glossary_term"
 	// Translate asks for one chunk of a body in one other language.
 	Translate = "translate"
+	// RoundtripBack asks for a translated page back in English, literally,
+	// from a model that has not seen the original.
+	RoundtripBack = "roundtrip_back"
+	// RoundtripJudge asks whether the original English and the English that
+	// came back claim the same things.
+	RoundtripJudge = "roundtrip_judge"
 )
 
 // Lang is the rules for writing one language: its terminology, its

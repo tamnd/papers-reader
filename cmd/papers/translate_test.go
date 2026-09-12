@@ -7,6 +7,7 @@ import (
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/prompt"
+	"github.com/tamnd/papers-reader/roundtrip"
 	"github.com/tamnd/papers-reader/translate"
 )
 
@@ -229,6 +230,77 @@ func TestAHandEditedTranslationIsLeftAlone(t *testing.T) {
 	for _, j := range jobs {
 		if j.name == "01_first.md" {
 			t.Error("a hand edited translation was planned for overwriting")
+		}
+	}
+}
+
+// The back translation check is the only one that reads what a page means,
+// and the verdict it writes on the page is the only kind of staleness that
+// is about meaning rather than about what produced the file. Every hash
+// matches here and the page is owed again anyway.
+func TestAPageTheBackTranslationDisagreedWithIsAskedAgain(t *testing.T) {
+	c := translateCorpus(t)
+	papers, _ := c.LoadPapers()
+
+	english, err := os.ReadFile(filepath.Join(c.Content(corpus.EN, "a-1970-paper"), "01_first.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	was, _, err := corpus.ParseFront(english)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, c, "01_first.md", corpus.Front{
+		Paper: "a-1970-paper", Title: "A Paper", Kind: "section", Lang: corpus.VI,
+		SourceContentSHA256: was.ContentSHA256,
+		PromptSHA256:        translatePrompt(t),
+		Roundtrip:           string(roundtrip.Material),
+	}, "Đoạn thứ nhất.")
+
+	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, j := range jobs {
+		if j.name == "01_first.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a page the judge said differs materially was left as it was")
+	}
+}
+
+// A verdict that is not the bad one leaves the page alone. Differing in
+// wording is what a literal back-translation of a good translation looks
+// like, and a check that re-queued those would re-queue the corpus.
+func TestAPageTheBackTranslationOnlyQuibbledWithIsLeftAlone(t *testing.T) {
+	c := translateCorpus(t)
+	papers, _ := c.LoadPapers()
+
+	english, err := os.ReadFile(filepath.Join(c.Content(corpus.EN, "a-1970-paper"), "01_first.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	was, _, err := corpus.ParseFront(english)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, c, "01_first.md", corpus.Front{
+		Paper: "a-1970-paper", Title: "A Paper", Kind: "section", Lang: corpus.VI,
+		SourceContentSHA256: was.ContentSHA256,
+		PromptSHA256:        translatePrompt(t),
+		Roundtrip:           string(roundtrip.Wording),
+	}, "Đoạn thứ nhất.")
+
+	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, j := range jobs {
+		if j.name == "01_first.md" {
+			t.Error("a page the judge was content with was queued again")
 		}
 	}
 }

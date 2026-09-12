@@ -20,6 +20,7 @@ refs       parse the bibliography and link the citations
 split      cut the paper into one file per section
 tags       hand out permanent identifiers
 translate  produce Vietnamese, Chinese and Japanese
+roundtrip  put a sample of the translations back into English and judge them
 audit      check the result against numbered rules
 report     write what the corpus knows about itself: coverage, and what it cost
 emit       build the JSON the reading app consumes
@@ -116,6 +117,7 @@ split/           one paper into one file per section
 tags/            the permanent identifier register
 translate/       the four language pipeline
 glossary/        the controlled vocabulary
+roundtrip/       the back translation check on a sample of the translations
 audit/           the numbered rules
 report/          the coverage, resolve and usage reports
 emit/            JSON for the reading app

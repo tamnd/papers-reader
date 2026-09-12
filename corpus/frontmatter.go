@@ -80,6 +80,18 @@ type Front struct {
 	// rather than rejecting them, and the reading app says so on the page.
 	SmallModel bool `yaml:"small_model,omitempty"`
 	Gateway    bool `yaml:"gateway,omitempty"`
+	// Roundtrip is the verdict of the back translation check, on the pages
+	// the sample chose. It is written on the page rather than only into the
+	// report because it is what puts the page back on the translate queue:
+	// a verdict of differs-materially makes the file stale in exactly the
+	// way a moved English hash does, and the next run asks for it again.
+	//
+	// A page nobody sampled has nothing here, and that is not a pass. The
+	// report says how much of the corpus the sample covers.
+	Roundtrip string `yaml:"roundtrip,omitempty"`
+	// RoundtripRun is the run that wrote the verdict, so a verdict can be
+	// told apart from one written by an older prompt.
+	RoundtripRun string `yaml:"roundtrip_run,omitempty"`
 }
 
 const fence = "---"
