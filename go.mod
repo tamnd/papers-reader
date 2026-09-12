@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/dop251/goja v0.0.0-20260806115107-493f22071ef6
-	github.com/tamnd/llm v0.1.3
+	github.com/tamnd/llm v0.1.4
 	gopkg.in/yaml.v3 v3.0.1
 )
 
