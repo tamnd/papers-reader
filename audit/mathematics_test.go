@@ -167,6 +167,29 @@ func TestM06FindsASectionThatLostItsDisplays(t *testing.T) {
 	}
 }
 
+// The other direction, which is every paper. The mathematics of a paper lives
+// in one or two sections and the rest of it is prose, so a rule that reported
+// a section for being further from its neighbours than the rest would report
+// the best read section of every paper in the corpus.
+func TestM06LeavesTheSectionTheMathematicsIsIn(t *testing.T) {
+	files := map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), abstract),
+	}
+	dense := "$$\nx = 1\n$$\n\n$$\ny = 2\n$$\n\n$$\nz = 3\n$$\n\n$$\nw = 4\n$$" + pad
+	for i := 1; i <= 6; i++ {
+		body := "a section of the same paper with no display in it at all." + pad
+		if i == 6 {
+			body = dense
+		}
+		files[fmt.Sprintf("content/en/vaswani-2017-attention/%02d_section.md", i)] =
+			file(section("section")+fmt.Sprintf("pdf_pages: \"%d\"\n", i+1), body)
+	}
+	if res := result(t, Run(in(t, files), false), "M06"); res.Failed() {
+		t.Errorf("M06 reported the section the mathematics is in: %v", res.Findings)
+	}
+}
+
 // One paper's worth of sections is not enough to have an opinion about the
 // next one, and a rule that guessed from three would report the first long
 // section of every paper in the corpus.

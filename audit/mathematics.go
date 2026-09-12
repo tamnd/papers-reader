@@ -346,7 +346,16 @@ func ruleM06(in *Input) ([]Finding, error) {
 		sampled++
 		for i, rate := range rates {
 			mean, sd := meanSD(without(rates, i))
-			d := math.Abs(rate - mean)
+			// Below the rest of the paper and not away from it. A section
+			// with more displays than its neighbours is the section the
+			// mathematics is in, and every paper has one: nakamoto keeps all
+			// of its algebra in the calculations section and vaswani keeps
+			// all of its in the model architecture, so a two sided test
+			// reports the best read section of every paper in the corpus and
+			// says nothing about the one this rule was written for. A section
+			// that is short of displays is the interesting direction and the
+			// only one.
+			d := mean - rate
 			// Both tests have to fail, as in acceptance rule A5. Three
 			// deviations alone refuses a section that is one display short of
 			// a paper whose sections are otherwise identical, and a share of
