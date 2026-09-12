@@ -52,7 +52,7 @@ var commands = []command{
 	{"translate", "M6", "produce Vietnamese, Chinese and Japanese", nil},
 	{"emit", "M8", "build the JSON the reading app consumes", nil},
 	{"graph", "M7", "build the citation graph over the corpus", nil},
-	{"report", "M7", "write the coverage, audit and usage reports", nil},
+	{"report", "M7", "write the coverage, usage and citation reports", runReport},
 	{"queue", "M1", "show and drain the work queue", runQueue},
 	{"routes", "M1", "show the model routing table", runRoutes},
 	{"doctor", "M1", "check that the tools and the routes are usable", runDoctor},

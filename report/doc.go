@@ -6,5 +6,10 @@
 // repository can be read in a diff, and a number that changed for the worse
 // is then visible in a review.
 //
-// Arrives in milestone M7.
+// A committed report is also a report anybody can read, which is the
+// constraint the usage report is written under: it counts pages, tokens and
+// seconds, and it names no host and no path with a user name in it.
+//
+// The usage report is here. Coverage and the citation graph arrive in
+// milestone M7.
 package report

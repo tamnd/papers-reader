@@ -21,6 +21,7 @@ split      cut the paper into one file per section
 tags       hand out permanent identifiers
 translate  produce Vietnamese, Chinese and Japanese
 audit      check the result against numbered rules
+report     write what the corpus knows about itself, starting with what it cost
 emit       build the JSON the reading app consumes
 ```
 
@@ -64,6 +65,11 @@ Pages read by a layout model or a vision model say so, and the audit treats them
 
 **Tags are permanent.**
 A section keeps its tag across re-extraction, re-splitting and renumbering, which is what lets a link written today survive the paper being read again by a better model next year.
+
+**What it cost is written down.**
+Every ask put to a model is one line in a ledger, and `papers report usage` rolls that up into `reports/usage.md` by stage, by model and by paper.
+The ledger lives beside the routing table rather than in the corpus, because it names the hosts that were asked, and the report names none of them.
+A model that is not in a price table gets a dash in the money column rather than a zero, because a subscription costs a turn and not a sum of money, and printing zero dollars would be claiming a measurement nobody made.
 
 **The audit is a contract, not a lint.**
 Eighty-five numbered rules in nine groups, each one a sentence you can argue with.
