@@ -25,11 +25,10 @@ import (
 // a fence costs another minute and a half of a rationed reader to be told the
 // same thing without it.
 //
-// Dollars is the fourth habit and the one that is not wrapping. It is here
-// rather than beside the acceptance rules because a reader answering in TeX's
-// own delimiters has read the page correctly and written it in a dialect, and
-// a page refused for its dialect would be asked again and come back in the
-// same one.
+// Dollars and Unlink are the two habits that are not wrapping. They are here
+// rather than beside the acceptance rules because both are things a reader
+// does after it has read the page correctly, and a page refused for either
+// would be asked again and come back the same way.
 func Tidy(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.TrimSpace(s)
@@ -37,6 +36,7 @@ func Tidy(s string) string {
 	s = dropTrailer(s)
 	s = unwrap(s)
 	s = Dollars(s)
+	s = Unlink(s)
 	return strings.TrimSpace(s)
 }
 
