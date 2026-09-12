@@ -17,6 +17,7 @@ import (
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/figures"
+	"github.com/tamnd/papers-reader/glossary"
 	"github.com/tamnd/papers-reader/refs"
 )
 
@@ -112,6 +113,11 @@ type Input struct {
 	// path order. Groups T and M both walk all of it, and reading the corpus
 	// once per rule would mean reading it twenty-three times.
 	Content []*File
+	// Glossary is manifests/glossary.yaml as it stands now, for the two L
+	// rules that are about the controlled vocabulary. A corpus with no
+	// glossary yet gets one at version zero with no terms in it, and those
+	// two rules say they had nothing to look at rather than passing.
+	Glossary *glossary.Glossary
 }
 
 // Load reads everything the rules need out of a corpus.
@@ -137,6 +143,9 @@ func Load(c *corpus.Corpus) (*Input, error) {
 		return nil, err
 	}
 	if in.Content, err = loadContent(c, in.Papers); err != nil {
+		return nil, err
+	}
+	if in.Glossary, err = glossary.Load(c.GlossaryManifest()); err != nil {
 		return nil, err
 	}
 	return in, nil

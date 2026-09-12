@@ -7,6 +7,7 @@ import (
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/prompt"
+	"github.com/tamnd/papers-reader/translate"
 )
 
 // translateCorpus writes the smallest corpus papers translate will look at:
@@ -229,6 +230,47 @@ func TestAHandEditedTranslationIsLeftAlone(t *testing.T) {
 		if j.name == "01_first.md" {
 			t.Error("a hand edited translation was planned for overwriting")
 		}
+	}
+}
+
+// The two marks are about the weakest link and not the average one. A file
+// is only as trustworthy as the least trustworthy question that went into
+// it, and the whole reason these fields exist is so a page nobody looked at
+// as hard cannot hide behind eleven pages that somebody did.
+func TestOneWeakChunkMarksTheWholeFile(t *testing.T) {
+	free := map[string]bool{"opencode": true}
+
+	for _, c := range []struct {
+		name    string
+		res     translate.Result
+		small   bool
+		gateway bool
+	}{
+		{
+			name: "the big model on a paid host",
+			res:  translate.Result{Models: []string{"gpt-5", "gpt-5"}, Routes: []string{"server3", "server2"}},
+		},
+		{
+			name:  "one chunk out of twelve from a mini",
+			res:   translate.Result{Models: []string{"gpt-5", "gpt-5-mini"}, Routes: []string{"server3", "server3"}},
+			small: true,
+		},
+		{
+			name:    "one chunk through a free gateway",
+			res:     translate.Result{Models: []string{"gpt-5", "gpt-5"}, Routes: []string{"server3", "opencode"}},
+			gateway: true,
+		},
+		{
+			name: "a file that was copied rather than asked for",
+			res:  translate.Result{},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			small, gateway := provisional(c.res, free)
+			if small != c.small || gateway != c.gateway {
+				t.Errorf("small=%v gateway=%v, want small=%v gateway=%v", small, gateway, c.small, c.gateway)
+			}
+		})
 	}
 }
 

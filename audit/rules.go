@@ -76,7 +76,7 @@ func Rules() []Rule {
 	out = append(out, codeRules()...)
 	out = append(out, figuresRules()...)
 	out = append(out, refsRules()...)
-	return append(out, []Rule{
+	out = append(out, []Rule{
 		{
 			ID: "G01", Hard: true,
 			What:  "every tag in tags/tags is four hex characters, and every line is tag,anchor.",
@@ -121,6 +121,7 @@ func Rules() []Rule {
 		// out tags in the wrong order, which is pinned where it can be
 		// decided for certain, in the assigner's own test.
 	}...)
+	return append(out, translationRules()...)
 }
 
 // contentFiles lists the Markdown a paper has in any language, relative to

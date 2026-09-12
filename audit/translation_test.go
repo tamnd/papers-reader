@@ -1,0 +1,561 @@
+package audit
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/tamnd/papers-reader/corpus"
+)
+
+// Nothing in this file is a sentence of anybody's paper. The English is
+// written here and the Vietnamese, Chinese and Japanese of it were written
+// here too, so that a test that says "this came back in English" is about a
+// paragraph nobody else owns.
+
+// englishBody is the section every case translates, unless it says
+// otherwise. It has one formula, one citation, one listing and one
+// attribute block in it, which is one of everything group L compares.
+const englishBody = `The bound is $n$ and the method of [3] reaches it. A longer paragraph
+sits here so that the rules with a length floor have something to look at
+and do not stand down on a two word section.
+
+$$n = 3 \tag{1}$$
+{#a-1970-paper-eq-1 .equation tag=00B1}
+
+` + "```python" + `
+def bound(n):
+    return n
+` + "```" + `
+`
+
+// viBody is the same section in Vietnamese, with the spans copied through
+// and the prose actually translated.
+const viBody = `Giới hạn là $n$ và phương pháp của [3] đạt tới nó. Một đoạn dài hơn
+nằm ở đây để các quy tắc có ngưỡng độ dài có cái để xem xét và không đứng
+xuống trước một mục chỉ có hai từ.
+
+$$n = 3 \tag{1}$$
+{#a-1970-paper-eq-1 .equation tag=00B1}
+
+` + "```python" + `
+def bound(n):
+    return n
+` + "```" + `
+`
+
+const bibliography = `[1] A. Author. A Paper. A Journal, 1970.
+
+[3] B. Writer. Another Paper. Another Journal, 1972.
+`
+
+// pairOf writes one English section, its translation and both
+// bibliographies, and runs the audit over them.
+func pairOf(t *testing.T, lang corpus.Lang, en, tr string) *Report {
+	t.Helper()
+	return Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), en),
+		"content/" + string(lang) + "/vaswani-2017-attention/01_section.md": file(
+			answer(lang, "section", en), tr),
+	}), false)
+}
+
+// answer is the front matter papers translate writes: the language, the
+// English file it came from and the hash of that file as it stood.
+func answer(lang corpus.Lang, kind, source string) string {
+	return "paper: vaswani-2017-attention\ntitle: Attention Is All You Need\n" +
+		"kind: " + kind + "\nlang: " + string(lang) + "\n" +
+		"translated_from: content/en/vaswani-2017-attention/01_section.md\n" +
+		"source_content_sha256: " + corpus.ContentSHA([]byte(source)) + "\n" +
+		"glossary_version: 1\nglossary_terms_sha256: aaaa\n"
+}
+
+// The whole group stands down on a corpus with no translation in it, which
+// is every corpus until M6 reaches the paper. Standing down is not passing.
+func TestGroupLDoesNotRunOnAnUntranslatedCorpus(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+	}), false)
+
+	for _, res := range rep.Results {
+		if res.Rule.Group() != GroupTranslation {
+			continue
+		}
+		if !res.NotRun {
+			t.Errorf("%s ran on a corpus with no translation in it and said %v", res.Rule.ID, res.Findings)
+		}
+	}
+}
+
+// A translation the toolchain wrote passes every hard rule of the group.
+// This is the case the other tests are departures from.
+func TestAGoodTranslationPassesTheWholeGroup(t *testing.T) {
+	rep := pairOf(t, corpus.VI, englishBody, viBody)
+
+	for _, res := range rep.Results {
+		if res.Rule.Group() != GroupTranslation || !res.Rule.Hard {
+			continue
+		}
+		if res.Failed() {
+			t.Errorf("%s failed a good translation: %v", res.Rule.ID, res.Findings)
+		}
+	}
+}
+
+func TestL01FindsAFormulaThatChanged(t *testing.T) {
+	tr := strings.Replace(viBody, "$n$", "$m$", 1)
+	res := result(t, pairOf(t, corpus.VI, englishBody, tr), "L01")
+	if !res.Failed() {
+		t.Fatal("L01 passed a translation that renamed a variable")
+	}
+	if !strings.Contains(res.Findings[0].Message, "$m$") {
+		t.Errorf("L01 does not say what it found: %q", res.Findings[0].Message)
+	}
+}
+
+// A formula that moved inside its paragraph is not a finding. Chinese and
+// Japanese put a modifier in front of what it modifies, so two formulas in
+// one English clause come back the other way round, and a rule that refused
+// that would refuse every correct translation into either.
+func TestL01AllowsAFormulaToMoveInsideItsParagraph(t *testing.T) {
+	const en = "We take $p_g$ over the data $x$, which is the distribution the generator learns and the one this section is about.\n"
+	const zh = "为了学习生成器在数据 $x$ 上的分布 $p_g$，我们定义了一个先验，这是本节讨论的内容。\n"
+	if res := result(t, pairOf(t, corpus.ZH, en, zh), "L01"); res.Failed() {
+		t.Errorf("L01 refused a correct Chinese word order: %v", res.Findings)
+	}
+}
+
+func TestL02FindsATagThatChanged(t *testing.T) {
+	tr := strings.Replace(viBody, "tag=00B1", "tag=00B2", 1)
+	if res := result(t, pairOf(t, corpus.VI, englishBody, tr), "L02"); !res.Failed() {
+		t.Fatal("L02 passed a translation that rewrote a tag")
+	}
+}
+
+func TestL03FindsAHeadingThatBecameProse(t *testing.T) {
+	en := englishBody + "\n### 1.1 The Narrow Case {#a-1970-paper-s1-1 .subsection tag=00D1}\n\nAnd a paragraph under it that is long enough for every other rule.\n"
+	tr := viBody + "\nTrường hợp hẹp {#a-1970-paper-s1-1 .subsection tag=00D1}\n\nVà một đoạn bên dưới đủ dài cho mọi quy tắc khác trong nhóm này.\n"
+	res := result(t, pairOf(t, corpus.VI, en, tr), "L03")
+	if !res.Failed() {
+		t.Fatal("L03 passed a translation that turned a heading into a paragraph")
+	}
+}
+
+func TestL04FindsATranslationWithNoEnglish(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/07_extra.md": file(
+			"paper: vaswani-2017-attention\ntitle: Attention Is All You Need\nkind: section\nlang: vi\n", viBody),
+	}), false)
+
+	res := result(t, rep, "L04")
+	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "no English file") {
+		t.Fatalf("L04 said %v about a Vietnamese file with no English", res.Findings)
+	}
+	// Every other rule of the group has to skip it rather than report its
+	// own version of the same one problem.
+	for _, other := range rep.Results {
+		if other.Rule.Group() != GroupTranslation || other.Rule.ID == "L04" {
+			continue
+		}
+		if other.Failed() {
+			t.Errorf("%s also reported the orphan: %v", other.Rule.ID, other.Findings)
+		}
+	}
+}
+
+func TestL05WantsTheEnglishFileAndItsHash(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(
+			"paper: vaswani-2017-attention\ntitle: Attention Is All You Need\nkind: section\nlang: vi\n", viBody),
+	}), false)
+
+	res := result(t, rep, "L05")
+	if len(res.Findings) != 2 {
+		t.Fatalf("L05 found %d and both fields are missing: %v", len(res.Findings), res.Findings)
+	}
+}
+
+// The English hash not matching is not this rule's business. A page
+// re-extracted after it was translated is expected and papers translate
+// queues it again by itself.
+func TestL05DoesNotMindAHashThatHasMoved(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(
+			answer(corpus.VI, "section", "some older English entirely"), viBody),
+	}), false)
+
+	if res := result(t, rep, "L05"); res.Failed() {
+		t.Errorf("L05 reported a translation of an English page that has since moved: %v", res.Findings)
+	}
+}
+
+const glossaryYAML = `version: 1
+terms:
+  - en: attention
+    vi: chú ý
+  - en: encoder
+    vi: bộ mã hóa
+`
+
+// glossaryPair is pairOf with a glossary on disk, for L06 and L10.
+func glossaryPair(t *testing.T, en, tr string) *Report {
+	t.Helper()
+	return Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"manifests/glossary.yaml":                         glossaryYAML,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), en),
+		"content/vi/vaswani-2017-attention/01_section.md": file(answer(corpus.VI, "section", en), tr),
+	}), false)
+}
+
+func TestL06SaysWhenARenderingIsNowhereInTheTranslation(t *testing.T) {
+	en := "The attention mechanism is what this section is about and it is described at length below.\n"
+	tr := "Cơ chế attention là nội dung của mục này và nó được mô tả chi tiết bên dưới đây.\n"
+	res := result(t, glossaryPair(t, en, tr), "L06")
+	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "attention") {
+		t.Fatalf("L06 said %v about a page that ignored the glossary", res.Findings)
+	}
+}
+
+func TestL06IsQuietWhenTheRenderingIsThere(t *testing.T) {
+	en := "The attention mechanism is what this section is about and it is described at length below.\n"
+	tr := "Cơ chế chú ý là nội dung của mục này và nó được mô tả chi tiết ở bên dưới đây.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L06"); res.Failed() {
+		t.Errorf("L06 reported a page that used the glossary: %v", res.Findings)
+	}
+}
+
+// A term inside a formula or a listing is not prose and must not be
+// translated, so it must not be asked for either.
+func TestL06IgnoresATermInsideAProtectedSpan(t *testing.T) {
+	en := "The value is `encoder` and the rest of this paragraph is here to give the length rules something to look at.\n"
+	tr := "Giá trị là `encoder` và phần còn lại của đoạn này ở đây để các quy tắc độ dài có cái để xem xét kỹ.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L06"); res.Failed() {
+		t.Errorf("L06 asked for the rendering of a word inside a listing: %v", res.Findings)
+	}
+}
+
+func TestL07FindsAParagraphThatCameBackInEnglish(t *testing.T) {
+	tr := strings.Replace(viBody, "Giới hạn là $n$ và phương pháp của [3] đạt tới nó. Một đoạn dài hơn\nnằm ở đây để các quy tắc có ngưỡng độ dài có cái để xem xét và không đứng\nxuống trước một mục chỉ có hai từ.",
+		"The bound is $n$ and the method of [3] reaches it. A longer paragraph\nsits here so that the rules with a length floor have something to look at\nand do not stand down on a two word section.", 1)
+	res := result(t, pairOf(t, corpus.VI, englishBody, tr), "L07")
+	if !res.Failed() {
+		t.Fatal("L07 passed a paragraph that is the English paragraph")
+	}
+	if !strings.Contains(res.Findings[0].Message, "paragraph 1") {
+		t.Errorf("L07 does not say which paragraph: %q", res.Findings[0].Message)
+	}
+}
+
+// A paragraph that is nothing but a formula is the same in every language
+// and is the right answer, not a finding.
+func TestL07LeavesAParagraphWithNoProseAlone(t *testing.T) {
+	if res := result(t, pairOf(t, corpus.VI, englishBody, viBody), "L07"); res.Failed() {
+		t.Errorf("L07 reported the display and the listing: %v", res.Findings)
+	}
+}
+
+func TestL08AndL15MarkAProvisionalPage(t *testing.T) {
+	front := answer(corpus.VI, "section", englishBody) +
+		"translation_model: gpt-5.4-mini\nsmall_model: true\ngateway: true\n"
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(front, viBody),
+	}), false)
+
+	for _, id := range []string{"L08", "L15"} {
+		res := result(t, rep, id)
+		if !res.Failed() {
+			t.Errorf("%s passed a page that says in its own front matter that it is provisional", id)
+		}
+		if res.Rule.Hard {
+			t.Errorf("%s is hard, and a provisional page is published with a mark on it and not rejected", id)
+		}
+	}
+}
+
+// The rule reads the model name as well as the flag, because the flag is
+// written by one command and the name is written by all of them.
+func TestL08ReadsTheModelNameToo(t *testing.T) {
+	front := answer(corpus.VI, "section", englishBody) + "translation_model: gemini-2.0-flash\n"
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(front, viBody),
+	}), false)
+
+	if res := result(t, rep, "L08"); !res.Failed() {
+		t.Error("L08 passed a page whose recorded model has flash in the name")
+	}
+}
+
+func TestL09FindsAVersionThatDidNotMove(t *testing.T) {
+	first := answer(corpus.VI, "section", englishBody)
+	second := strings.Replace(answer(corpus.VI, "section", englishBody),
+		"glossary_terms_sha256: aaaa", "glossary_terms_sha256: bbbb", 1)
+	second = strings.Replace(second, "01_section.md", "02_section.md", 1)
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/en/vaswani-2017-attention/02_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(first, viBody),
+		"content/vi/vaswani-2017-attention/02_section.md": file(second, viBody),
+	}), false)
+
+	res := result(t, rep, "L09")
+	if !res.Failed() {
+		t.Fatal("L09 passed two files under one version translated against different renderings")
+	}
+}
+
+func TestL10FindsAnEnglishTermLeftStanding(t *testing.T) {
+	en := "The encoder is described here and the paragraph is long enough for every length floor in the group.\n"
+	tr := "Phần encoder được mô tả ở đây và đoạn này đủ dài cho mọi ngưỡng độ dài trong nhóm quy tắc.\n"
+	res := result(t, glossaryPair(t, en, tr), "L10")
+	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "encoder") {
+		t.Fatalf("L10 said %v about a page that left a term in English", res.Findings)
+	}
+}
+
+// A gloss is good practice on a term's first appearance, and the rendering
+// is right there in the file.
+func TestL10AllowsAGloss(t *testing.T) {
+	en := "The encoder is described here and the paragraph is long enough for every length floor in the group.\n"
+	tr := "Bộ mã hóa (encoder) được mô tả ở đây và đoạn này đủ dài cho mọi ngưỡng độ dài trong nhóm.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L10"); res.Failed() {
+		t.Errorf("L10 reported a term glossed with its rendering beside it: %v", res.Findings)
+	}
+}
+
+func TestL11FindsOneEnglishSentenceInATranslatedParagraph(t *testing.T) {
+	en := "Giới hạn được mô tả ở đây một cách đầy đủ. The remaining sentence of this paragraph was never translated at all. Phần còn lại thì có.\n"
+	source := "The bound is described here in full. The remaining sentence of this paragraph was never translated at all. The rest of it was.\n"
+	res := result(t, pairOf(t, corpus.VI, source, en), "L11")
+	if !res.Failed() {
+		t.Fatal("L11 passed a paragraph with an English sentence left in it")
+	}
+}
+
+// A paragraph left in English whole is L07's finding, and reporting it
+// twice is two ways of saying the same thing.
+func TestL11LeavesAWhollyEnglishParagraphToL07(t *testing.T) {
+	source := "The bound is described here in full and this sentence is long enough for the floor.\n"
+	res := result(t, pairOf(t, corpus.VI, source, source), "L11")
+	if res.Failed() {
+		t.Errorf("L11 reported a paragraph that L07 already reports: %v", res.Findings)
+	}
+}
+
+func TestL12WantsTheWordsInsideTheMathematicsTranslated(t *testing.T) {
+	source := `The distribution is $p_{\text{data}}(x)$ and the truth is $\text{true when } A$ holds here.` + "\n"
+	tr := `Phân phối là $p_{\text{data}}(x)$ và điều kiện là $\text{true when } A$ đúng ở đây.` + "\n"
+	res := result(t, pairOf(t, corpus.VI, source, tr), "L12")
+	if !res.Failed() {
+		t.Fatal("L12 passed a formula whose prose came back in English")
+	}
+	if !strings.Contains(res.Findings[0].Message, "true when") {
+		t.Errorf("L12 does not say which words: %q", res.Findings[0].Message)
+	}
+}
+
+// An operator name set upright is not prose and does not move, and a
+// subscript label of one letter is not a word.
+func TestL12LeavesAnOperatorNameAlone(t *testing.T) {
+	source := `The value is $\text{argmax}_x f(x)$ and the label is $y_{\text{i}}$ in this paragraph here.` + "\n"
+	tr := `Giá trị là $\text{argmax}_x f(x)$ và nhãn là $y_{\text{i}}$ trong đoạn văn này ở đây.` + "\n"
+	if res := result(t, pairOf(t, corpus.VI, source, tr), "L12"); res.Failed() {
+		t.Errorf("L12 asked for an operator name to be translated: %v", res.Findings)
+	}
+}
+
+// The rule that needed most care. Han characters in a Vietnamese page are
+// wrong and in a Japanese one are right, and kana in a Chinese page are
+// wrong. The allowed set is a table per language, not a constant.
+func TestL13IsPerLanguage(t *testing.T) {
+	cases := []struct {
+		name  string
+		lang  corpus.Lang
+		body  string
+		fails bool
+	}{
+		{"Han in Vietnamese", corpus.VI, "Giới hạn là 注意 và phần còn lại của đoạn này thì không có gì lạ cả.\n", true},
+		{"Han in Chinese", corpus.ZH, "界限是注意力机制，这一段其余的部分没有什么特别的地方需要说明。\n", false},
+		{"kana in Chinese", corpus.ZH, "界限是アテンション机制，这一段其余的部分没有什么特别的地方需要说明。\n", true},
+		{"kana in Japanese", corpus.JA, "境界はアテンション機構であり、この段落の残りの部分に特別なことは何もない。\n", false},
+		{"Latin in Chinese", corpus.ZH, "界限是 Transformer 模型，这一段其余的部分没有什么特别的地方要说。\n", false},
+		{"Hangul in Japanese", corpus.JA, "境界は주의機構であり、この段落の残りの部分に特別なことは何もありません。\n", true},
+	}
+	source := "The bound is the attention mechanism and there is nothing else in this paragraph worth saying.\n"
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res := result(t, pairOf(t, c.lang, source, c.body), "L13")
+			if res.Failed() != c.fails {
+				t.Errorf("L13 failed=%v, want %v: %v", res.Failed(), c.fails, res.Findings)
+			}
+		})
+	}
+}
+
+// A Greek letter in a formula is a formula, and the rule reads the prose.
+func TestL13LeavesTheMathematicsAlone(t *testing.T) {
+	source := "The parameter is $\\alpha$ and the paragraph goes on for long enough to be looked at here.\n"
+	tr := "Tham số là $\\alpha$ và đoạn văn tiếp tục đủ dài để được xem xét kỹ lưỡng ở đây.\n"
+	if res := result(t, pairOf(t, corpus.VI, source, tr), "L13"); res.Failed() {
+		t.Errorf("L13 reported a formula: %v", res.Findings)
+	}
+}
+
+func TestL14WantsTheBibliographyCopied(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{"copied", bibliography, false},
+		{"asked for", strings.Replace(bibliography, "A Paper", "Một Bài Báo", 1), true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rep := Run(build(t, map[string]string{
+				"manifests/sources.yaml":                        openSources,
+				"content/en/vaswani-2017-attention/00_front.md": file(section("front"), abstract),
+				"content/en/vaswani-2017-attention/09_references.md": file(
+					section("references"), bibliography),
+				"content/vi/vaswani-2017-attention/09_references.md": file(
+					strings.Replace(answer(corpus.VI, "references", bibliography),
+						"01_section.md", "09_references.md", 1), c.body),
+			}), false)
+			if res := result(t, rep, "L14"); res.Failed() != c.fails {
+				t.Errorf("L14 failed=%v, want %v: %v", res.Failed(), c.fails, res.Findings)
+			}
+		})
+	}
+}
+
+func TestL16FindsACitationThatChanged(t *testing.T) {
+	tr := strings.Replace(viBody, "[3]", "[4]", 1)
+	res := result(t, pairOf(t, corpus.VI, englishBody, tr), "L16")
+	if !res.Failed() {
+		t.Fatal("L16 passed a translation that renumbered a citation")
+	}
+	if !strings.Contains(res.Findings[0].Message, "[4]") {
+		t.Errorf("L16 does not say what it found: %q", res.Findings[0].Message)
+	}
+}
+
+// A citation dropped altogether is the worse half of the same rule, and the
+// message has to name the one that went missing rather than the one that
+// stayed.
+func TestL16FindsACitationThatWasDropped(t *testing.T) {
+	tr := strings.Replace(viBody, " của [3]", "", 1)
+	res := result(t, pairOf(t, corpus.VI, englishBody, tr), "L16")
+	if !res.Failed() {
+		t.Fatal("L16 passed a translation that dropped a citation")
+	}
+	if !strings.Contains(res.Findings[0].Message, "[3]") {
+		t.Errorf("L16 does not name the citation that went missing: %q", res.Findings[0].Message)
+	}
+}
+
+// The title lives in the front matter and the body rules never see it, so
+// this is the one line of a translated file that can stay in English with
+// everything else correct. It is also the line the book prints biggest.
+func TestL19ReadsTheTitleInTheFrontMatter(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		en    string
+		vi    string
+		fails bool
+	}{
+		{"left in English", "Related Work", "Related Work", true},
+		{"translated", "Related Work", "Công trình liên quan", false},
+		{"an abbreviation that stands", "GAN", "GAN", false},
+		{"a numbered title that stands", "3.2", "3.2", false},
+		{"one long word left in English", "Experiments", "Experiments", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rep := Run(build(t, map[string]string{
+				"manifests/sources.yaml":                        openSources,
+				"content/en/vaswani-2017-attention/00_front.md": file(section("front"), abstract),
+				"content/en/vaswani-2017-attention/01_section.md": file(
+					section("section")+"section_title: "+c.en+"\n", englishBody),
+				"content/vi/vaswani-2017-attention/01_section.md": file(
+					answer(corpus.VI, "section", englishBody)+"section_title: "+c.vi+"\n", viBody),
+			}), false)
+
+			res := result(t, rep, "L19")
+			if res.Failed() != c.fails {
+				t.Errorf("L19 failed=%v, want %v: %v", res.Failed(), c.fails, res.Findings)
+			}
+			if res.Rule.Hard {
+				t.Error("L19 is hard, and a title that is the same in both languages is often the right answer")
+			}
+		})
+	}
+}
+
+// The two files whose title this toolchain wrote rather than the paper. The
+// book prints its own word for each of them per language, so there is
+// nothing here for a translator to have got wrong.
+func TestL19SkipsTheFrontMatterAndTheBibliography(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml": openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(
+			section("front")+"section_title: Front Matter\n", abstract),
+		"content/en/vaswani-2017-attention/09_references.md": file(
+			section("references")+"section_title: References\n", bibliography),
+		"content/vi/vaswani-2017-attention/09_references.md": file(
+			strings.Replace(answer(corpus.VI, "references", bibliography),
+				"01_section.md", "09_references.md", 1)+"section_title: References\n", bibliography),
+	}), false)
+
+	if res := result(t, rep, "L19"); res.Failed() {
+		t.Errorf("L19 asked for a label this toolchain wrote to be translated: %v", res.Findings)
+	}
+}
+
+func TestL17FindsTheModelTalking(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		body string
+	}{
+		{"an apology", "I'm sorry, but I cannot translate this passage for you today at all.\n"},
+		{"a preamble", "Here is the translation of the passage you asked about, in Vietnamese below.\n"},
+		{"a provider error", "Bản dịch bị lỗi vì máy chủ trả về Service Unavailable khi được hỏi lần nữa.\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if res := result(t, pairOf(t, corpus.VI, englishBody, c.body), "L17"); !res.Failed() {
+				t.Errorf("L17 passed %s", c.name)
+			}
+		})
+	}
+}
+
+func TestL17FindsAnEmptyTranslation(t *testing.T) {
+	if res := result(t, pairOf(t, corpus.VI, englishBody, "\n"), "L17"); !res.Failed() {
+		t.Error("L17 passed a translation with nothing in it")
+	}
+}
+
+func TestL18FindsAListingThatMoved(t *testing.T) {
+	tr := strings.Replace(viBody, "return n", "return m", 1)
+	if res := result(t, pairOf(t, corpus.VI, englishBody, tr), "L18"); !res.Failed() {
+		t.Fatal("L18 passed a listing whose program changed")
+	}
+}

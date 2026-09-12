@@ -138,6 +138,10 @@ and a references file has nothing else in it.
 		return err
 	}
 	fmt.Printf("the chunks go to the hosts in the %s routing table\n", from)
+	free, err := gateways(*routes)
+	if err != nil {
+		return err
+	}
 
 	t := &translate.Translator{Ask: ask, Tries: *tries, Logf: logf}
 	run := work.RunID()
@@ -145,7 +149,7 @@ and a references file has nothing else in it.
 	var total llm.Usage
 	written, asks, refused := 0, 0, 0
 	for _, j := range jobs {
-		res, err := translated(ctx, c, t, g, j, run)
+		res, err := translated(ctx, c, t, g, j, run, free)
 		total = sum(total, res.Usage)
 		asks += res.Asks
 		refused += len(res.Refused)
@@ -289,7 +293,10 @@ func current(c *corpus.Corpus, l corpus.Lang, id string, f job) bool {
 }
 
 // translated translates one file and puts it on disk.
-func translated(ctx context.Context, c *corpus.Corpus, t *translate.Translator, g *glossary.Glossary, j job, run string) (translate.Result, error) {
+//
+// free is the names of the routes that are gateways, for the provisional
+// marks in the front matter.
+func translated(ctx context.Context, c *corpus.Corpus, t *translate.Translator, g *glossary.Glossary, j job, run string, free map[string]bool) (translate.Result, error) {
 	var res translate.Result
 	front := j.front
 	body := j.body
@@ -335,6 +342,7 @@ func translated(ctx context.Context, c *corpus.Corpus, t *translate.Translator, 
 	}
 	front.TranslationModel = strings.Join(res.Models, ", ")
 	front.TranslationRun = run
+	front.SmallModel, front.Gateway = provisional(res, free)
 	front.GlossaryVersion = g.Version
 	front.GlossaryTermsSHA256 = glossary.TermsSHA(g, j.front.Field, j.lang)
 	front.ContentSHA256 = corpus.ContentSHA([]byte(body))
@@ -353,6 +361,30 @@ func translated(ctx context.Context, c *corpus.Corpus, t *translate.Translator, 
 		return res, err
 	}
 	return res, os.WriteFile(filepath.Join(dir, j.name), out, 0o644)
+}
+
+// provisional says whether a body is provisional, and why.
+//
+// Either mark is set if any one chunk of the file earned it. A body of
+// twelve chunks where eleven came from the big model and one came from a
+// mini is a body with a paragraph in it nobody has looked at as hard as the
+// rest, and rounding that off to "written by the big model" is exactly the
+// thing these two fields exist to stop.
+//
+// A file that was copied rather than asked for, which is the bibliography,
+// earns neither: it has no models and no routes because no question was put.
+func provisional(res translate.Result, free map[string]bool) (small, gateway bool) {
+	for _, m := range res.Models {
+		if llm.SmallModel(m) {
+			small = true
+		}
+	}
+	for _, r := range res.Routes {
+		if free[r] {
+			gateway = true
+		}
+	}
+	return small, gateway
 }
 
 // heading is the section title as a line of Markdown, and empty for a file
@@ -444,6 +476,28 @@ func fleet(routes, names string, logf func(string, ...any)) (func(context.Contex
 		answer, err := asker.Do(ctx, target, req)
 		return translate.Reply{Response: answer.Response, Model: answer.Model, Route: answer.Route}, err
 	}, from, nil
+}
+
+// gateways is the names of the routes in a table that are free gateways.
+//
+// A gateway is somebody else's aggregator in front of somebody else's model,
+// and what answers a question there on Tuesday is not necessarily what
+// answered it on Monday. The text is usable and the provenance is not, so a
+// page written on one is marked and audit rule L15 counts them. The route
+// file is read a second time for this, which costs a stat and a parse and
+// saves threading a registry through the asker.
+func gateways(path string) (map[string]bool, error) {
+	registry, _, err := work.Routes(path)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, r := range registry.Routes {
+		if r.Kind == route.KindGateway {
+			out[r.Name] = true
+		}
+	}
+	return out, nil
 }
 
 // commas reads a comma separated flag.
