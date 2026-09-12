@@ -95,6 +95,7 @@ func runSplit(args []string) error {
 	field := fs.String("field", "", "split one field only")
 	all := fs.Bool("all", false, "split every paper that has extracted pages")
 	force := fs.Bool("force", false, "overwrite files somebody has edited by hand")
+	accept := fs.Bool("accept", false, "restamp files somebody has edited by hand and mark them edited")
 	dry := fs.Bool("dry-run", false, "print what would be written and write nothing")
 	long := fs.Bool("v", false, "print every section")
 	fs.Usage = func() {
@@ -114,6 +115,15 @@ nothing.
 A file whose content_sha256 does not match the body next to it has been
 edited by somebody and is left alone. That is how a hand correction survives
 the next extraction run, and --force is how you throw it away on purpose.
+
+A correction is protected the moment it is made and it fails audit rule T03
+until somebody says they meant it, which is the right way round: the audit
+should be red while a correction is half done. --accept is how you say it.
+It restamps the hash over the corrected body and writes edited: true in the
+front matter, which is what the splitter then protects the file by, and the
+rule goes green. It touches no file whose body still hashes to its own hash,
+because putting a fence round a file nobody has edited would stop the
+splitter keeping it up to date.
 
 A file from an earlier split that this one did not produce is reported and
 not deleted, because the usual reason for one is that a section boundary
@@ -140,6 +150,10 @@ words. Nothing else about it may be published, so nothing else is written.
 		return err
 	}
 
+	if *accept {
+		return acceptEdits(c, todo, *dry)
+	}
+
 	var papers, written, kept int
 	for _, p := range todo {
 		rec, _ := recorded.ByID(p.ID)
@@ -163,6 +177,43 @@ words. Nothing else about it may be published, so nothing else is written.
 		fmt.Println("dry run, nothing written")
 	}
 	fmt.Printf("%d papers split, %d files written, %d left as somebody edited them\n", papers, written, kept)
+	return nil
+}
+
+// acceptEdits takes the hand corrections in a paper's content directory as
+// the version of record. It writes nothing else: this is a separate pass from
+// the split and not a mode of it, because a run that both re-split a paper
+// and accepted the edits in it would be deciding which of the two won.
+func acceptEdits(c *corpus.Corpus, todo []corpus.Paper, dry bool) error {
+	var n int
+	for _, p := range todo {
+		dir := c.Content(corpus.EN, p.ID)
+		if dry {
+			// Nothing to do here but say so. Accept reads and writes in one
+			// pass and splitting it in two so that a dry run could report
+			// without writing would be two ways to decide the same thing.
+			fmt.Printf("  %-34s would accept the hand edits under %s\n", p.ID, dir)
+			continue
+		}
+		names, err := split.Accept(dir)
+		if err != nil {
+			fmt.Printf("  %-34s %v\n", p.ID, err)
+			continue
+		}
+		if len(names) == 0 {
+			continue
+		}
+		n += len(names)
+		fmt.Printf("  %-34s %d accepted\n", p.ID, len(names))
+		for _, name := range names {
+			fmt.Printf("    %s\n", name)
+		}
+	}
+	if dry {
+		fmt.Println("dry run, nothing written")
+		return nil
+	}
+	fmt.Printf("%d hand edits accepted\n", n)
 	return nil
 }
 

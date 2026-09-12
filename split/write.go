@@ -80,6 +80,8 @@ type Report struct {
 // against the body next to it. They agree for a file that has not been touched
 // since the toolchain wrote it, and they disagree the moment anybody edits the
 // body, which is the whole signal and it needs no state kept anywhere else.
+// Once the correction has been through Accept the file says edited: true in
+// its front matter and the hash agrees again, and this honours that instead.
 //
 // force writes anyway. It exists because the alternative to having it is
 // somebody deleting the directory, which loses the same work with none of the
@@ -134,16 +136,70 @@ func Write(dir string, files []File, force bool) (*Report, error) {
 	return r, nil
 }
 
-// edited says whether a file on disk has been changed since it was written.
+// edited says whether a file on disk holds somebody's work.
+//
+// Two ways to be. An accepted correction says so in its front matter, which
+// is the tidy case and the one that passes audit rule T03. An unaccepted one
+// is a body that no longer hashes to the hash recorded beside it, which is
+// the signal a person leaves without meaning to, and it has to keep working:
+// somebody who edits a file and runs the splitter should not lose the work by
+// not having read the manual first.
+//
 // A file whose front matter does not parse, or which records no hash, is
-// treated as edited: those are the two ways a file gets there other than from
-// this code, and both of them are somebody's work.
+// treated as edited too. Those are the two ways a file gets there other than
+// from this code, and both of them are somebody's work.
 func edited(b []byte) bool {
 	f, body, err := corpus.ParseFront(b)
 	if err != nil || f.ContentSHA256 == "" {
 		return true
 	}
-	return corpus.ContentSHA(body) != f.ContentSHA256
+	return f.Edited || corpus.ContentSHA(body) != f.ContentSHA256
+}
+
+// Accept restamps the files in dir that somebody has corrected by hand, so
+// that the correction is the version of record rather than a hash that does
+// not match.
+//
+// It is the other half of the protection in Write. An edit is protected the
+// moment it is made, and it stays a hard T03 failure until it is accepted,
+// which is the right way round: the audit should be red while a correction is
+// half done and green when a person has said they meant it.
+//
+// Only files that are already changed. A file whose body still hashes to its
+// own hash is a file nobody has touched, and marking one of those as edited
+// would put a fence round a file the splitter should keep updating.
+func Accept(dir string) ([]string, error) {
+	names, err := filepath.Glob(filepath.Join(dir, "*.md"))
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, path := range names {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		f, body, err := corpus.ParseFront(b)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
+		}
+		sum := corpus.ContentSHA(body)
+		if f.ContentSHA256 == sum {
+			continue
+		}
+		f.Edited = true
+		f.ContentSHA256 = sum
+		next, err := corpus.Render(f, body)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
+		}
+		if err := write(path, next); err != nil {
+			return nil, err
+		}
+		out = append(out, filepath.Base(path))
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // write replaces a file in one step, so that an interrupted run leaves the

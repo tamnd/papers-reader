@@ -52,6 +52,21 @@ type Front struct {
 	Equations       int      `yaml:"equations,omitempty"`
 	CodeBlocks      int      `yaml:"code_blocks,omitempty"`
 	ContentSHA256   string   `yaml:"content_sha256,omitempty"`
+	// Edited says a person corrected this file by hand and the correction is
+	// the version of record.
+	//
+	// Without it the two things the corpus wants from content_sha256 pull
+	// against each other. The splitter protects a hand edit by noticing that
+	// the hash no longer matches the body, and audit rule T03 fails a file
+	// whose hash no longer matches the body, so every hand correction was a
+	// hard audit failure for as long as it stood. The way out is to say the
+	// thing out loud in the file: papers split --accept restamps the hash
+	// over the corrected body and sets this, and the splitter then leaves the
+	// file alone because of this rather than because of the mismatch.
+	//
+	// An unaccepted edit is still protected, so somebody who edits a file and
+	// runs the splitter does not lose the work by not having read this.
+	Edited bool `yaml:"edited,omitempty"`
 
 	TranslatedFrom      string `yaml:"translated_from,omitempty"`
 	SourceContentSHA256 string `yaml:"source_content_sha256,omitempty"`

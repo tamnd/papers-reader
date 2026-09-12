@@ -356,3 +356,135 @@ func TestSpanPages(t *testing.T) {
 		}
 	}
 }
+
+// Accept is what makes a hand correction a first class thing rather than a
+// file in a broken state. Before it, the same mismatch that protected an edit
+// from the splitter failed audit rule T03, so a corrected corpus could never
+// be a green one.
+func TestAcceptRestampsAHandEdit(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "02_method.md")
+	edit(t, path, "a correction somebody made by hand")
+
+	names, err := Accept(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "02_method.md" {
+		t.Fatalf("accepted %v, want the one file that was edited", names)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	front, body, err := corpus.ParseFront(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !front.Edited {
+		t.Error("the file does not say it was edited")
+	}
+	if front.ContentSHA256 != corpus.ContentSHA(body) {
+		t.Error("the hash was not restamped over the correction")
+	}
+	if !strings.Contains(string(body), "by hand") {
+		t.Error("the correction itself was lost")
+	}
+}
+
+// A file nobody has touched is left as it is. Marking one of those as edited
+// would put a fence round a file the splitter should keep updating.
+func TestAcceptLeavesUntouchedFilesAlone(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	names, err := Accept(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 0 {
+		t.Errorf("accepted %v, want nothing", names)
+	}
+}
+
+// The point of writing it down. Once a correction is accepted the hash agrees
+// with the body again, so the old signal has gone, and the splitter has to
+// protect the file by what it says instead.
+func TestAnAcceptedEditIsStillNotOverwritten(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "02_method.md")
+	edit(t, path, "a correction somebody made by hand")
+	if _, err := Accept(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	fs := files(t)
+	fs[2].Body = []byte("what the next extraction run would have written\n")
+	fs[2].Front.ContentSHA256 = corpus.ContentSHA(fs[2].Body)
+	r, err := Write(dir, fs, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Kept) != 1 || r.Kept[0] != "02_method.md" {
+		t.Fatalf("the run kept %v, want the accepted file", r.Kept)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "by hand") {
+		t.Error("the accepted correction was overwritten")
+	}
+}
+
+// --force still wins. It is the escape hatch for a correction somebody wants
+// to throw away, and an accepted edit must not be harder to get rid of than
+// an unaccepted one.
+func TestForceOverwritesAnAcceptedEdit(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "02_method.md")
+	edit(t, path, "a correction somebody made by hand")
+	if _, err := Accept(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Write(dir, files(t), true); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "by hand") {
+		t.Error("--force left the hand edit in place")
+	}
+}
+
+// Accepting twice is accepting once. The second run finds a file whose hash
+// already matches its body and has nothing to do.
+func TestAcceptIsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	edit(t, filepath.Join(dir, "02_method.md"), "a correction somebody made by hand")
+	if _, err := Accept(dir); err != nil {
+		t.Fatal(err)
+	}
+	names, err := Accept(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 0 {
+		t.Errorf("the second run accepted %v, want nothing", names)
+	}
+}
