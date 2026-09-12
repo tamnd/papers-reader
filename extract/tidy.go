@@ -24,12 +24,19 @@ import (
 // The alternative is to refuse the page and ask again, and a page refused for
 // a fence costs another minute and a half of a rationed reader to be told the
 // same thing without it.
+//
+// Dollars is the fourth habit and the one that is not wrapping. It is here
+// rather than beside the acceptance rules because a reader answering in TeX's
+// own delimiters has read the page correctly and written it in a dialect, and
+// a page refused for its dialect would be asked again and come back in the
+// same one.
 func Tidy(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.TrimSpace(s)
 	s = dropPreamble(s)
 	s = dropTrailer(s)
 	s = unwrap(s)
+	s = Dollars(s)
 	return strings.TrimSpace(s)
 }
 
