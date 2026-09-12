@@ -141,6 +141,53 @@ func TestAPricedModelIsCounted(t *testing.T) {
 	}
 }
 
+func TestAModelPricedAtNothingIsAZeroAndNotADash(t *testing.T) {
+	// A subscription and a local GPU both cost nothing per token, and that
+	// is a rate somebody looked up rather than a rate nobody set. The whole
+	// difference between the two is what the money column is for, so the
+	// priced one has to come out as a number.
+	prices := Prices{"qwen2.5-vl": {Note: "runs on the GPU here, so an ask costs electricity and no tokens"}}
+	u := BuildUsage(run(), UsageOptions{Prices: prices})
+	if u.Unpriced != 0 {
+		t.Errorf("%d unpriced asks, want none", u.Unpriced)
+	}
+	md := u.Markdown()
+	if !strings.Contains(md, "| $0.00 |") {
+		t.Errorf("a rate of nothing does not print as nothing:\n%s", md)
+	}
+	if strings.Contains(md, "went to a model with no price set") {
+		t.Errorf("a priced fleet is reported as unpriced:\n%s", md)
+	}
+}
+
+func TestAnAskThatNeverReachedAModelCostsNothing(t *testing.T) {
+	// A host that is down refuses the connection before a token moves, and
+	// the ledger has no model name to look a price up under. Nine of those
+	// in a night must not turn the money column of the night into a dash.
+	entries := append(run(), ledger.Entry{
+		TS: time.Date(2026, 9, 10, 23, 0, 0, 0, time.UTC), App: "papers",
+		Stage: "extract", Target: "codd-1970-relational p9",
+		State: llm.StateUnreachable, Error: "connection refused",
+	})
+	u := BuildUsage(entries, UsageOptions{Prices: Prices{"qwen2.5-vl": {In: 1, Out: 5}}})
+	if u.Unpriced != 0 {
+		t.Errorf("%d unpriced asks, want none", u.Unpriced)
+	}
+	if !strings.Contains(u.Markdown(), "$0.05 at the prices given") {
+		t.Errorf("a refused connection changed the bill:\n%s", u.Markdown())
+	}
+}
+
+func TestTheReportSaysWhereARateCameFrom(t *testing.T) {
+	// Zero in a money column is the kind of number somebody quotes back at
+	// you. The sentence behind it has to travel with it.
+	note := "runs on the GPU here, so an ask costs electricity and no tokens"
+	u := BuildUsage(run(), UsageOptions{Prices: Prices{"qwen2.5-vl": {Note: note}}})
+	if !strings.Contains(u.Markdown(), "- qwen2.5-vl: "+note) {
+		t.Errorf("the report does not say where the rate came from:\n%s", u.Markdown())
+	}
+}
+
 func TestAModelWithNoPriceInAPricedFleetStillReadsAsADash(t *testing.T) {
 	// Half a fleet priced is not a bill. A stage that mixes a priced model
 	// and an unpriced one has a cost nobody can put a number on, and the sum

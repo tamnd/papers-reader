@@ -35,9 +35,16 @@ const NoAsks = "Nothing has been asked of a model yet"
 // Cached input is charged here at the full input price. Every vendor
 // discounts it and none of them discount it the same way, and a report that
 // overstates the bill is a better report than one that understates it.
+//
+// Note says where the number came from, and it is not decoration. Most of
+// this fleet is priced at zero, and a zero with no sentence behind it reads
+// like a model nobody got round to pricing. The report prints the note under
+// the model table so that a reader can tell a rate of nothing from a rate
+// nobody looked up.
 type Price struct {
-	In  float64 `json:"in"`
-	Out float64 `json:"out"`
+	In   float64 `json:"in"`
+	Out  float64 `json:"out"`
+	Note string  `json:"note,omitempty"`
 }
 
 // Prices is what each model costs, by the name the ledger recorded it under.
@@ -68,6 +75,14 @@ func LoadPrices(path string) (Prices, error) {
 
 // Cost is what one ask cost. The bool is false for a model with no price.
 func (p Prices) Cost(model string, u llm.Usage) (float64, bool) {
+	// An ask that never reached a model has no model name and no tokens on
+	// it, and nothing was charged for it by anybody. Most of these are a
+	// connection refused while a host was down. Calling them unpriced would
+	// put a dash across a whole night's money on account of a call that did
+	// not happen.
+	if model == "" && u.InputTokens == 0 && u.OutputTokens == 0 {
+		return 0, true
+	}
 	price, ok := p[model]
 	if !ok {
 		return 0, false
@@ -146,6 +161,9 @@ type UsageModel struct {
 	Tokens llm.Usage
 	Cost   float64
 	Priced bool
+	// Note is the price table's sentence about this model, copied here so
+	// that the report can print it without carrying the table around.
+	Note string
 }
 
 // A UsagePaper is one paper in one stage.
@@ -220,7 +238,7 @@ func BuildUsage(entries []ledger.Entry, opt UsageOptions) *Usage {
 
 		model := models[e.Model]
 		if model == nil {
-			model = &UsageModel{Name: e.Model, Priced: priced}
+			model = &UsageModel{Name: e.Model, Priced: priced, Note: opt.Prices[e.Model].Note}
 			models[e.Model] = model
 		}
 		model.Asks++
@@ -354,8 +372,11 @@ func (u *Usage) writeStages(b *strings.Builder) {
 			count(s.Tokens.InputTokens), count(s.Tokens.OutputTokens), spent(s.Elapsed),
 			money(s.Cost, s.Asks, s.Unpriced))
 	}
+	if u.Unpriced == 0 && u.Asks > 0 && u.Cost == 0 {
+		b.WriteString("\nEvery ask went to a model priced at nothing per token, so the money column is what this run added to a bill rather than what the fleet costs to have. A subscription is paid by the month whether or not a paper is read, and the GPU in the corner was paid for once. What each rate is and where it came from is under the model table.\n")
+	}
 	if u.Unpriced > 0 {
-		fmt.Fprintf(b, "\n%s of the %s asks went to a model with no price set, so the money column is a dash for them. Most of this corpus is built on a subscription and on free gateways, where an ask costs a turn rather than a sum of money, and writing zero dollars there would be claiming a measurement nobody made. A price table is a JSON file of dollars per million tokens by model, passed with `papers report usage -prices`.\n",
+		fmt.Fprintf(b, "\n%s of the %s asks went to a model with no price set, so the money column is a dash for them. A price is dollars per million tokens by model, and the table is `manifests/prices.json`. A model that is missing from it is a model nobody has looked the rate up for, which is not the same thing as a model that costs nothing, so it gets a dash rather than a zero.\n",
 			count(u.Unpriced), count(u.Asks))
 	}
 }
@@ -373,6 +394,17 @@ func (u *Usage) writeModels(b *strings.Builder) {
 		}
 		fmt.Fprintf(b, "| %s | %s | %s | %s | %s |\n", name(m.Name), count(m.Asks),
 			count(m.Tokens.InputTokens), count(m.Tokens.OutputTokens), money(m.Cost, m.Asks, unpriced))
+	}
+	notes := 0
+	for _, m := range u.Models {
+		if m.Note == "" {
+			continue
+		}
+		if notes == 0 {
+			b.WriteString("\nWhat the rates are:\n\n")
+		}
+		notes++
+		fmt.Fprintf(b, "- %s: %s\n", name(m.Name), m.Note)
 	}
 }
 

@@ -105,7 +105,7 @@ func runReportUsage(args []string) error {
 	fs := flag.NewFlagSet("report usage", flag.ContinueOnError)
 	root := fs.String("corpus", "", "path to a checkout of tamnd/papers")
 	write := fs.Bool("write", false, "write reports/usage.md as well as printing")
-	prices := fs.String("prices", "", "a JSON file of dollars per million tokens by model")
+	prices := fs.String("prices", "", "a JSON file of dollars per million tokens by model (default manifests/prices.json)")
 	since := fs.String("since", "", "count the asks since a date (2026-09-01) or a window (168h)")
 	path := fs.String("ledger", "", "read this ledger rather than the one beside the route file")
 	quiet := fs.Bool("quiet", false, "print the summary line only")
@@ -126,10 +126,14 @@ it. A corpus extracted entirely through the native path has never asked a
 model anything, and a report that left the stage out would read like a
 report that lost it.
 
-The money column is a dash for a model that is not in the price table, and
-the table is empty unless -prices names one. A subscription and a free
-gateway have no price per token, and printing zero dollars for them would
-be claiming a measurement nobody made.
+The money column is a dash for a model that is not in the price table. The
+table is the corpus one unless -prices names another, and every rate in it
+carries a sentence saying where the rate came from, printed under the model
+table. Most of this fleet is a subscription or a local GPU and is priced at
+zero, which is the marginal cost of an ask and not the cost of the fleet. A
+model nobody has priced gets a dash rather than a zero, because those two
+things are not the same and the difference is the whole point of the
+column.
 
 `)
 		fs.PrintDefaults()
@@ -142,20 +146,27 @@ be claiming a measurement nobody made.
 	if err != nil {
 		return err
 	}
-	table, err := report.LoadPrices(*prices)
-	if err != nil {
-		return err
-	}
-	if *prices != "" && table == nil {
-		return fmt.Errorf("there is no price table at %s", *prices)
-	}
-
 	// The corpus is opened whether or not the report is being written,
 	// because the pages that were read without a model are counted off the
 	// content and they are most of the pages there are.
 	c, err := openCorpus(*root)
 	if err != nil {
 		return err
+	}
+	// The corpus carries the price table for its own fleet, so the ordinary
+	// run needs no flag and two people rebuilding the report get the same
+	// money out of it. The flag is for pricing the same ledger against
+	// somebody else's rate card.
+	rates := *prices
+	if rates == "" {
+		rates = c.PricesManifest()
+	}
+	table, err := report.LoadPrices(rates)
+	if err != nil {
+		return err
+	}
+	if *prices != "" && table == nil {
+		return fmt.Errorf("there is no price table at %s", *prices)
 	}
 	reads, err := report.ReadPages(c)
 	if err != nil {

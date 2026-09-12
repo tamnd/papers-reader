@@ -78,6 +78,12 @@ func (c *Corpus) FiguresManifest() string { return filepath.Join(c.Manifests(), 
 // GlossaryManifest is manifests/glossary.yaml.
 func (c *Corpus) GlossaryManifest() string { return filepath.Join(c.Manifests(), "glossary.yaml") }
 
+// PricesManifest is manifests/prices.json, what a model costs per million
+// tokens. It is JSON and not YAML like the rest because a price table is
+// also read by hand on a machine that has no corpus checked out, and JSON
+// is the one format every such machine already has a tool for.
+func (c *Corpus) PricesManifest() string { return filepath.Join(c.Manifests(), "prices.json") }
+
 // Refs is manifests/refs/<id>.yaml, the parsed bibliography of one paper.
 func (c *Corpus) Refs(id string) string {
 	return filepath.Join(c.Manifests(), "refs", id+".yaml")
