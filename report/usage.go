@@ -431,11 +431,13 @@ func sorted(states map[llm.State]int) []llm.State {
 	return out
 }
 
-// name is a stage or a model that was never recorded, printed as something a
-// table can hold.
+// name is a stage or a model, printed as something a table can hold. A
+// failed ask often has no model in it, because the name of the model comes
+// back in the answer and there was no answer, and those asks are a row of
+// their own rather than being quietly dropped.
 func name(s string) string {
 	if strings.TrimSpace(s) == "" {
-		return "unnamed"
+		return "not recorded"
 	}
 	return s
 }
