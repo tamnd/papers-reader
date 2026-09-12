@@ -166,7 +166,13 @@ func (c *Checker) faults(page int, text string) []Fault {
 		return out
 	}
 
-	spans, unclosed := mathtex.Split(text)
+	// The math rules read the page with the listings taken out of it. A
+	// fenced block is not prose and not mathematics: a dollar in it is a shell
+	// prompt or a price, a backslash is a path, and a brace is code. A table
+	// this path could not carry as a pipe table is written in a fence too, and
+	// the page it is on should not be refused for what the table prints.
+	prose := mathtex.BlankFences(text)
+	spans, unclosed := mathtex.Split(prose)
 	if unclosed != nil {
 		d := "$"
 		if unclosed.Display {
@@ -174,7 +180,7 @@ func (c *Checker) faults(page int, text string) []Fault {
 		}
 		add(A2, fmt.Sprintf("a %s was opened and never closed", d), unclosed.Line)
 	}
-	for _, s := range mathtex.Straddles(text) {
+	for _, s := range mathtex.Straddles(prose) {
 		add(A3, fmt.Sprintf("the mathematics closes a bracket the prose opened: %s", mathtex.Strip(s.Text)), s.Line)
 	}
 	if c.Math != nil {
@@ -202,7 +208,12 @@ func (c *Checker) faults(page int, text string) []Fault {
 	if n := len(fence.FindAllString(text, -1)); n%2 == 1 {
 		add(A7, "a code fence was opened and never closed", 0)
 	}
-	for _, s := range spans {
+	// This one reads the page as it is rather than with the fences blanked,
+	// because it is the fences it is about. A fence inside a formula is a page
+	// that came back with its blocks tangled, and blanking would take the
+	// evidence away before the rule saw it.
+	raw, _ := mathtex.Split(text)
+	for _, s := range raw {
 		if strings.Contains(s.Text, "```") {
 			add(A7, "a code fence was opened inside a math span", s.Line)
 		}

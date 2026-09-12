@@ -268,6 +268,35 @@ func regions(body string) []region {
 	return out
 }
 
+// BlankFences takes the fenced code out of a body and leaves every line and
+// every character position where it was.
+//
+// A dollar sign in a listing is a dollar sign. It is a shell prompt, a printf
+// verb, a Perl variable and a price, and in none of those is it opening
+// mathematics. The rules that scan a page for math delimiters have to be shown
+// the page with the listings taken out of it, or the first algorithm in the
+// corpus that prints a currency refuses its own page for an unclosed formula.
+//
+// Everything but the newlines goes, the fence lines included, so a line number
+// reported against what comes back is a line number in the original. Callers
+// that want to say something about the fences themselves, rather than about the
+// prose around them, have to read the body as it is.
+func BlankFences(body string) string {
+	rs := fences(body)
+	if len(rs) == 0 {
+		return body
+	}
+	out := []byte(body)
+	for _, r := range rs {
+		for i := r.from; i < r.to; i++ {
+			if out[i] != '\n' {
+				out[i] = ' '
+			}
+		}
+	}
+	return string(out)
+}
+
 // fences is every fenced code block in a body, in byte offsets.
 //
 // It is a scanner and not a pattern because the closing fence has to be at

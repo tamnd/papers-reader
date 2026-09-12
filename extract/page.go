@@ -35,6 +35,11 @@ type Paragraph struct {
 	// word broken across the break. A paragraph that ends mid word is a
 	// continuation and there is nothing to decide.
 	Hyphen bool
+	// Fenced says the text is a code fence and every character in it is
+	// literal. Nothing that rewrites prose may touch it, starting with the
+	// dollar escaping: a dollar inside a fence is printed as a dollar and a
+	// backslash in front of it would be printed too.
+	Fenced bool
 }
 
 // A Page is one page of a paper after the geometry has been read, the
@@ -60,7 +65,10 @@ type Page struct {
 func (p Page) Text() string {
 	parts := make([]string, len(p.Paragraphs))
 	for i, par := range p.Paragraphs {
-		parts[i] = escapeDollars(par.Text)
+		parts[i] = par.Text
+		if !par.Fenced {
+			parts[i] = escapeDollars(par.Text)
+		}
 	}
 	return strings.Join(parts, "\n\n") + "\n"
 }
@@ -158,11 +166,43 @@ func Read(p poppler.Layout, f *Furniture) Page {
 		out.Paragraphs = append(out.Paragraphs, join(cur, cuts))
 		cur = nil
 	}
-	for i, l := range lines {
-		if i > 0 && breaks(lines[i-1], l, pitch, cuts) {
+	// The tables are found over the whole page first, because a table is
+	// recognised by what is around it and the paragraph loop only ever sees
+	// the line before. Their lines then leave the flow: a table read as prose
+	// is a paragraph of the words in the order the text layer holds them,
+	// with the columns interleaved, which is worse than no table at all.
+	//
+	// A table is written where its first line would have gone. Its other
+	// lines are dropped from the flow wherever they turn up, which for a table
+	// whose cells arrived one at a time is all over the page.
+	tables := Tables(lines, cuts)
+	owner := make(map[int]int, len(tables))
+	for at, t := range tables {
+		for _, i := range t.Lines {
+			owner[i] = at
+		}
+	}
+	for i := 0; i < len(lines); i++ {
+		at, taken := owner[i]
+		if taken && tables[at].Lines[0] == i {
+			t := tables[at]
+			flush()
+			out.Paragraphs = append(out.Paragraphs, Paragraph{
+				Box:    t.Box,
+				Text:   t.Text,
+				Lines:  len(t.Lines),
+				Column: Column(lines[i], cuts),
+				Fenced: t.Fenced,
+			})
+			continue
+		}
+		if taken {
+			continue
+		}
+		if len(cur) > 0 && breaks(cur[len(cur)-1], lines[i], pitch, cuts) {
 			flush()
 		}
-		cur = append(cur, l)
+		cur = append(cur, lines[i])
 	}
 	flush()
 	return out
@@ -248,12 +288,17 @@ func medianPitch(lines []poppler.TextLine) float64 {
 // one row and the distance between them is rounding.
 const minStep = 0.5
 
-func median(v []float64) float64 {
+func median(v []float64) float64 { return quantile(v, 0.5) }
+
+// quantile is the value q of the way up a sample, and it sorts what it is
+// given, which every caller here is done with by the time it asks.
+func quantile(v []float64, q float64) float64 {
 	if len(v) == 0 {
 		return 0
 	}
 	sort.Float64s(v)
-	return v[len(v)/2]
+	at := int(float64(len(v)) * q)
+	return v[min(at, len(v)-1)]
 }
 
 // join makes one paragraph out of a run of lines, healing the hyphens.

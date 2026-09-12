@@ -3,6 +3,8 @@ package layout
 import (
 	"fmt"
 	"strings"
+
+	"github.com/tamnd/papers-reader/grid"
 )
 
 // Text is one page written the way the page store holds it: blocks one to a
@@ -96,25 +98,7 @@ func (b Block) equation() string {
 // A code block is never reflowed, never wrapped and never dedented. Papers
 // reference "line 7", and a line number column the journal printed stays
 // inside the fence for the same reason.
-func (b Block) code() string {
-	body := strings.Trim(b.Text, "\n")
-	if strings.TrimSpace(body) == "" {
-		return ""
-	}
-	lang := b.Lang
-	if lang == "" {
-		// text is the honest default. A wrong language tag is worse than
-		// none: a renderer colours it and a reader believes the colouring.
-		lang = "text"
-	}
-	fence := "```"
-	// A listing that itself contains a fence needs a longer one. Real in a
-	// paper about Markdown and free to support.
-	for strings.Contains(body, fence) {
-		fence += "`"
-	}
-	return fence + lang + "\n" + body + "\n" + fence
-}
+func (b Block) code() string { return grid.Fence(b.Lang, b.Text) }
 
 // table writes a table as GitHub Flavored Markdown, with the caption above
 // it as an italic paragraph.
@@ -133,47 +117,20 @@ func (b Block) table() string {
 		// searched, or translated. The note is the report.
 		return strings.Join(parts, "\n\n")
 	}
-	width := 0
-	for _, row := range b.Rows {
-		if len(row) > width {
-			width = len(row)
-		}
-	}
-	var b2 strings.Builder
+	// A cell arrives from the tool with whatever line breaks the printed
+	// table had in it, and a line break inside a pipe table ends the row. The
+	// escaping and the padding are grid's, so this path and the native one
+	// cannot drift apart.
+	rows := make([][]string, len(b.Rows))
 	for i, row := range b.Rows {
-		b2.WriteString(row2(row, width))
-		b2.WriteString("\n")
-		if i == 0 {
-			b2.WriteString(rule(width))
-			b2.WriteString("\n")
+		rows[i] = make([]string, len(row))
+		for j, cell := range row {
+			rows[i][j] = collapse(cell)
 		}
 	}
-	parts = append(parts, strings.TrimRight(b2.String(), "\n"))
+	parts = append(parts, grid.Pipe(rows))
 	return strings.Join(parts, "\n\n")
 }
-
-func row2(cells []string, width int) string {
-	out := make([]string, width)
-	for i := range out {
-		if i < len(cells) {
-			out[i] = escapePipes(collapse(cells[i]))
-		}
-	}
-	return "| " + strings.Join(out, " | ") + " |"
-}
-
-func rule(width int) string {
-	out := make([]string, width)
-	for i := range out {
-		out[i] = "---"
-	}
-	return "| " + strings.Join(out, " | ") + " |"
-}
-
-// escapePipes keeps a cell that contains a pipe from becoming two cells. A
-// paper about shell pipelines has one in a table and it is not a column
-// separator.
-func escapePipes(s string) string { return strings.ReplaceAll(s, "|", `\|`) }
 
 // figure writes the picture and its caption.
 //
