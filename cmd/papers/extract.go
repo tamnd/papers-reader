@@ -298,23 +298,21 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 
 // path is the extraction path this paper takes.
 func (e *extraction) path() (classify.Path, error) {
-	layer := classify.Layer(e.source.TextLayer)
-	switch {
-	case e.forced != "":
-		// A person asked for this path for this paper. That is what the flag
-		// is for and it is the honest way to extract a paper the measurement
-		// sent to the layout path only because it has figures to place: the
-		// text of such a paper extracts perfectly well, and the figures are a
-		// separate stage with its own command.
+	// A person asking for a path for a paper is what the flag is for, and it
+	// is the honest way to extract a paper the measurement sent to the layout
+	// path only because it has figures to place: the text of such a paper
+	// extracts perfectly well, and the figures are a separate stage with its
+	// own command.
+	if e.forced != "" {
 		return e.forced, nil
-	case layer == classify.Native:
-		return classify.PathNative, nil
-	case layer == classify.Digital:
-		return classify.PathLayout, nil
-	case layer == "":
-		return "", fmt.Errorf("not classified yet: run papers classify")
 	}
-	return "", fmt.Errorf("its text layer is %s, and the vision path arrives in milestone M3", layer)
+	layer := classify.Layer(e.source.TextLayer)
+	switch path := layer.Path(); path {
+	case "":
+		return "", fmt.Errorf("not classified yet: run papers classify")
+	default:
+		return path, nil
+	}
 }
 
 // pageRange fills in the ends of the range that were not given.
@@ -359,8 +357,11 @@ type reading struct {
 }
 
 func (e *extraction) read(ctx context.Context, path classify.Path, file string) (*reading, error) {
-	if path == classify.PathLayout {
+	switch path {
+	case classify.PathLayout:
 		return e.readLayout(ctx, file)
+	case classify.PathVision:
+		return nil, fmt.Errorf("its text layer is %s, and the reader that can do anything with that arrives later in milestone M3: papers render will rasterise it in the meantime", e.source.TextLayer)
 	}
 	// The whole range is read in one pdftotext run whatever pages are
 	// missing, because the running heads are learned from the paper and a

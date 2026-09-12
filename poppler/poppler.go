@@ -24,9 +24,7 @@ import (
 )
 
 // Tools is every program this package runs, in the order a person would
-// install them. pdftoppm is not used until the vision path arrives in M3 and
-// is listed so that doctor can report on it before it is needed rather than
-// at the point somebody is waiting on a rebuild.
+// install them.
 var Tools = []string{"pdfinfo", "pdftotext", "pdffonts", "pdfimages", "pdftoppm"}
 
 // Missing is the error for a program that is not installed. It names the

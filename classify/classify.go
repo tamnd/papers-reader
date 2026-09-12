@@ -51,6 +51,30 @@ const (
 	PathVision Path = "vision"
 )
 
+// Path is the extraction path a measured text layer sends a paper down.
+//
+// The mapping lives here rather than in each stage that needs it because
+// three of them need it: the extractor picks the reader, the rasteriser
+// decides whether the paper has any use for a picture of itself, and the
+// coverage report counts papers per path. Three copies of a four line switch
+// is three places for the answer to drift, and the one that drifts is always
+// the one nobody was looking at.
+//
+// A layer nobody has measured yet maps to nothing, which is not the same as
+// mapping to the safest path: a paper that has not been classified should
+// stop a run and say so.
+func (l Layer) Path() Path {
+	switch l {
+	case Native:
+		return PathNative
+	case Digital:
+		return PathLayout
+	case OCR, None:
+		return PathVision
+	}
+	return ""
+}
+
 // Thresholds. Every one of these was set by running the measurement over
 // real papers rather than by choosing a round number, and the numbers that
 // justify them are in the tests.

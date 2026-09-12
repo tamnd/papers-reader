@@ -251,3 +251,41 @@ Times-Roman                          Type 1            WinAnsi          no  no  
 		t.Errorf("the font name parsed as %q", got[0].Name)
 	}
 }
+
+// Three stages read a recorded text layer and act on it, so the mapping from
+// one to a path is one function and this is the test of it. A layer nobody
+// has measured maps to nothing rather than to a safe default, because a run
+// over an unclassified paper should stop and say so.
+func TestLayerPath(t *testing.T) {
+	for _, c := range []struct {
+		layer Layer
+		want  Path
+	}{
+		{Native, PathNative},
+		{Digital, PathLayout},
+		{OCR, PathVision},
+		{None, PathVision},
+		{"", ""},
+		{"typewriter", ""},
+	} {
+		if got := c.layer.Path(); got != c.want {
+			t.Errorf("the %q layer takes the %q path, want %q", c.layer, got, c.want)
+		}
+	}
+}
+
+// Every verdict the measurement can reach names the path the layer it
+// recorded would have chosen anyway. The two disagreeing would mean a paper
+// extracted down one path and reported as being on another.
+func TestEveryVerdictAgreesWithItsLayer(t *testing.T) {
+	for _, v := range []Verdict{
+		{Layer: Native, Path: PathNative},
+		{Layer: Digital, Path: PathLayout},
+		{Layer: OCR, Path: PathVision},
+		{Layer: None, Path: PathVision},
+	} {
+		if got := v.Layer.Path(); got != v.Path {
+			t.Errorf("a %s verdict says %s and its layer says %s", v.Layer, v.Path, got)
+		}
+	}
+}

@@ -12,6 +12,7 @@ The model plumbing underneath is [tamnd/llm](https://github.com/tamnd/llm).
 resolve    find where a paper can legally be fetched from, and under what licence
 fetch      download it, hash it, record it
 classify   measure what each PDF's text layer is worth, and pick the path
+render     rasterise the pages of the papers that need a model to read them
 extract    turn pages into Markdown, with the mathematics as LaTeX
 figures    crop the diagrams out of the pages
 refs       parse the bibliography and link the citations
@@ -64,7 +65,7 @@ Pages read by a layout model or a vision model say so, and the audit treats them
 A section keeps its tag across re-extraction, re-splitting and renumbering, which is what lets a link written today survive the paper being read again by a better model next year.
 
 **The audit is a contract, not a lint.**
-Eighty-four numbered rules in nine groups, each one a sentence you can argue with.
+Eighty-five numbered rules in nine groups, each one a sentence you can argue with.
 A rule reports pass, fail, or not run, and those are three different states.
 Hard rules fail the build.
 
@@ -79,6 +80,7 @@ polite/          one request at a time per host, with a floor on the gap
 poppler/         the PDF tools, found and version checked
 relay/           asking another machine to fetch what this network cannot
 classify/        what a PDF's text layer is worth
+render/          pages to pictures, for the readers that need one
 work/            the model queue, the routing table and the waiting
 extract/         PDF to Markdown
 mathtex/         LaTeX repair, equation numbers and cross references

@@ -105,6 +105,14 @@ func (c *Corpus) PDF(id string) string {
 	return filepath.Join(c.Root, "pdf", id+".pdf")
 }
 
+// Images is the page rasters of one paper. Like the PDF they came from they
+// live under an ignored directory: a page image is a picture of somebody's
+// copyrighted paper whatever the rules about crops say, and it is derived
+// besides, so a checkout that wants one renders it again.
+func (c *Corpus) Images(id string) string {
+	return filepath.Join(c.Root, "images", id)
+}
+
 // Work is scratch space for the toolchain: queues, caches and page images.
 // Ignored by git and safe to delete.
 func (c *Corpus) Work(parts ...string) string {

@@ -40,7 +40,7 @@ var commands = []command{
 	{"fetch", "M1", "download the PDFs that resolved, and hash them", runFetch},
 	{"adopt", "M1", "record a PDF a person fetched by hand, and where from", runAdopt},
 	{"classify", "M1", "measure what each PDF's text layer is worth", runClassify},
-	{"render", "M2", "rasterise pages for the pages that need a model", nil},
+	{"render", "M3", "rasterise pages for the pages that need a model", runRender},
 	{"extract", "M2", "turn pages into Markdown with LaTeX mathematics", runExtract},
 	{"figures", "M2", "crop the diagrams out of the pages", runFigures},
 	{"pagemap", "M3", "record which figure came from which page and box", nil},
