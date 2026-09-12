@@ -67,10 +67,12 @@ The anchor comes from the number the paper printed and not from where the
 item sits in the file, so it survives the paper being read again by a
 better model. Section 3.2 is s3-2 whatever line it lands on.
 
-Each run appends a line to tags/runs recording the range of tags it handed
-out. Tags climb in reading order within a run and do not climb across runs,
-and audit rule G06 needs to know where one run stopped to tell a section
-inserted next year from a block somebody copied and pasted.
+Each run that hands out tags appends a line to tags/runs recording the range
+it handed out. Tags climb in reading order within a run and do not climb
+across runs, and audit rule G06 needs to know where one run stopped to tell a
+section inserted next year from a block somebody copied and pasted. A run
+that only puts known tags back into files the splitter rewrote adds no line,
+because it did not hand anything out.
 
 Nothing is written unless every paper in the run scanned cleanly, so a
 failure part way through does not leave the register describing a corpus
@@ -104,8 +106,9 @@ that was only half written.
 			return fmt.Errorf("%s: %w", p.ID, err)
 		}
 	}
-	fmt.Printf("%d files, %d items already tagged, %d tags handed out\n", a.files, a.had, len(a.handed))
-	if len(a.handed) == 0 {
+	fmt.Printf("%d files, %d items already tagged, %d tags handed out, %d put back, %d files rewritten\n",
+		a.files, a.had, len(a.handed), a.wrote-len(a.handed), len(a.writes))
+	if len(a.writes) == 0 {
 		return nil
 	}
 	if *dry {
@@ -116,6 +119,12 @@ that was only half written.
 		if err := os.WriteFile(w.path, w.body, 0o644); err != nil {
 			return err
 		}
+	}
+	// A run that only put tags back has nothing to add to the register and
+	// nothing to add to the runs file. The register is unchanged and the range
+	// of tags belongs to whichever run first handed them out.
+	if len(a.handed) == 0 {
+		return nil
 	}
 	if err := writeFile(filepath.Join(c.Tags(), "tags"), reg.Write); err != nil {
 		return err
@@ -139,8 +148,14 @@ type assignment struct {
 	register *tags.Register
 	verbose  bool
 
-	files  int
-	had    int
+	files int
+	had   int
+	// wrote is every tag written into a file, new ones and ones the register
+	// already knew. It is more than len(handed) after a re-split, where the
+	// files lost their attribute blocks and the register did not lose
+	// anything, and the difference between the two is what tells a caller
+	// that a run which handed out nothing still had work to do.
+	wrote  int
 	handed []tags.Tag
 	writes []write
 }
@@ -213,6 +228,7 @@ func (a *assignment) file(id, path string) error {
 	if handed == 0 {
 		return nil
 	}
+	a.wrote += handed
 	next, err := tags.Apply(string(body), items, blocks)
 	if err != nil {
 		return err
