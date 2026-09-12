@@ -47,7 +47,7 @@ var commands = []command{
 	{"assemble", "M2", "join the extracted pages into one document", runAssemble},
 	{"refs", "M2", "parse bibliographies and link the citations", runRefs},
 	{"split", "M2", "cut a paper into one file per section", runSplit},
-	{"tags", "M5", "hand out permanent identifiers", nil},
+	{"tags", "M2", "hand out permanent identifiers", runTags},
 	{"glossary", "M6", "manage the controlled vocabulary", nil},
 	{"translate", "M6", "produce Vietnamese, Chinese and Japanese", nil},
 	{"emit", "M8", "build the JSON the reading app consumes", nil},

@@ -28,6 +28,13 @@ type Front struct {
 	Field        Field    `yaml:"field,omitempty"`
 	Section      string   `yaml:"section,omitempty"`
 	SectionTitle string   `yaml:"section_title,omitempty"`
+	// Tag is the permanent identifier of the section this whole file is.
+	//
+	// Every other anchored thing carries its tag in an attribute block on the
+	// line it sits on, but a file's own section has no such line: papers
+	// split lifted its heading into Section and SectionTitle above. This is
+	// where that one tag lives instead, and papers tags assign puts it here.
+	Tag string `yaml:"tag,omitempty"`
 	// Kind is front, section, references or appendix.
 	Kind string `yaml:"kind"`
 	Lang Lang   `yaml:"lang"`

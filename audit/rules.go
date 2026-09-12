@@ -91,6 +91,21 @@ func Rules() []Rule {
 			What:  "no anchor appears twice.",
 			Check: ruleG03,
 		},
+		{
+			ID: "G04", Hard: true,
+			What:  "every tag in a body is in tags/tags against that anchor.",
+			Check: ruleG04,
+		},
+		{
+			ID: "G05", Hard: true,
+			What:  "every anchored item in a body carries a tag.",
+			Check: ruleG05,
+		},
+		{
+			ID: "G06", Hard: true,
+			What:  "tags climb in reading order within a run.",
+			Check: ruleG06,
+		},
 	}...)
 }
 
@@ -481,6 +496,165 @@ func ruleG01(in *Input) ([]Finding, error) {
 func ruleG02(in *Input) ([]Finding, error) { return duplicate(in, "G02", "is already") }
 
 func ruleG03(in *Input) ([]Finding, error) { return duplicate(in, "G03", "already carries") }
+
+// ruleG04 asks whether a tag written into a body is the tag the register
+// hands out for that anchor.
+//
+// The two files can disagree in three ways and all of them are real. A tag in
+// a body that the register has never heard of is a tag somebody typed, and
+// the next assignment will hand the same four characters to something else. A
+// tag the register holds against a different anchor is a block copied from
+// one paragraph to another, which is how one theorem comes to be two. An
+// anchor the register holds under a different tag is an edit to the body that
+// the register was never told about.
+func ruleG04(in *Input) ([]Finding, error) {
+	reg, bad := register(in)
+	if bad != nil {
+		return bad, nil
+	}
+	var out []Finding
+	seen := 0
+	for _, f := range in.Content {
+		if f.Broken() {
+			continue
+		}
+		if f.Front.Tag != "" {
+			if _, err := tags.ParseTag(f.Front.Tag); err != nil {
+				out = append(out, Finding{Rule: "G04", File: f.Path, Message: err.Error()})
+			}
+		}
+		for _, a := range fileTags(f) {
+			seen++
+			anchor, ok := reg.Anchor(a.Tag)
+			switch {
+			case !ok:
+				out = append(out, Finding{
+					Rule: "G04", File: f.Path,
+					Message: fmt.Sprintf("%s carries tag %s, which is in no register", a.Anchor, a.Tag),
+				})
+			case anchor != a.Anchor:
+				out = append(out, Finding{
+					Rule: "G04", File: f.Path,
+					Message: fmt.Sprintf("%s carries tag %s, which the register holds against %s", a.Anchor, a.Tag, anchor),
+				})
+			}
+		}
+	}
+	if seen == 0 {
+		return nil, ErrNotRun
+	}
+	return out, nil
+}
+
+// fileTags is every tag a content file carries, in reading order.
+//
+// The file's own section comes first and comes out of the front matter,
+// because papers split lifted its heading up there and left no line in the
+// body for an attribute block to sit on. Everything else is a block in the
+// body, in the order it appears.
+func fileTags(f *File) []tags.Attr {
+	var out []tags.Attr
+	if f.Front.Tag != "" {
+		if t, err := tags.ParseTag(f.Front.Tag); err == nil {
+			key := tags.SectionKey(f.Front.Section, f.Front.Kind)
+			out = append(out, tags.Attr{Anchor: tags.Anchor(f.Paper, key), Classes: []string{"section"}, Tag: t})
+		}
+	}
+	return append(out, tags.ParseAttrs(f.Body)...)
+}
+
+// ruleG05 asks whether everything that should carry a tag does.
+//
+// It scans with the same function papers tags assign scans with, so the rule
+// and the command cannot disagree about what an anchored item is. That is
+// deliberate and it is also the rule's limit: a kind of item the scanner does
+// not recognise is one neither of them will ever mention.
+//
+// A paper with no tagged item at all has not been through the assigner yet,
+// and the rule stands down rather than printing a finding for every heading
+// in it. Once one item in a file is tagged the file is in the register's
+// world and the rest of it has to be too.
+func ruleG05(in *Input) ([]Finding, error) {
+	files := 0
+	var out []Finding
+	for _, f := range in.Content {
+		if f.Broken() {
+			continue
+		}
+		items := tags.Scan(f.Body)
+		tagged := 0
+		for _, it := range items {
+			if it.Tag != "" {
+				tagged++
+			}
+		}
+		if f.Front.Tag != "" {
+			tagged++
+		}
+		if tagged == 0 {
+			continue
+		}
+		files++
+		if key := tags.SectionKey(f.Front.Section, f.Front.Kind); key != "" && f.Front.Tag == "" {
+			out = append(out, Finding{
+				Rule: "G05", File: f.Path,
+				Message: fmt.Sprintf("the section the file is, %s, carries no tag in its front matter", tags.Anchor(f.Paper, key)),
+			})
+		}
+		for _, it := range items {
+			if it.Tag != "" {
+				continue
+			}
+			out = append(out, Finding{
+				Rule: "G05", File: f.Path, Line: it.Line + 1,
+				Message: fmt.Sprintf("the %s %s carries no tag", it.Class, tags.Anchor(f.Paper, it.Key)),
+			})
+		}
+	}
+	if files == 0 {
+		return nil, ErrNotRun
+	}
+	return out, nil
+}
+
+// ruleG06 asks whether the tags in a file climb.
+//
+// Within one assignment they do, because the assigner walks the corpus in
+// reading order and takes the next tag each time. Across assignments they do
+// not, and must not be made to: a section added to a paper next year gets a
+// tag from the top of the register and sits between two much lower ones, and
+// that is what append only means. So the comparison is only made between two
+// tags tags/runs says came out of the same run.
+//
+// What it catches is an attribute block copied from further down a file and
+// pasted further up, which otherwise looks exactly like a correct tag.
+func ruleG06(in *Input) ([]Finding, error) {
+	runs, err := tags.LoadRuns(filepath.Join(in.Corpus.Tags(), "runs"))
+	if err != nil {
+		return []Finding{{Rule: "G06", File: "tags/runs", Message: err.Error()}}, nil
+	}
+	if len(runs) == 0 {
+		return nil, ErrNotRun
+	}
+	var out []Finding
+	for _, f := range in.Content {
+		if f.Broken() {
+			continue
+		}
+		attrs := fileTags(f)
+		for i := 1; i < len(attrs); i++ {
+			a, b := attrs[i-1], attrs[i]
+			if !tags.Together(runs, a.Tag, b.Tag) || b.Tag.Value() > a.Tag.Value() {
+				continue
+			}
+			out = append(out, Finding{
+				Rule: "G06", File: f.Path,
+				Message: fmt.Sprintf("%s carries %s and comes after %s, which carries %s, and one run hands tags out in reading order", b.Anchor, b.Tag, a.Anchor, a.Tag),
+			})
+		}
+	}
+	return out, nil
+}
 
 func duplicate(in *Input, rule, marker string) ([]Finding, error) {
 	path := filepath.Join(in.Corpus.Tags(), "tags")

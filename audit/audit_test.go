@@ -102,7 +102,7 @@ func TestAFreshCorpusRunsAlmostNothing(t *testing.T) {
 	if len(rep.Errors()) != 0 {
 		t.Errorf("rules broke: %v", rep.Errors())
 	}
-	for _, id := range []string{"S02", "S04", "S06", "G01", "G02", "G03"} {
+	for _, id := range []string{"S02", "S04", "S06", "S09", "G01", "G02", "G03", "G04", "G05", "G06"} {
 		if !result(t, rep, id).NotRun {
 			t.Errorf("%s claims to have run on a corpus with nothing in it", id)
 		}
@@ -257,6 +257,134 @@ func TestTagRules(t *testing.T) {
 		if res.Failed() != tc.fails {
 			t.Errorf("%s: %s failed=%v, want %v (%v)", tc.name, tc.rule, res.Failed(), tc.fails, res.Findings)
 		}
+	}
+}
+
+// tagged is a content file with attribute blocks in it, for the rules that
+// read the corpus against the register.
+func tagged(body string) string {
+	return "---\npaper: vaswani-2017-attention\ntitle: Attention Is All You Need\nkind: section\nlang: en\ncontent_sha256: " +
+		corpus.ContentSHA([]byte(body)) + "\n---\n\n" + body
+}
+
+const taggedPath = "content/en/vaswani-2017-attention/01_section.md"
+
+// G04 is the rule that reads the register against the corpus rather than
+// reading either on its own. A tag in a body that the register never handed
+// out is four characters somebody typed, and the next assignment will give
+// the same four to something else.
+func TestG04WantsTheBodyAndTheRegisterToAgree(t *testing.T) {
+	cases := []struct {
+		name  string
+		reg   string
+		body  string
+		fails bool
+	}{
+		{
+			"a body that matches the register", "0001,vaswani-2017-attention-s1\n",
+			"## 1 Model {#vaswani-2017-attention-s1 .section tag=0001}\n\ntext\n", false,
+		},
+		{
+			"a tag the register never handed out", "0001,vaswani-2017-attention-s1\n",
+			"## 1 Model {#vaswani-2017-attention-s1 .section tag=0001}\n\n## 2 More {#vaswani-2017-attention-s2 .section tag=0FFF}\n\ntext\n", true,
+		},
+		{
+			"a block copied onto another paragraph", "0001,vaswani-2017-attention-s1\n",
+			"## 1 Model {#vaswani-2017-attention-s2 .section tag=0001}\n\ntext\n", true,
+		},
+	}
+	for _, tc := range cases {
+		in := build(t, map[string]string{"tags/tags": tc.reg, taggedPath: tagged(tc.body)})
+		res := result(t, Run(in, true), "G04")
+		if res.Failed() != tc.fails {
+			t.Errorf("%s: G04 failed=%v, want %v (%v)", tc.name, res.Failed(), tc.fails, res.Findings)
+		}
+	}
+}
+
+// G05 uses the same scanner papers tags assign uses, so the rule and the
+// command cannot disagree about what an anchored item is.
+func TestG05WantsEveryAnchoredItemTagged(t *testing.T) {
+	body := "## 1 Model {#vaswani-2017-attention-s1 .section tag=0001}\n\ntext\n\n## 2 Training\n\ntext\n"
+	in := build(t, map[string]string{"tags/tags": "0001,vaswani-2017-attention-s1\n", taggedPath: tagged(body)})
+	res := result(t, Run(in, true), "G05")
+	if len(res.Findings) != 1 {
+		t.Fatalf("G05 found %d, want 1: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.Contains(res.Findings[0].Message, "vaswani-2017-attention-s2") {
+		t.Errorf("the finding does not name the item: %s", res.Findings[0].Message)
+	}
+}
+
+// A file nobody has assigned yet is not a file with two hundred findings in
+// it. The rule starts caring once one item in the file is tagged.
+func TestG05StandsDownOnAFileWithNoTagsAtAll(t *testing.T) {
+	in := build(t, map[string]string{taggedPath: tagged("## 1 Model\n\ntext\n\n## 2 Training\n\ntext\n")})
+	if res := result(t, Run(in, true), "G05"); !res.NotRun {
+		t.Errorf("G05 ran on a corpus nobody has assigned: %v", res.Findings)
+	}
+}
+
+// G06 only compares two tags that came out of the same run, because a
+// section added next year takes a tag from the top of the register and sits
+// between two much lower ones, and that is what append only means.
+func TestG06WantsTagsToClimbWithinARun(t *testing.T) {
+	reg := "0001,vaswani-2017-attention-s1\n0002,vaswani-2017-attention-s2\n0100,vaswani-2017-attention-s1-1\n"
+	backwards := "## 1 One {#vaswani-2017-attention-s2 .section tag=0002}\n\ntext\n\n## 2 Two {#vaswani-2017-attention-s1 .section tag=0001}\n\ntext\n"
+	in := build(t, map[string]string{
+		"tags/tags": reg, "tags/runs": "0001,0002\n0100,0100\n", taggedPath: tagged(backwards),
+	})
+	res := result(t, Run(in, true), "G06")
+	if !res.Failed() {
+		t.Fatal("G06 allowed two tags from one run to go backwards")
+	}
+
+	// The same file, but the low tag is from a later run, which is a section
+	// somebody inserted and not a block somebody pasted.
+	inserted := "## 1 One {#vaswani-2017-attention-s1-1 .section tag=0100}\n\ntext\n\n## 2 Two {#vaswani-2017-attention-s2 .section tag=0002}\n\ntext\n"
+	in = build(t, map[string]string{
+		"tags/tags": reg, "tags/runs": "0001,0002\n0100,0100\n", taggedPath: tagged(inserted),
+	})
+	if res := result(t, Run(in, true), "G06"); res.Failed() {
+		t.Errorf("G06 refused a section inserted by a later run: %v", res.Findings)
+	}
+}
+
+// The section a file is has no heading line in the body, so its tag lives in
+// the front matter and the rules have to look there too.
+func TestG04AndG05ReadTheFrontMatterTag(t *testing.T) {
+	const path = "content/en/vaswani-2017-attention/03_model.md"
+	head := "paper: vaswani-2017-attention\ntitle: Attention Is All You Need\nkind: section\nlang: en\nsection: \"3\"\n"
+	body := "text\n\n### 3.1 Encoder {#vaswani-2017-attention-s3-1 .section tag=0002}\n\ntext\n"
+	reg := "0001,vaswani-2017-attention-s3\n0002,vaswani-2017-attention-s3-1\n"
+
+	in := build(t, map[string]string{"tags/tags": reg, path: file(head+"tag: \"0001\"\n", body)})
+	rep := Run(in, true)
+	if res := result(t, rep, "G04"); res.Failed() {
+		t.Errorf("G04 objected to a front matter tag that matches: %v", res.Findings)
+	}
+	if res := result(t, rep, "G05"); res.Failed() {
+		t.Errorf("G05 objected to a file whose section is tagged: %v", res.Findings)
+	}
+
+	in = build(t, map[string]string{"tags/tags": reg, path: file(head, body)})
+	res := result(t, Run(in, true), "G05")
+	if len(res.Findings) != 1 {
+		t.Fatalf("G05 found %d, want 1: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.Contains(res.Findings[0].Message, "vaswani-2017-attention-s3") {
+		t.Errorf("the finding does not name the section: %s", res.Findings[0].Message)
+	}
+
+	in = build(t, map[string]string{"tags/tags": reg, path: file(head+"tag: \"00GG\"\n", body)})
+	if res := result(t, Run(in, true), "G04"); !res.Failed() {
+		t.Error("G04 accepted a front matter tag that is not four hex characters")
+	}
+}
+
+func TestG06StandsDownWithNoRuns(t *testing.T) {
+	if res := result(t, Run(build(t, nil), true), "G06"); !res.NotRun {
+		t.Errorf("G06 ran on a corpus with no assignment behind it: %v", res.Findings)
 	}
 }
 
