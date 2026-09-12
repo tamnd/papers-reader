@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/prompt"
 )
 
 // translateCorpus writes the smallest corpus papers translate will look at:
@@ -123,6 +124,7 @@ func TestAFileWhoseEnglishHasNotMovedIsNotAskedAgain(t *testing.T) {
 	put(t, c, "01_first.md", corpus.Front{
 		Paper: "a-1970-paper", Title: "A Paper", Kind: "section", Lang: corpus.VI,
 		SourceContentSHA256: was.ContentSHA256,
+		PromptSHA256:        translatePrompt(t),
 	}, "Đoạn thứ nhất.")
 
 	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
@@ -141,6 +143,54 @@ func TestAFileWhoseEnglishHasNotMovedIsNotAskedAgain(t *testing.T) {
 	if len(again) != 3 {
 		t.Errorf("-force planned %d of 3 files", len(again))
 	}
+}
+
+// The prompt is half of what produced the file. A rule added to it is a rule
+// the answers on disk were never held to, and the answer to that is to ask
+// again, not to leave a corpus where some files followed the rule and some
+// did not and nothing on disk says which.
+func TestATranslationMadeWithAnOlderPromptIsAskedAgain(t *testing.T) {
+	c := translateCorpus(t)
+	papers, _ := c.LoadPapers()
+
+	english, err := os.ReadFile(filepath.Join(c.Content(corpus.EN, "a-1970-paper"), "01_first.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	was, _, err := corpus.ParseFront(english)
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, c, "01_first.md", corpus.Front{
+		Paper: "a-1970-paper", Title: "A Paper", Kind: "section", Lang: corpus.VI,
+		SourceContentSHA256: was.ContentSHA256,
+		PromptSHA256:        "0000000000000000000000000000000000000000000000000000000000000000",
+	}, "Đoạn thứ nhất.")
+
+	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, j := range jobs {
+		if j.name == "01_first.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a translation written to an older prompt was left as it was")
+	}
+}
+
+// translatePrompt is the hash of the prompt this build carries, which is what
+// a file has to record to count as current.
+func translatePrompt(t *testing.T) string {
+	t.Helper()
+	p, err := prompt.Get(prompt.Translate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p.SHA
 }
 
 func TestATranslationOfAnEnglishFileThatMovedIsPlannedAgain(t *testing.T) {

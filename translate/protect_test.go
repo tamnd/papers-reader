@@ -220,8 +220,8 @@ func TestADroppedSpanIsRefused(t *testing.T) {
 	if len(d) != 1 || d[0].At != 2 {
 		t.Fatalf("Compare found %v and the answer dropped the second span", d)
 	}
-	if !strings.Contains(d[0].String(), "run out of spans") {
-		t.Errorf("Compare said %q and the answer ended early", d[0])
+	if !strings.Contains(d[0].String(), "nothing like it") {
+		t.Errorf("Compare said %q and the answer dropped a span", d[0])
 	}
 }
 
@@ -235,12 +235,28 @@ func TestAnInventedSpanIsRefused(t *testing.T) {
 	}
 }
 
-func TestReorderingSpansIsRefused(t *testing.T) {
-	source := "First $a$, then $b$.\n"
-	answer := "Trước hết $b$, sau đó $a$.\n"
+// Chinese and Japanese put a modifier in front of what it modifies, so two
+// formulas in one English clause regularly come out the other way round, and
+// a translation that kept the English order would be the wrong one. This is
+// the sentence that made the point: the first Chinese run of the GAN paper
+// gave up on it after three tries, all three of them correct.
+func TestReorderingSpansInOneParagraphIsAllowed(t *testing.T) {
+	source := "To learn the generator's distribution $p_g$ over data $x$, we define a prior.\n"
+	answer := "为了学习生成器在数据 $x$ 上的分布 $p_g$，我们定义一个先验。\n"
+
+	if d := Compare(source, answer); len(d) != 0 {
+		t.Errorf("Compare found %v and the answer only put the two formulas in Chinese order", d)
+	}
+}
+
+// Between paragraphs it is not word order, it is a formula that has moved to
+// another paragraph, and the paper no longer says what it said.
+func TestMovingASpanToAnotherParagraphIsRefused(t *testing.T) {
+	source := "First $a$ is fixed.\n\nThen $b$ is fixed.\n"
+	answer := "Trước hết $b$ được cố định.\n\nSau đó $a$ được cố định.\n"
 
 	if d := Compare(source, answer); len(d) != 2 {
-		t.Fatalf("Compare found %v and both positions changed", d)
+		t.Fatalf("Compare found %v and each paragraph has the other's formula", d)
 	}
 }
 

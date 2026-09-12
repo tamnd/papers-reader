@@ -12,12 +12,16 @@ Field: {{FIELD}}
 
 ## The rules
 
-1. Every protected span is copied through exactly, in place. A protected span
-   is anything between dollar signs, anything in backticks, any fenced code
+1. Every protected span is copied through exactly. A protected span is
+   anything between dollar signs, anything in backticks, any fenced code
    block, and any citation marker such as [12] or [3, 5] or [7, p. 18]. Copy
-   them character for character in the order they appear. They are pulled out
-   of your answer and compared with the source one at a time, and an answer
-   whose spans differ anywhere is thrown away whole.
+   them character for character. A span may sit where the grammar of the
+   language you are writing puts it, and in a language that puts a modifier
+   in front of what it modifies that is often not where the English has it.
+   What it may not do is leave the paragraph it was in, or change, or be
+   dropped, or be joined to another. The spans are pulled out of your answer
+   and compared with the source paragraph by paragraph, and an answer that
+   has lost one, gained one or altered one is thrown away whole.
 
 2. Inside the dollars, the contents of \text{} are prose and are translated.
    Nothing else inside the dollars moves. An operator name written upright,

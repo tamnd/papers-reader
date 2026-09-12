@@ -55,10 +55,9 @@ type Span struct {
 
 // Protect finds every protected span of a body, in the order they appear.
 //
-// Order is part of the answer and not a convenience. The comparison is
-// positional: two bodies whose spans are the same set but in a different
-// order are two different documents, and a translator that moved a formula
-// from one sentence to the next has changed what the paper says.
+// The order is reported because a caller wants to show a reader where in a
+// body a span sits, not because the comparison depends on it. Compare says
+// what it does and does not make of the order, and why.
 //
 // A span inside another is not reported twice. A fence holds dollar signs
 // that are not mathematics and citations that are not citations, and the
@@ -185,28 +184,108 @@ func (d Difference) String() string {
 
 // Compare says how the protected spans of an answer differ from the source's.
 //
-// Nothing comes back for an answer that is right, and the first difference is
+// Paragraph by paragraph, and inside a paragraph as a bag rather than as a
+// list. A paragraph of the answer has to hold the same spans as the same
+// paragraph of the source, each one the same number of times, and it may
+// hold them in any order.
+//
+// The order used to matter and it cost the corpus its first Chinese and its
+// first Japanese. Both runs stopped dead on their third attempt at the third
+// section of the GAN paper: "the source has mathematics $p_g$ and the answer
+// has mathematics $\boldsymbol{x}$" for the Chinese, the same shape of thing
+// for the Japanese. Neither answer was wrong. English writes "the
+// generator's distribution $p_g$ over data $\boldsymbol{x}$" and Chinese
+// writes the modifier in front of what it modifies, so the two formulas come
+// out the other way round, and any translation into either language that did
+// not swap them would be the broken one. A rule that refuses correct work
+// three times and then gives up is not a strict rule, it is a wrong one.
+//
+// What is left is still the check worth having. A dropped formula, an added
+// one, a renamed variable, a renumbered citation and a footnote marker that
+// moved to another paragraph are all still caught, and those are what a
+// model that has misread a passage actually does. What is no longer caught
+// is two spans of one paragraph swapped with each other, and there is no way
+// to catch that and keep Chinese: a citation moves with the clause it is
+// attached to exactly as a formula does.
+//
+// Nothing comes back for an answer that is right, and one difference is
 // enough to throw the answer away: the caller asks again rather than trying
-// to repair it. A translation with a quietly renamed variable is worse than
-// no translation, because nothing downstream will ever catch it.
+// to repair it.
 func Compare(source, answer string) []Difference {
-	want, got := Protect(source), Protect(answer)
+	want, got := paragraphs(source), paragraphs(answer)
+	if len(want) != len(got) {
+		// The shapes do not line up, so there is no paragraph to compare
+		// within and the whole passage is the bag. Verify reports the block
+		// count itself and says it better than this could.
+		return compare(Protect(source), Protect(answer), 0)
+	}
 	var out []Difference
+	at := 0
 	for i := range want {
-		if i >= len(got) {
-			out = append(out, Difference{At: i + 1, Want: want[i],
-				Why: fmt.Sprintf("the source has %s %q here and the answer has run out of spans", want[i].Kind, short(want[i].Text))})
-			break
+		a, b := Protect(want[i]), Protect(got[i])
+		out = append(out, compare(a, b, at)...)
+		at += len(a)
+	}
+	return out
+}
+
+// paragraphs cuts a body into the texts of its blocks.
+func paragraphs(body string) []string {
+	rs := []rune(body)
+	var out []string
+	for _, b := range blocks(body) {
+		out = append(out, string(rs[b.start:b.end]))
+	}
+	return out
+}
+
+// compare matches two paragraphs' spans up, and says what is left over.
+//
+// base is how many spans of the source came before this paragraph, so that
+// the position in a difference counts through the whole passage and a reader
+// of the message can find the span being complained about.
+func compare(want, got []Span, base int) []Difference {
+	used := make([]bool, len(got))
+	var missing, extra []int
+	for i := range want {
+		found := false
+		for j := range got {
+			if !used[j] && want[i].Kind == got[j].Kind && same(want[i], got[j]) {
+				used[j], found = true, true
+				break
+			}
 		}
-		if want[i].Kind != got[i].Kind || !same(want[i], got[i]) {
-			out = append(out, Difference{At: i + 1, Want: want[i], Got: got[i]})
+		if !found {
+			missing = append(missing, i)
 		}
 	}
-	if len(got) > len(want) {
-		at := len(want)
-		out = append(out, Difference{At: at + 1, Got: got[at],
-			Why: fmt.Sprintf("the answer has %d spans and the source has %d, the first extra being %s %q",
-				len(got), len(want), got[at].Kind, short(got[at].Text))})
+	for j := range got {
+		if !used[j] {
+			extra = append(extra, j)
+		}
+	}
+
+	var out []Difference
+	// A span that went missing and one that turned up in its place are one
+	// change and not two: a renamed variable is the commonest thing this
+	// finds, and reporting it as a loss and a gain describes it twice and
+	// names neither. They pair off in the order they were written, which for
+	// the one span in a paragraph that a model got wrong is the right pair.
+	for k, i := range missing {
+		if k >= len(extra) {
+			out = append(out, Difference{At: base + i + 1, Want: want[i],
+				Why: fmt.Sprintf("the source has %s %q and the answer has nothing like it",
+					want[i].Kind, short(want[i].Text))})
+			continue
+		}
+		j := extra[k]
+		out = append(out, Difference{At: base + i + 1, Want: want[i], Got: got[j]})
+	}
+	for k := len(missing); k < len(extra); k++ {
+		j := extra[k]
+		out = append(out, Difference{At: base + len(want) + 1, Got: got[j],
+			Why: fmt.Sprintf("the answer has %s %q and the source has nothing like it",
+				got[j].Kind, short(got[j].Text))})
 	}
 	return out
 }

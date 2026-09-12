@@ -52,11 +52,14 @@ chunk at a time, and refuses an answer that did not come back as the same
 document.
 
 The mathematics, the listings, the citation markers and the tag attributes
-are pulled out of the answer and compared with the source one at a time. An
-answer whose spans differ anywhere is thrown away whole and the chunk is
-asked again, because a translation with a quietly renamed variable is worse
-than no translation: nothing further down the toolchain will catch it and a
-reader has no way to know. A chunk that cannot be got right is a failure of
+are pulled out of the answer and compared with the source paragraph by
+paragraph. An answer that has lost one, gained one or altered one is thrown
+away whole and the chunk is asked again, because a translation with a
+quietly renamed variable is worse than no translation: nothing further down
+the toolchain will catch it and a reader has no way to know. Inside a
+paragraph the spans may move, because Chinese and Japanese put a modifier in
+front of what it modifies and two formulas in one English clause come out
+the other way round. A chunk that cannot be got right is a failure of
 the whole file rather than a file with one English paragraph in it.
 
 Every file records the English file it came from and the hash of that file
@@ -255,6 +258,14 @@ const abstractWords = 250
 // nothing in it can say what it was made from. A file somebody edited by
 // hand is left alone: the edit is the version of record and a run that
 // overwrote it would throw away the review it came from.
+//
+// The prompt counts as much as the English does. A page carries the hash of
+// the prompt that produced it so that a change to the rules is visible as a
+// corpus half written under each, and the way to make that visible is to
+// owe the page again. It is not free and it is not meant to be: an edit to
+// the translation prompt puts every translated page in the queue, which is
+// the cost of the rules being one set of rules rather than whichever set
+// happened to be in the build that ran.
 func current(c *corpus.Corpus, l corpus.Lang, id string, f job) bool {
 	b, err := os.ReadFile(filepath.Join(c.Content(l, id), f.name))
 	if err != nil {
@@ -267,6 +278,9 @@ func current(c *corpus.Corpus, l corpus.Lang, id string, f job) bool {
 	if front.Edited {
 		return true
 	}
+	if p, err := prompt.Get(prompt.Translate); err == nil && front.PromptSHA256 != p.SHA {
+		return false
+	}
 	was := f.front.ContentSHA256
 	if was == "" {
 		was = corpus.ContentSHA([]byte(f.body))
@@ -277,17 +291,41 @@ func current(c *corpus.Corpus, l corpus.Lang, id string, f job) bool {
 // translated translates one file and puts it on disk.
 func translated(ctx context.Context, c *corpus.Corpus, t *translate.Translator, g *glossary.Glossary, j job, run string) (translate.Result, error) {
 	var res translate.Result
+	front := j.front
 	body := j.body
 	if !j.copied() {
+		// The section's own title goes into the passage as a heading and
+		// comes back out of the answer. It is not in the body: papers split
+		// lifted it into the front matter, so a translated file used to
+		// carry an English section_title, and the table of contents of the
+		// Vietnamese book was eight English headings over Vietnamese prose.
+		//
+		// As part of the body rather than as an ask of its own, because a
+		// title of three words asked for on its own is a title translated
+		// with nothing around it, and because the fleet answers in about two
+		// minutes whether the question is a page or a phrase. The block
+		// count check already guarantees the heading comes back as its own
+		// block, so the answer can be cut at it.
+		head := heading(j.front)
+		ask := j.body
+		if head != "" {
+			ask = head + "\n\n" + j.body
+		}
 		var err error
-		res, err = t.Body(ctx, paperOf(j), j.lang, terms(g, j.front.Field, j.lang), j.body)
+		res, err = t.Body(ctx, paperOf(j), j.lang, terms(g, j.front.Field, j.lang), ask)
 		if err != nil {
 			return res, err
 		}
 		body = res.Text
+		if head != "" {
+			title, rest, ok := cutHeading(body)
+			if !ok {
+				return res, fmt.Errorf("%s %s: the answer does not open with the section heading it was given", j.front.Paper, j.name)
+			}
+			front.SectionTitle, body = title, rest
+		}
 	}
 
-	front := j.front
 	front.Lang = j.lang
 	front.Edited = false
 	front.TranslatedFrom = filepath.Join("content", string(corpus.EN), j.front.Paper, j.name)
@@ -315,6 +353,31 @@ func translated(ctx context.Context, c *corpus.Corpus, t *translate.Translator, 
 		return res, err
 	}
 	return res, os.WriteFile(filepath.Join(dir, j.name), out, 0o644)
+}
+
+// heading is the section title as a line of Markdown, and empty for a file
+// whose title is not the paper's own words.
+//
+// The front matter file and the bibliography are named by the toolchain and
+// not by the paper: "Front Matter" is a label papers split invented and
+// "References" is what the book prints from its own wordlist. Neither is
+// prose of the paper and neither is worth an ask.
+func heading(f corpus.Front) string {
+	if f.SectionTitle == "" || f.Kind == "front" || f.Kind == "references" {
+		return ""
+	}
+	return "### " + f.SectionTitle
+}
+
+// cutHeading takes the translated heading off the front of an answer.
+func cutHeading(body string) (title, rest string, ok bool) {
+	text := strings.TrimLeft(body, "\n")
+	line, rest, _ := strings.Cut(text, "\n")
+	title = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "#"))
+	if !strings.HasPrefix(strings.TrimSpace(line), "#") || title == "" {
+		return "", body, false
+	}
+	return title, strings.TrimLeft(rest, "\n"), true
 }
 
 func paperOf(j job) translate.Paper {
