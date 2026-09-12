@@ -159,3 +159,67 @@ func lines(t *testing.T, path string) int {
 	}
 	return n
 }
+
+// twice is one content file with the same unnumbered heading in it twice,
+// which is what the ResNet appendix does: two sections headed MS COCO, one
+// under Object Detection Baselines and one under Object Detection
+// Improvements.
+func twice() string {
+	return `---
+paper: a-1970-paper
+title: A Paper
+section: "1"
+section_title: The First Section
+kind: section
+lang: en
+---
+
+#### A Baselines
+
+#### Some Benchmark
+
+The first measurement.
+
+#### B Improvements
+
+#### Some Benchmark
+
+The second measurement.
+`
+}
+
+func TestTwoHeadingsOfOneNameGetTwoAnchors(t *testing.T) {
+	root := tagsCorpus(t, twice())
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, filepath.Join(root, "content/en/a-1970-paper/01_first.md"))
+	if n := strings.Count(got, "a-1970-paper-s-some-benchmark "); n != 1 {
+		t.Errorf("the first heading of the name has %d anchors, want 1:\n%s", n, got)
+	}
+	if !strings.Contains(got, "a-1970-paper-s-some-benchmark-2") {
+		t.Errorf("the second heading of the name did not get its own anchor:\n%s", got)
+	}
+}
+
+// The tags in a file have to climb, which is what rule G06 checks, and two
+// headings sharing an anchor is exactly how they stopped.
+func TestTwoHeadingsOfOneNameGetTwoTags(t *testing.T) {
+	root := tagsCorpus(t, twice())
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+	got := read(t, filepath.Join(root, "content/en/a-1970-paper/01_first.md"))
+	seen := map[string]bool{}
+	for _, line := range strings.Split(got, "\n") {
+		i := strings.Index(line, "tag=")
+		if i < 0 {
+			continue
+		}
+		tag := strings.TrimRight(line[i+len("tag="):], "}")
+		if seen[tag] {
+			t.Errorf("tag %s is on two things:\n%s", tag, got)
+		}
+		seen[tag] = true
+	}
+}
