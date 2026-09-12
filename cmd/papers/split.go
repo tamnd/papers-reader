@@ -215,6 +215,7 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, dry, 
 	if record != nil {
 		front.Extraction = record.Path
 		front.ExtractionModel = record.Tool
+		front.PromptSHA256 = record.Prompt
 	} else {
 		n.notes = append(n.notes, "no extraction record, so the front matter cannot say what read the pages")
 	}

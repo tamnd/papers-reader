@@ -2,6 +2,7 @@ package extract
 
 import (
 	"context"
+	"slices"
 	"sort"
 
 	"github.com/tamnd/papers-reader/poppler"
@@ -90,6 +91,50 @@ func LearnMap(pages []Page) Map {
 		return Map{}
 	}
 	sort.Ints(offsets)
+	return Map{Offset: offsets[len(offsets)/2], Known: true}
+}
+
+// Folios learns the page map one page at a time, from the text of pages as
+// they come back.
+//
+// LearnMap wants the whole paper and the native path can give it that: one
+// pdftotext run reads every page before anything is checked. The vision path
+// cannot. A page there takes a minute and a half, the run is resumable, and
+// the pages arrive over hours, so a map that needed all of them first would be
+// a map that was never known while it could still be used.
+//
+// So the offset is learned as the pages arrive and applied to the pages that
+// arrive after it. The first two pages of a paper are checked without it,
+// which is the price, and it is worth paying: rule A6 is there for the page
+// where a reader lost its place and transcribed the one beside it, and that
+// page is found by disagreeing with the pages around it whether or not it was
+// the first one read.
+//
+// The zero Folios knows nothing and says so, which is what Map returns.
+type Folios struct {
+	offsets []int
+}
+
+// Add records what a page printed. A page that printed no number, or printed
+// something that is not a number, teaches nothing and is not an error: most
+// pages of most papers are in that state.
+func (f *Folios) Add(page int, text string) {
+	if page < 1 {
+		return
+	}
+	if n, ok := folioOf(text); ok {
+		f.offsets = append(f.offsets, n-page)
+	}
+}
+
+// Map is the offset as it stands, by the same median rule as LearnMap and for
+// the same reasons.
+func (f *Folios) Map() Map {
+	if len(f.offsets) < 2 {
+		return Map{}
+	}
+	offsets := slices.Clone(f.offsets)
+	slices.Sort(offsets)
 	return Map{Offset: offsets[len(offsets)/2], Known: true}
 }
 

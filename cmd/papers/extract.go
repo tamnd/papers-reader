@@ -7,14 +7,19 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/tamnd/llm"
 	"github.com/tamnd/papers-reader/classify"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
 	"github.com/tamnd/papers-reader/katex"
 	"github.com/tamnd/papers-reader/layout"
 	"github.com/tamnd/papers-reader/poppler"
+	"github.com/tamnd/papers-reader/prompt"
+	"github.com/tamnd/papers-reader/render"
+	"github.com/tamnd/papers-reader/work"
 )
 
 func runExtract(args []string) error {
@@ -25,6 +30,7 @@ func runExtract(args []string) error {
 	all := fs.Bool("all", false, "extract every paper on disk whose path is implemented")
 	path := fs.String("path", "", "force an extraction path instead of the measured one")
 	tool := fs.String("tool", "", "which layout tool to run: mineru, marker or docling")
+	routes := fs.String("routes", "", "read this route file rather than the usual one")
 	pages := fs.String("pages", "", "extract these pages only, as N or N-M")
 	again := fs.Bool("again", false, "extract pages that are already done too")
 	dry := fs.Bool("dry-run", false, "print what would be extracted and write nothing")
@@ -41,7 +47,7 @@ manifests/sources.yaml.
 
     native    pdftotext reads the file and no model is in the path
     layout    a layout model reads the geometry
-    vision    a vision model reads a picture of the page     (milestone M3)
+    vision    a vision model reads a picture of the page
 
 The native path asks pdftotext for the word boxes rather than for text,
 because pdftotext -layout interleaves the columns of a two column paper
@@ -55,12 +61,23 @@ under work/<id>/layout, so a second run over a paper that is already
 converted reads the file it wrote and starts no process. Pass --tool to pick
 one; without it the first installed is used, in the order above.
 
+The vision path shows a picture of each page to a model, one page per ask.
+The raster comes from papers render, and a page that is not rendered yet is
+rendered here, so running that command first is an optimisation and not a
+prerequisite. The prompt is pinned and its hash goes in the front matter of
+everything the page becomes, and a paper whose notation needs a sentence of
+explanation gets one added to it, which is per paper so that editing it does
+not mark every other paper's pages stale.
+
 Every page is checked against the eight acceptance rules before it is
-written, and a page that breaks one is reported and not written. Neither
-path has anything to retry with: the same program over the same file reads
-the page the same way the second time, so a refused page is a page for a
-person to look at, and it stays in the report until somebody does. The
-thing to try is the other path, with --path.
+written, and a page that breaks one is reported and not written. The native
+and layout paths have nothing to retry with: the same program over the same
+file reads the page the same way the second time, so a refused page is a
+page for a person to look at, and it stays in the report until somebody
+does. The thing to try is the other path, with --path. The vision path does
+retry, because a model asked twice answers twice: a refused page goes back
+at 400 dpi and then at 600, and a page refused at all three is reported and
+left alone.
 
 A page that is already extracted is left alone, so running this twice costs
 one read of the file and no writes. Pass --again to do the work over.
@@ -86,9 +103,9 @@ papers doctor to see what is installed.
 		return err
 	}
 	switch classify.Path(*path) {
-	case "", classify.PathNative, classify.PathLayout:
+	case "", classify.PathNative, classify.PathLayout, classify.PathVision:
 	default:
-		return fmt.Errorf("the %s path arrives in a later milestone", *path)
+		return fmt.Errorf("%q is not an extraction path: it is native, layout or vision", *path)
 	}
 	if *tool != "" && !known(layout.Tool(*tool)) {
 		return fmt.Errorf("%q is not a layout tool: run papers doctor to see which are installed", *tool)
@@ -120,6 +137,28 @@ papers doctor to see what is installed.
 		fmt.Printf("KaTeX is not usable here, so acceptance rule A4 will not run: %v\n", err)
 	}
 
+	// The fleet is assembled the first time a paper needs it and not before.
+	// A native run must work on a machine with no route file at all, and most
+	// runs are native runs; building the pool up front would make every one of
+	// them fail on a paper that was never going to a model.
+	var (
+		once  sync.Once
+		asker *work.Ask
+		fleet error
+	)
+	ready := func() (*work.Ask, error) {
+		once.Do(func() {
+			var from string
+			asker, from, fleet = work.Fleet(work.Extract, *routes, true, func(format string, args ...any) {
+				fmt.Printf("    "+format+"\n", args...)
+			})
+			if fleet == nil {
+				fmt.Printf("the pages go to the hosts in the %s routing table\n", from)
+			}
+		})
+		return asker, fleet
+	}
+
 	ctx := context.Background()
 	var done, refused, skipped int
 	for _, p := range todo {
@@ -127,6 +166,7 @@ papers doctor to see what is installed.
 		run := extraction{
 			corpus: c, paper: p, source: rec, math: math,
 			forced: classify.Path(*path), tool: layout.Tool(*tool),
+			fleet: ready,
 			first: first, last: last,
 			again: *again, dry: *dry, long: *long,
 		}
@@ -180,6 +220,9 @@ type extraction struct {
 	math   *katex.Renderer
 	forced classify.Path
 	tool   layout.Tool
+	// fleet is the asker, built on demand and once for the whole run. Only
+	// the vision path calls it.
+	fleet func() (*work.Ask, error)
 
 	first, last int
 	again       bool
@@ -237,6 +280,16 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 	n.already = e.last - e.first + 1 - len(todo)
 	if len(todo) == 0 {
 		return n, nil
+	}
+
+	// The vision path reads a page at a time and writes each one as it comes
+	// back, because a page takes a minute and a half and a run over a long
+	// paper is a run somebody will interrupt. The other two paths read the
+	// whole file in one go and have nothing to gain from it.
+	if path == classify.PathVision {
+		got, err := e.vision(ctx, file, store, todo)
+		n.written, n.refused = got.written, got.refused
+		return n, err
 	}
 
 	got, err := e.read(ctx, path, file)
@@ -361,7 +414,10 @@ func (e *extraction) read(ctx context.Context, path classify.Path, file string) 
 	case classify.PathLayout:
 		return e.readLayout(ctx, file)
 	case classify.PathVision:
-		return nil, fmt.Errorf("its text layer is %s, and the reader that can do anything with that arrives later in milestone M3: papers render will rasterise it in the meantime", e.source.TextLayer)
+		// Handled a page at a time by e.vision, which do calls instead of
+		// this. A path that reached here would be a bug rather than a
+		// misconfiguration, so it says so.
+		return nil, fmt.Errorf("the vision path is not read in one pass")
 	}
 	// The whole range is read in one pdftotext run whatever pages are
 	// missing, because the running heads are learned from the paper and a
@@ -421,6 +477,126 @@ func (e *extraction) readLayout(ctx context.Context, file string) (*reading, err
 		checker: &extract.Checker{Math: e.math, Model: true},
 		tool:    version(layout.Version(ctx, doc.Tool)),
 	}, nil
+}
+
+// vision reads the pages one at a time by showing each one to a model.
+//
+// It is a separate loop from read because everything about it is per page.
+// The page is rendered, sent, checked and written before the next one is
+// started, so an interrupted run keeps every page it paid for. The page map
+// is learned from the pages as they arrive rather than from the whole paper,
+// for the same reason.
+func (e *extraction) vision(ctx context.Context, file string, store extract.Store, todo []int) (count, error) {
+	var n count
+	if e.dry {
+		// There is nothing to dry run. The cost of this path is the asking,
+		// and a run that asked would not be a dry one.
+		fmt.Printf("    %s: %d pages would be read by a model\n", e.paper.ID, len(todo))
+		return n, nil
+	}
+	asker, err := e.fleet()
+	if err != nil {
+		return n, err
+	}
+	// The prompt is the shared one plus this paper's note, where it has one.
+	// Its hash goes in the record and from there into the front matter of
+	// every file these pages become.
+	pinned, err := prompt.Page(e.paper.ID)
+	if err != nil {
+		return n, err
+	}
+	// Which pages have a colour image on them. A page of black text on white
+	// paper goes up as grey and costs a third of the bytes, and a page with a
+	// colour figure on it goes up in colour because the colours are the
+	// figure. A file pdfimages will not read is not a reason to stop: every
+	// page goes as grey, which is what the ladder starts at anyway.
+	colour, err := render.Colour(ctx, file, e.first, e.last)
+	if err != nil {
+		fmt.Printf("    %s: the images could not be listed, so every page goes up in grey: %v\n", e.paper.ID, err)
+	}
+
+	// A5 is on because these pages came from a model and a model can stop
+	// halfway down a page. A6 is on once the paper has taught it where its
+	// numbering starts, which is what Folios is for.
+	checker := &extract.Checker{Math: e.math, Model: true}
+	folios := &extract.Folios{}
+	want := map[int]bool{}
+	for _, page := range todo {
+		want[page] = true
+	}
+	// The pages that are already done are fed through both before anything is
+	// asked. A5 is about how long this paper's pages usually are and A6 is
+	// about where its numbering starts, and a resumed run that saw only the
+	// last three pages knows neither.
+	for page := e.first; page <= e.last; page++ {
+		if want[page] {
+			continue
+		}
+		done, err := store.Read(page)
+		if err != nil {
+			continue
+		}
+		checker.Check(page, done)
+		folios.Add(page, done)
+	}
+
+	v := &extract.Vision{
+		Ask: func(ctx context.Context, target string, req llm.Request) (extract.Reply, error) {
+			answer, err := asker.Do(ctx, target, req)
+			return extract.Reply{Response: answer.Response, Model: answer.Model}, err
+		},
+		Prompt: pinned,
+		Store:  render.Store{Dir: e.corpus.Images(e.paper.ID)},
+		PDF:    file,
+		Paper:  e.paper.ID,
+		Colour: colour,
+		Check: func(page int, text string) []extract.Fault {
+			// Taken fresh on every attempt, because the page before this one
+			// may have been what taught the paper its offset.
+			checker.Map = folios.Map()
+			return checker.Check(page, text)
+		},
+		Logf: func(format string, args ...any) { fmt.Printf("    "+format+"\n", args...) },
+	}
+
+	var tool string
+	for _, page := range todo {
+		scan, err := v.Page(ctx, page)
+		if err != nil {
+			return n, fmt.Errorf("page %d: %w", page, err)
+		}
+		if !scan.OK() {
+			n.refused++
+			for _, f := range scan.Faults {
+				fmt.Printf("    %s page %d: %s\n", e.paper.ID, page, f)
+			}
+			continue
+		}
+		if err := store.Write(page, scan.Text); err != nil {
+			return n, err
+		}
+		folios.Add(page, scan.Text)
+		tool = scan.Model
+		n.written++
+		if e.long {
+			fmt.Printf("    %s page %d: %s\n", e.paper.ID, page, scan.How())
+		}
+		// Written after every page rather than at the end, so that a run
+		// stopped with control C leaves a record of the pages that are really
+		// on disk. Write widens the range rather than replacing it.
+		record := extract.Record{
+			Path:   string(classify.PathVision),
+			Tool:   tool,
+			Prompt: pinned.SHA,
+			First:  e.first,
+			Last:   e.last,
+			When:   time.Now().UTC().Truncate(time.Second),
+		}
+		if err := record.Write(e.corpus.Work(e.paper.ID)); err != nil {
+			return n, err
+		}
+	}
+	return n, nil
 }
 
 // version is the line a tool prints about itself, or nothing. A run that

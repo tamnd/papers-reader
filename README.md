@@ -82,6 +82,7 @@ relay/           asking another machine to fetch what this network cannot
 classify/        what a PDF's text layer is worth
 render/          pages to pictures, for the readers that need one
 work/            the model queue, the routing table and the waiting
+prompt/          what the models are asked, pinned and hashed
 extract/         PDF to Markdown
 mathtex/         LaTeX repair, equation numbers and cross references
 katex/           the real KaTeX, run at build time to check and render

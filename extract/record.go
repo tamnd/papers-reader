@@ -34,6 +34,17 @@ type Record struct {
 	// model and is recorded anyway: poppler's paragraph reconstruction has
 	// changed between releases.
 	Tool string `yaml:"tool,omitempty"`
+	// Prompt is the sha256 of the instructions the pages were read with, and
+	// empty for a path with no model in it.
+	//
+	// It goes into the front matter of every file the pages become, which is
+	// the whole reason it is recorded. A prompt that is edited changes its
+	// hash, and the pages produced under the old wording are then findable
+	// rather than silently mixed in with pages produced under the new one.
+	// That is also why it is the hash of the paper's own prompt, note and
+	// all: two papers read with different notes were asked different
+	// questions and saying otherwise would be a lie about both.
+	Prompt string `yaml:"prompt_sha256,omitempty"`
 	// First and Last are the pages of the PDF this covers.
 	First int `yaml:"first_page"`
 	Last  int `yaml:"last_page"`
