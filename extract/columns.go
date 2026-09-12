@@ -288,9 +288,21 @@ func Lines(p poppler.Layout) []poppler.TextLine {
 		// is what keeps a title set in eighteen point from being cut in half
 		// at the gutter: its word spaces are wide, and next to the page's
 		// body spacing they look like the step across a column.
+		//
+		// A quarter of the way up its gaps and not the middle of them,
+		// because the row that most needs cutting is the one that already
+		// runs across every column of the page, and the gaps in that row are
+		// three columns' worth of justification plus the two gutter steps
+		// themselves. The middle of that mixture is wider than a word space
+		// and on the last body row of Amdahl's first page it came out at
+		// eight points against a five point page, which lifted the threshold
+		// just over the twelve point gutter and published three columns
+		// interleaved in one line. A title has one spacing all the way
+		// across, so a quarter of the way up its gaps is the same number as
+		// the middle of them and it is protected either way.
 		gap := page
 		if len(l.Words) > 4 {
-			gap = medianWordGap([]poppler.TextLine{l})
+			gap = wordGap([]poppler.TextLine{l}, lowGaps)
 		}
 		for _, piece := range cut(l, channels, spanGap*gap) {
 			if crosses(piece.Box, cuts) {
@@ -407,7 +419,10 @@ func crosses(b poppler.Box, cuts []float64) bool {
 
 // medianWordGap is the usual distance between two words of this page, which
 // is the unit a gutter crossing is measured in.
-func medianWordGap(lines []poppler.TextLine) float64 {
+func medianWordGap(lines []poppler.TextLine) float64 { return wordGap(lines, 0.5) }
+
+// wordGap is a quantile of the distance between two words.
+func wordGap(lines []poppler.TextLine, q float64) float64 {
 	var gaps []float64
 	for _, l := range lines {
 		for i := 1; i < len(l.Words); i++ {
@@ -416,11 +431,7 @@ func medianWordGap(lines []poppler.TextLine) float64 {
 			}
 		}
 	}
-	if len(gaps) == 0 {
-		return 0
-	}
-	sort.Float64s(gaps)
-	return gaps[len(gaps)/2]
+	return quantile(gaps, q)
 }
 
 // rows groups words into the lines they were set on.

@@ -253,3 +253,66 @@ func TestAMarginalNoteIsNotAColumn(t *testing.T) {
 		t.Errorf("read a marginal note as a column: gutters %v", got)
 	}
 }
+
+// spaced sets a run of one repeated word at one spacing. A column is built
+// this way rather than with put so that each column of the page can be set at
+// its own spacing, which is what justified text does and what the test below
+// is about.
+func spaced(x, y, space float64, n int, word string) []poppler.Word {
+	out := make([]poppler.Word, n)
+	for i := range out {
+		out[i] = poppler.Word{
+			Box:  poppler.Box{XMin: x, YMin: y, XMax: x + float64(len(word))*charWidth, YMax: y + fontSize},
+			Text: word,
+		}
+		x = out[i].XMax + space
+	}
+	return out
+}
+
+// justified is a three column page whose columns are set at three different
+// spacings, with every row arriving as one text line the way pdftotext hands
+// one over. The spacings are not decoration: the middle column is set tight
+// and the outer two loose, so the middle of the gaps in a row that runs
+// across all three is wider than a word space and close to the gutter.
+func justified() poppler.Layout {
+	var lines []poppler.TextLine
+	for r := 0; r < 6; r++ {
+		y := 100 + float64(r)*linePitch
+		var ws []poppler.Word
+		ws = append(ws, spaced(44, y, 11, 5, "west")...)
+		ws = append(ws, spaced(203, y, 4, 5, "core")...)
+		ws = append(ws, spaced(334, y, 11, 5, "east")...)
+		l := poppler.TextLine{Box: ws[0].Box, Words: ws}
+		for _, w := range ws[1:] {
+			l.Box = union(l.Box, w.Box)
+		}
+		lines = append(lines, l)
+	}
+	return page(1, lines)
+}
+
+func TestARowRunningAcrossThreeColumnsIsCutAtEveryGutter(t *testing.T) {
+	p := justified()
+	cuts := Gutters(p)
+	if len(cuts) != 2 {
+		t.Fatalf("found %d gutters on a three column page, want 2: %v", len(cuts), cuts)
+	}
+	got := Lines(p)
+	if len(got) != 18 {
+		t.Fatalf("read %d lines from six rows of three columns, want 18:\n%q", len(got), texts(got))
+	}
+	for _, l := range got {
+		if crosses(l.Box, cuts) {
+			t.Errorf("a line still runs across a gutter: %q", l.Text())
+		}
+	}
+	// And in reading order: the whole of one column before the next.
+	for i, l := range got {
+		want := []string{"west", "core", "east"}[i/6]
+		if !strings.Contains(l.Text(), want) {
+			t.Fatalf("line %d is %q where the %s column should be, and the columns are interleaved:\n%q",
+				i, l.Text(), want, texts(got))
+		}
+	}
+}
