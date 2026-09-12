@@ -494,3 +494,82 @@ func TestALaterStartStillHasToExplainThreeSections(t *testing.T) {
 		t.Errorf("the paper numbers its sections %q, want none", s)
 	}
 }
+
+// A vision model writes the title of the paper at one hash and every section
+// of it at two, so two hashes is a section here and not a subsection. Read
+// the other way, the acknowledgements and the references end up inside the
+// conclusion, which is where the GAN paper lost both of its last two files.
+func TestASectionWrittenUnderTheTitleIsStillASection(t *testing.T) {
+	_, hs := Headings([]string{
+		"# A Paper About Something", prose,
+		"## Abstract", prose,
+		"## 1 Introduction", prose,
+		"## 2 Background", prose,
+		"## Acknowledgments", prose,
+		"## References", prose,
+	})
+	if len(hs) != 6 {
+		t.Fatalf("found %d headings, want 6: %v", len(hs), titles(hs))
+	}
+	for _, h := range hs {
+		if h.Level != 1 {
+			t.Errorf("%q came back at level %d, want 1", h.Title, h.Level)
+		}
+	}
+}
+
+// The depth is read off the document and not assumed, so a paper whose
+// sections are at one hash still has its subsections inside them.
+func TestASubsectionUnderASectionAtOneHashStaysASubsection(t *testing.T) {
+	_, hs := Headings([]string{
+		"# 1 Introduction", prose,
+		"# 2 Background", prose,
+		"## Notation", prose,
+		"# References", prose,
+	})
+	want := []int{1, 1, 2, 1}
+	if len(hs) != len(want) {
+		t.Fatalf("found %d headings, want %d: %v", len(hs), len(want), titles(hs))
+	}
+	for i, h := range hs {
+		if h.Level != want[i] {
+			t.Errorf("%q came back at level %d, want %d", h.Title, h.Level, want[i])
+		}
+	}
+}
+
+// An unnumbered heading deeper than a section is inside the section it is
+// written in, and does not become a section of its own.
+func TestAnUnnumberedHeadingDeeperThanASectionStaysInside(t *testing.T) {
+	_, hs := Headings([]string{
+		"# A Paper About Something", prose,
+		"## 1 Introduction", prose,
+		"### The Loss Function", prose,
+		"## 2 Background", prose,
+		"## References", prose,
+	})
+	if len(hs) != 5 {
+		t.Fatalf("found %d headings, want 5: %v", len(hs), titles(hs))
+	}
+	if hs[2].Title != "The Loss Function" {
+		t.Fatalf("the third heading is %q", hs[2].Title)
+	}
+	if hs[2].Level == 1 {
+		t.Error("the heading under section 1 came back as a section of its own")
+	}
+	if hs[4].Level != 1 {
+		t.Errorf("References came back at level %d, want 1", hs[4].Level)
+	}
+}
+
+// A document with no heading used twice has nothing to count, so the
+// shallowest is the section. A paper of one section is the case.
+func TestOneSectionIsStillASection(t *testing.T) {
+	_, hs := Headings([]string{"## References", prose})
+	if len(hs) != 1 {
+		t.Fatalf("found %d headings, want 1: %v", len(hs), titles(hs))
+	}
+	if hs[0].Level != 1 {
+		t.Errorf("the only heading came back at level %d, want 1", hs[0].Level)
+	}
+}

@@ -352,6 +352,7 @@ func chainFrom(s Scheme, paragraphs []string, start int) []Heading {
 // are the same thing.
 func Headings(paragraphs []string) (Scheme, []Heading) {
 	s := DetectScheme(paragraphs)
+	top := topLevel(paragraphs)
 	found := map[int]Heading{}
 	for _, h := range chain(s, paragraphs) {
 		found[h.Index] = h
@@ -365,7 +366,7 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 		// said so. An unnumbered heading in the middle of a numbered paper
 		// is normally the acknowledgements, and the numbered pass above
 		// skips it by design.
-		if h, ok := markedHeading(s, i, raw); ok {
+		if h, ok := markedHeading(s, top, i, raw); ok {
 			found[i] = h
 			continue
 		}
@@ -393,6 +394,47 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 	return s, out
 }
 
+// topLevel is the depth of hashes this document writes a top level section
+// at, which is not always one.
+//
+// A vision model transcribing a page writes the title of the paper as a
+// level one heading, because that is what it is on the page, and then every
+// section of the paper a level under it. So "## Acknowledgments" is a
+// section of the paper and not a subsection of anything, and reading its two
+// hashes as level two puts the acknowledgements and the references inside
+// the conclusion. The GAN paper lost both files that way.
+//
+// The depth is read off the document rather than assumed, because the other
+// half of the corpus does write its sections at one hash. What gives it away
+// is repetition: a paper has one title and eight sections, so the shallowest
+// depth two headings share is the depth of a section, and a depth used once
+// is a title. A document with no depth used twice has nothing to go on and
+// gets its shallowest, which for a paper of one section is that section.
+func topLevel(paragraphs []string) int {
+	count := map[int]int{}
+	for _, raw := range paragraphs {
+		if level, _, ok := atxParts(raw); ok {
+			count[level]++
+		}
+	}
+	top, shallowest := 0, 0
+	for level, n := range count {
+		if shallowest == 0 || level < shallowest {
+			shallowest = level
+		}
+		if n >= 2 && (top == 0 || level < top) {
+			top = level
+		}
+	}
+	if top == 0 {
+		top = shallowest
+	}
+	if top == 0 {
+		top = 1
+	}
+	return top
+}
+
 // markedHeading reads a heading the extractor wrote.
 //
 // The level is the one the extractor gave unless the paper's own numbering
@@ -401,7 +443,12 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 // number settles. The title is canonicalised the same way an unnumbered
 // heading found by name is, so that Acknowledgements files under
 // Acknowledgments however the paper spelled it and however it was found.
-func markedHeading(s Scheme, i int, raw string) (Heading, bool) {
+//
+// An unnumbered heading is level one if the extractor wrote it no deeper
+// than top, which is where this document puts a section. A heading deeper
+// than that keeps its depth and stays inside the section it is in, which is
+// what a "### Notation" under section 2 is.
+func markedHeading(s Scheme, top, i int, raw string) (Heading, bool) {
 	level, text, ok := atxParts(raw)
 	if !ok {
 		return Heading{}, false
@@ -410,6 +457,9 @@ func markedHeading(s Scheme, i int, raw string) (Heading, bool) {
 	if num, parts, title, numbered := parseNumber(s, text); numbered {
 		h.Number, h.Level, h.Title = num, len(parts), strings.TrimRight(title, ".")
 		return h, true
+	}
+	if level <= top {
+		h.Level = 1
 	}
 	if title, named := named(text); named {
 		h.Title = title
