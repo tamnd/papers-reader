@@ -1,6 +1,9 @@
 package extract
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // edgeLines is how far in from the top and the bottom of a page a line has
 // to be before this will count it as a candidate for the running head.
@@ -91,6 +94,8 @@ func peel(lines []string, end func([]string) int, repeated func(string) bool) []
 		}
 		line := strings.TrimSpace(lines[at])
 		switch {
+		case delimiter(line), equationNumber.MatchString(line):
+			return lines
 		// A bare number on its own line at the edge of a page is a page
 		// number whether or not it repeats, and it never repeats, because it
 		// counts. This is the same call Furniture.Is makes.
@@ -104,6 +109,51 @@ func peel(lines []string, end func([]string) int, repeated func(string) bool) []
 		lines = append(lines[:at], lines[at+1:]...)
 	}
 }
+
+// delimiter says whether a line is the edge of a block rather than a line of
+// the page, and nothing here ever takes one off.
+//
+// A `$$` is the one that mattered. A page that ends inside a display equation
+// ends on its closing delimiter, and the same delimiter is at the edge of
+// enough pages of a paper full of mathematics for repeated to call it a
+// running head. Taking it off does not lose a line, it leaves a display open,
+// and the next thing to read the document runs the rest of the paper into the
+// equation. Over the corpus this happened to five papers of sixty seven and
+// broke the mathematics in all five: Cooley, Spanner, Cortes, Ford and the
+// GAN paper.
+//
+// A fence has never been seen to do it and is here for the same reason, which
+// is that the cost is the whole of the rest of the file either way.
+func delimiter(line string) bool {
+	if strings.HasPrefix(line, "$$") {
+		return true
+	}
+	for _, c := range "`~" {
+		if strings.HasPrefix(line, strings.Repeat(string(c), 3)) {
+			return true
+		}
+	}
+	return false
+}
+
+// equationNumber is a number in brackets on a line of its own, which is how a
+// paper numbers a displayed equation and is not how a journal numbers a page.
+//
+// folio allows the brackets because on the native path a line is only offered
+// to it once the coordinates say it is in the margin, and there "(4)" in the
+// margin is a page number. Here there are no coordinates, only the order of
+// the lines, so a bracketed number at the bottom of a page is whatever it
+// most often is, and over the corpus exactly one page ends in one: page 4 of
+// the GAN paper, where it numbers equation 4 and where "Eq. 4" three
+// paragraphs later is what points at it. Eleven pages end in a bare number
+// and all eleven are folios.
+//
+// It stops the peeling rather than being skipped by the folio test, because
+// the other test would take it anyway. fold writes every number as one token
+// so that a head reading "308 IEEE Transactions" is the same line as "309
+// IEEE Transactions", and that makes "(1)" through "(6)" one line repeated on
+// six pages, which is what repeated is looking for.
+var equationNumber = regexp.MustCompile(`^\(\s*[0-9]{1,4}\s*\)$`)
 
 // head is the lines at the top of a page that the furniture could be on,
 // and foot is the ones at the bottom. Blank lines are passed over, because

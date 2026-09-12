@@ -1,6 +1,10 @@
 package extract
 
-import "testing"
+import (
+	"strconv"
+	"strings"
+	"testing"
+)
 
 // All the page text in this file is typed here. None of it is copied from a
 // paper, the same as everywhere else in these tests.
@@ -211,3 +215,73 @@ func TestARomanFolioIsAFolio(t *testing.T) {
 	wantPage(t, got, 1, "Body one.\n")
 	wantPage(t, got, 3, "Body three.\n")
 }
+
+// The bug this was written for. A page that ends inside a display equation
+// ends on its closing delimiter, and on a paper full of mathematics the same
+// delimiter is at the edge of enough pages for repeated to call it a running
+// head. Taking it off leaves the display open and the next thing to read the
+// document runs the rest of the paper into the equation.
+func TestADisplayDelimiterIsNeverFurniture(t *testing.T) {
+	pages := map[int]string{}
+	for i := 1; i <= 6; i++ {
+		pages[i] = "The Journal of Results\n\n" +
+			"A paragraph of the body of the paper.\n\n" +
+			"$$\nx = y + " + string(rune('0'+i)) + "\n$$\n"
+	}
+	out := Undress(pages)
+	for i, text := range out {
+		if n := strings.Count(text, "$$"); n != 2 {
+			t.Errorf("page %d has %d display delimiters, want 2:\n%s", i, n, text)
+		}
+		if strings.Contains(text, "Journal") {
+			t.Errorf("page %d kept its running head:\n%s", i, text)
+		}
+	}
+}
+
+// A fence at the edge of a page is the same problem and costs the same.
+func TestACodeFenceIsNeverFurniture(t *testing.T) {
+	pages := map[int]string{}
+	for i := 1; i <= 6; i++ {
+		pages[i] = "```go\nfunc main() {}\n```\n\nA paragraph of the body of the paper.\n"
+	}
+	for i, text := range Undress(pages) {
+		if n := strings.Count(text, "```"); n != 2 {
+			t.Errorf("page %d has %d fence markers, want 2:\n%s", i, n, text)
+		}
+	}
+}
+
+// A number in brackets at the bottom of a page numbers the equation above it.
+// Page 4 of the GAN paper is the one page of the corpus that ends in one, and
+// "Eq. 4" three paragraphs later is what points at it.
+func TestAnEquationNumberIsNotAFolio(t *testing.T) {
+	pages := map[int]string{}
+	for i := 1; i <= 6; i++ {
+		pages[i] = "A paragraph about " + topics[i-1] + " and what it is for.\n\n(" + strconv.Itoa(i) + ")\n"
+	}
+	for i, text := range Undress(pages) {
+		if !strings.Contains(text, "(") {
+			t.Errorf("page %d lost its equation number:\n%s", i, text)
+		}
+	}
+}
+
+// The other half of the same call, so that changing one is a decision about
+// both. A bare number at the bottom of a page is still a folio and still goes.
+func TestABareNumberIsStillAFolio(t *testing.T) {
+	pages := map[int]string{}
+	for i := 1; i <= 6; i++ {
+		pages[i] = "A paragraph about " + topics[i-1] + " and what it is for.\n\n" + strconv.Itoa(307+i) + "\n"
+	}
+	for i, text := range Undress(pages) {
+		if strings.Contains(text, strconv.Itoa(307+i)) {
+			t.Errorf("page %d kept its folio:\n%s", i, text)
+		}
+	}
+}
+
+// A body line to a page, each saying something the others do not. fold turns
+// every number into the same token, so pages that differ only by a page
+// number are one repeated line as far as Undress is concerned.
+var topics = []string{"sorting", "hashing", "routing", "caching", "locking", "logging"}
