@@ -38,19 +38,7 @@ func Find(p poppler.Layout, f *extract.Furniture, frame Frame) []Candidate {
 	if pitch <= 0 {
 		return nil
 	}
-	// The top and the bottom of the paper's text block, so that a figure at
-	// the head of a page and one at its foot are found too. A page whose
-	// text starts an inch below where the paper's normally does has
-	// something in that inch.
-	top, bottom := frame.Top, frame.Bottom
-	if frame.Empty() {
-		top, bottom = lines[0].YMin, lines[0].YMax
-		for _, l := range lines {
-			top = min(top, l.YMin)
-			bottom = max(bottom, l.YMax)
-		}
-	}
-
+	top, bottom := block(lines, frame)
 	head, foot := clear(p, f, top, bottom)
 
 	// Per column, because a figure that takes one column of a two column
@@ -61,6 +49,27 @@ func Find(p poppler.Layout, f *extract.Furniture, frame Frame) []Candidate {
 		out = append(out, inColumn(p, lines, cuts, col, pitch, top, bottom, head, foot)...)
 	}
 	return keep(merge(out, pitch), p)
+}
+
+// block is the top and the bottom of the paper's text block on this page, so
+// that a figure at the head of a page and one at its foot are found too. A
+// page whose text starts an inch below where the paper's normally does has
+// something in that inch.
+//
+// The frame is where the paper puts its type across the whole run, and it is
+// the better answer where there is one. Falling back to this page's own
+// lines is right for a paper with no consistent frame and wrong for a page
+// that opens with a figure, which is why the frame is looked at first.
+func block(lines []poppler.TextLine, frame Frame) (top, bottom float64) {
+	if !frame.Empty() {
+		return frame.Top, frame.Bottom
+	}
+	top, bottom = lines[0].YMin, lines[0].YMax
+	for _, l := range lines {
+		top = min(top, l.YMin)
+		bottom = max(bottom, l.YMax)
+	}
+	return top, bottom
 }
 
 // clear is how far a band at the head or the foot of a page may run past the

@@ -147,6 +147,16 @@ func breaks(prev, l poppler.TextLine, pitch float64, cuts []float64) bool {
 // A pair that runs backwards or halfway down the page is the jump from the
 // foot of one column to the head of the next and is not a line of text.
 //
+// A pair that barely moves at all is one row of the page that came back in
+// pieces. pdftotext splits a row wherever the pieces are set at different
+// sizes, which is what a figure drawn out of type does to every row of
+// itself, and the tops of those pieces then sit a thousandth of a point
+// apart. Counted as line pitches they are most of the page: the appendix
+// pages of the Transformer paper measure a pitch of two thousandths of a
+// point and then read each line of the figure's caption as a paragraph of
+// its own, which truncates the caption at its first line. So a step that
+// covers less of a line than minStep is not a step to the next line.
+//
 // A page with only a gap or two on it has no median worth the name: one gap
 // is always its own median, so a page of two paragraphs set well apart would
 // measure its own paragraph break as the normal pitch and come out as one
@@ -163,7 +173,9 @@ func medianPitch(lines []poppler.TextLine) float64 {
 		if i == 0 {
 			continue
 		}
-		if d := l.YMin - lines[i-1].YMin; d > 0 && d < 60 {
+		prev := lines[i-1]
+		d := l.YMin - prev.YMin
+		if d > 0 && d < 60 && d >= minStep*min(prev.Height(), l.Height()) {
 			pitches = append(pitches, d)
 		}
 	}
@@ -174,6 +186,13 @@ func medianPitch(lines []poppler.TextLine) float64 {
 	}
 	return pitch
 }
+
+// minStep is how far down the page a pair of lines has to step before the
+// step counts as a line pitch, as a share of the shorter of the two. Half,
+// because nothing is set tighter than solid and a pair of lines set solid
+// steps by the full height of a line. Anything under that is two pieces of
+// one row and the distance between them is rounding.
+const minStep = 0.5
 
 func median(v []float64) float64 {
 	if len(v) == 0 {

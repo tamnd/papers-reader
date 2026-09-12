@@ -82,13 +82,18 @@ func (r *Run) Do(ctx context.Context, pages []poppler.Layout) (*Result, error) {
 }
 
 func (r *Run) page(ctx context.Context, page poppler.Layout, f *extract.Furniture, frame Frame, images []poppler.Image, out *Result) error {
-	regions := Find(page, f, frame)
-	if len(regions) == 0 {
-		return nil
-	}
 	text := extract.Read(page, f)
+	caps := Captions(text)
 	pitch := pitchOf(f.Lines(page))
-	for _, found := range Pair(regions, Captions(text), pitch) {
+
+	// Two passes, because a figure can be found two ways. Find looks for the
+	// hole a picture leaves in a column, and Anchor grows a region up from a
+	// caption whose figure left no hole because it is drawn with type. The
+	// second runs over what the first came back with, so it knows which
+	// captions are already spoken for.
+	regions := Anchor(page, f, frame, caps, Pair(Find(page, f, frame), caps, pitch))
+
+	for _, found := range regions {
 		switch {
 		case found.Caption == nil:
 			// Far more often a decorative rule, a logo, a signature block

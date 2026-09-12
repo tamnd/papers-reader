@@ -57,6 +57,55 @@ func TestExtraLeadingStartsANewParagraph(t *testing.T) {
 	}
 }
 
+// pieces is one row of a figure that is drawn out of type. pdftotext gives
+// back a row like this in as many lines as there are sizes set in it, all of
+// them at the same height on the page, and the tops of those lines then
+// differ by a rounding error rather than by a line.
+//
+// The sizes go up by more than double each time so that the pieces stay
+// separate lines: a piece whose middle falls inside the piece before it is
+// the same row as far as the row builder is concerned, which is the right
+// answer for a superscript and the wrong one here.
+func pieces(y float64) []poppler.TextLine {
+	var out []poppler.TextLine
+	for i, h := range []float64{4, 9, 19} {
+		top := y + float64(i)*0.002
+		box := poppler.Box{XMin: 60, YMin: top, XMax: 120, YMax: top + h}
+		out = append(out, poppler.TextLine{
+			Box:   box,
+			Words: []poppler.Word{{Box: box, Text: "piece"}},
+		})
+	}
+	return out
+}
+
+// A page that is mostly picture still reads its prose. Before this the pitch
+// came off the pieces of the picture rather than off the text, every real
+// line of text looked like a jump, and a caption came out as one paragraph
+// per line with everything after the first line lost to whoever reads the
+// first paragraph and stops.
+func TestARowThatCameBackInPiecesIsNotALinePitch(t *testing.T) {
+	var lines []poppler.TextLine
+	for _, y := range []float64{100, 240, 380} {
+		lines = append(lines, pieces(y)...)
+	}
+	lines = append(lines, column(60, 520,
+		"Figure 1: a caption of three lines, of",
+		"which the second and the third are the",
+		"ones a pitch read off a picture loses.")...)
+
+	p := read(lines)
+	var caption string
+	for _, par := range p.Paragraphs {
+		if strings.HasPrefix(par.Text, "Figure 1:") {
+			caption = par.Text
+		}
+	}
+	if !strings.Contains(caption, "a picture loses.") {
+		t.Errorf("the caption reads %q, want all three of its lines", caption)
+	}
+}
+
 func TestAParagraphThatChangesColumnIsBrokenAndSaysSo(t *testing.T) {
 	left := body(60, 100, 16, "a line at the foot of the left column")
 	right := body(330, 100, 16, "a line at the head of the right column")
