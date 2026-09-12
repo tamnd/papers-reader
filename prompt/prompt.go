@@ -58,6 +58,8 @@ const (
 	OCR = "ocr_paper"
 	// GlossaryTerm asks for the standing rendering of a batch of terms.
 	GlossaryTerm = "glossary_term"
+	// Translate asks for one chunk of a body in one other language.
+	Translate = "translate"
 )
 
 // Lang is the rules for writing one language: its terminology, its

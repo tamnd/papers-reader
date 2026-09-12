@@ -16,6 +16,7 @@ package work
 
 import (
 	"sync"
+	"time"
 
 	"github.com/tamnd/llm"
 	"github.com/tamnd/llm/exec"
@@ -108,3 +109,17 @@ func wire(p *route.Pool) *route.Pool {
 	p.Build = exec.Build
 	return p
 }
+
+// RunID names one run of a stage, so that the files it wrote can be found
+// again as a group.
+//
+// It goes in the front matter of every translated file. When a run turns out
+// to have been made against a prompt that was wrong or a glossary entry that
+// was wrong, what somebody needs is the list of files that run wrote, and a
+// timestamp is the only identifier that is the same for every file of one
+// run and different from every other run's.
+//
+// To the second and in UTC, because two runs a second apart are one run with
+// a restart in the middle, and a local time in a committed file is a fact
+// about the machine that wrote it rather than about the corpus.
+func RunID() string { return time.Now().UTC().Format("20060102T150405Z") }

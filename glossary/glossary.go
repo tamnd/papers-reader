@@ -1,6 +1,8 @@
 package glossary
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sort"
@@ -166,6 +168,34 @@ func (g *Glossary) For(f corpus.Field) []Term {
 		return out[i].En < out[j].En
 	})
 	return out
+}
+
+// TermsSHA hashes the renderings a paper in one field would be translated
+// against, in the order the prompt prints them.
+//
+// It goes in the front matter beside the glossary version, and it is the
+// finer of the two. The version says the glossary moved; this says whether
+// it moved under this paper's feet. A corpus of four hundred translated
+// files where one rendering changed has a handful of files that need doing
+// again, and this is what finds them. Without it every version bump queues
+// the lot, and a glossary that is edited weekly would never let the corpus
+// be finished.
+//
+// The field is part of it because the field decides which terms a paper is
+// offered, so two papers under one version can honestly hash differently.
+func TermsSHA(g *Glossary, f corpus.Field, l corpus.Lang) string {
+	h := sha256.New()
+	for _, t := range g.For(f) {
+		as, ok := t.Rendering(l)
+		if !ok {
+			continue
+		}
+		// A separator that cannot appear in either half, so that a term
+		// ending in a space and the rendering after it cannot hash the same
+		// as the term without it.
+		fmt.Fprintf(h, "%s\x00%s\x00", t.En, as)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Coverage is how many terms have a rendering in a language, out of how

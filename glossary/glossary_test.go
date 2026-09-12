@@ -121,3 +121,35 @@ terms:
 		t.Errorf("Has does not match the way the extractor counts")
 	}
 }
+
+func TestTheTermsHashTracksWhatAPaperWasTranslatedAgainst(t *testing.T) {
+	// The version says the glossary moved. This says whether it moved under
+	// this paper's feet, and without it every version bump queues the whole
+	// corpus for translating again.
+	g := &Glossary{Version: 1, Terms: []Term{
+		{En: "attention", Vi: "cơ chế chú ý", Field: corpus.AIML},
+		{En: "reduction", Vi: "phép rút gọn", Field: corpus.Languages},
+		{En: "graph", Vi: "đồ thị"},
+	}}
+	ml := TermsSHA(g, corpus.AIML, corpus.VI)
+
+	if TermsSHA(g, corpus.Languages, corpus.VI) == ml {
+		t.Error("two fields that are offered different terms hash the same")
+	}
+	if TermsSHA(g, corpus.AIML, corpus.ZH) == ml {
+		t.Error("two languages hash the same, and one of them has no renderings at all")
+	}
+
+	g.Version = 2
+	if TermsSHA(g, corpus.AIML, corpus.VI) != ml {
+		t.Error("a version bump that changed no rendering moved the hash")
+	}
+	g.Terms[1].Vi = "phép quy giản"
+	if TermsSHA(g, corpus.AIML, corpus.VI) != ml {
+		t.Error("a rendering in another field moved this field's hash")
+	}
+	g.Terms[2].Vi = "biểu đồ"
+	if TermsSHA(g, corpus.AIML, corpus.VI) == ml {
+		t.Error("a global term changed and the hash stood still")
+	}
+}

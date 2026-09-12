@@ -23,4 +23,17 @@
 // budget on its own goes alone rather than being cut in half. Over the
 // hundred and forty nine English files in the corpus that is a hundred and
 // eighty two chunks, a median of 1,771 characters, and none over budget.
+//
+// Translator.Body is the loop over the chunks. It refuses an answer three
+// ways: on a span that differs, on a block count that differs, and on an
+// answer that is the English handed back. The second and third are there
+// because the first cannot see them. A model that opens with "Here is the
+// Vietnamese translation:" has added no span, and a model that returns the
+// source unchanged has spans that are, of course, identical.
+//
+// The measurement, on the first paper through it: nine sections of
+// Generative Adversarial Nets into Vietnamese, eleven chunks, eleven asks,
+// nothing refused, 32,931 input and 6,682 output tokens, and twenty four
+// minutes on the subscription fleet. The mathematics of section 4 came back
+// byte for byte including the two display equations of Algorithm 1.
 package translate

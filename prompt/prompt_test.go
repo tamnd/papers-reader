@@ -53,6 +53,7 @@ func TestTheReadingPromptIsNamedCorrectly(t *testing.T) {
 func TestEveryPlaceholderIsOneSomebodyFills(t *testing.T) {
 	want := map[string][]string{
 		GlossaryTerm: {"LANGUAGE", "RULES", "TERMS"},
+		Translate:    {"ABSTRACT", "BODY", "FIELD", "GLOSSARY", "LANGUAGE", "NOTE", "RULES", "SOURCE"},
 	}
 	all, err := All()
 	if err != nil {
