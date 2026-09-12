@@ -33,6 +33,7 @@ func runExtract(args []string) error {
 	routes := fs.String("routes", "", "read this route file rather than the usual one")
 	pages := fs.String("pages", "", "extract these pages only, as N or N-M")
 	again := fs.Bool("again", false, "extract pages that are already done too")
+	retidy := fs.Bool("retidy", false, "run the tidier over the pages on disk and ask no model")
 	dry := fs.Bool("dry-run", false, "print what would be extracted and write nothing")
 	long := fs.Bool("v", false, "print every page and every refusal")
 	fs.Usage = func() {
@@ -82,6 +83,17 @@ left alone.
 A page that is already extracted is left alone, so running this twice costs
 one read of the file and no writes. Pass --again to do the work over.
 
+--retidy rewrites the pages on disk through the tidier and asks no model at
+all. It is for the day the tidier learns something new: when Untable was
+added, four pages of the Transformer paper were already on disk with their
+tables in HTML, and the choice was between re-reading them on a vision
+model and running the new step over the text that was already correct.
+Re-reading costs minutes of a rationed reader and comes back different, so
+a page that was right can come back wrong. Every step in Tidy is a
+translation between two spellings and none of them changes a page that is
+already in the second spelling, so running it again over a tidy page writes
+nothing.
+
 A restricted paper is read as far as its third page and no further. Nothing
 but its front matter and a short abstract can ever be published, so the
 rest of it would be work done to fill a directory nobody may read.
@@ -126,6 +138,10 @@ papers doctor to see what is installed.
 	todo, err := choosePapers(manifest, *ids, *field)
 	if err != nil {
 		return err
+	}
+
+	if *retidy {
+		return retidyPages(c, todo, first, last, *dry, *long)
 	}
 
 	// One renderer for the whole run. Building it reads and hashes the KaTeX
@@ -282,6 +298,65 @@ func seed(store extract.Store, want map[int]bool, checker *extract.Checker, foli
 			folios.Add(page, done)
 		}
 	}
+}
+
+// retidyPages runs the tidier over the pages that are already on disk.
+//
+// The acceptance rules are not run again and neither is anything else. A page
+// on disk has already passed them, and Tidy takes wrapping off rather than
+// putting anything in, so a page that passed before passes after. Running the
+// checker here would also need the paper's own sample to run rule A5 against,
+// and the sample would be half the old spelling and half the new one.
+func retidyPages(c *corpus.Corpus, todo []corpus.Paper, first, last int, dry, long bool) error {
+	var changed, same, skipped int
+	for _, p := range todo {
+		store := extract.Store{Dir: c.Work(p.ID, "pages")}
+		pages, err := store.Pages()
+		if err != nil {
+			fmt.Printf("  %-34s %v\n", p.ID, err)
+			skipped++
+			continue
+		}
+		var n int
+		for _, page := range pages {
+			if first > 0 && (page < first || page > last) {
+				continue
+			}
+			before, err := store.Read(page)
+			if err != nil {
+				fmt.Printf("  %-34s page %d: %v\n", p.ID, page, err)
+				continue
+			}
+			// Compared as the file would be written and not as Tidy
+			// returns it, because Store.Write puts the final newline on and
+			// a page whose only difference is that newline is a page this
+			// would rewrite for ever.
+			after := extract.Tidy(before)
+			if after+"\n" == before {
+				same++
+				continue
+			}
+			n++
+			if long {
+				fmt.Printf("  %-34s page %d: %d characters became %d\n", p.ID, page, len(before), len(after))
+			}
+			if dry {
+				continue
+			}
+			if err := store.Write(page, after); err != nil {
+				return fmt.Errorf("%s page %d: %w", p.ID, page, err)
+			}
+		}
+		changed += n
+		if n > 0 || long {
+			fmt.Printf("  %-34s %d pages rewritten\n", p.ID, n)
+		}
+	}
+	if dry {
+		fmt.Println("dry run, nothing written")
+	}
+	fmt.Printf("%d pages rewritten, %d already tidy, %d papers skipped\n", changed, same, skipped)
+	return nil
 }
 
 func (e *extraction) do(ctx context.Context) (count, error) {

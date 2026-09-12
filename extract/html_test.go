@@ -208,3 +208,67 @@ func TestTidyConvertsTablesAndThenTheMathematics(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// A cell that is bare TeX gets dollars round it. The whole reason for
+// converting these tables is that TeX the splitter cannot see is mathematics
+// the audit cannot check, and leaving a cell like this would be exactly that
+// with the angle brackets taken off.
+func TestBareTeXInACellGetsDollars(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>Model</th><th>Cost</th></tr>\n" +
+		"<tr><td>base</td><td>1.0 \\cdot 10^{20}</td></tr>\n" +
+		"<tr><td>large</td><td><b>3.3 \\cdot 10^{18}</b></td></tr>\n" +
+		"</table>"
+	want := "| Model | Cost |\n| --- | --- |\n" +
+		"| base | $1.0 \\cdot 10^{20}$ |\n" +
+		"| large | **$3.3 \\cdot 10^{18}$** |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A cell the reader already marked up is left alone. Guessing at the rest of
+// it would put dollars inside dollars.
+func TestACellThatAlreadyHasDollarsIsLeftAsItIs(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>Layer</th><th>Complexity</th></tr>\n" +
+		"<tr><td>self-attention</td><td>$O(n^2 \\cdot d)$</td></tr>\n" +
+		"</table>"
+	want := "| Layer | Complexity |\n| --- | --- |\n| self-attention | $O(n^2 \\cdot d)$ |"
+	if got := Untable(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// The rectangle test, and the reason the whole thing says no more often than
+// it looks like it should.
+//
+// A reader that writes spans writes them from looking at a picture. This is
+// the shape that came back for the Transformer paper's third table: a
+// rowspan over one more row than it claims, so the rows come out at different
+// widths and every number after it is under the wrong heading. A table whose
+// numbers are under the wrong headings is worse than no table, because it
+// reads like a table.
+func TestATableWhoseSpansDoNotAddUpIsLeftAlone(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>Group</th><th>N</th><th>Score</th></tr>\n" +
+		`<tr><td rowspan="2">(A)</td><td>1</td><td>24.9</td></tr>` + "\n" +
+		"<tr><td>2</td><td>25.5</td></tr>\n" +
+		"<tr><td>4</td><td>25.8</td></tr>\n" +
+		"</table>"
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it left alone", got)
+	}
+}
+
+// A span that runs off the bottom of the table is the same failure seen from
+// the other end.
+func TestATableWithASpanPastItsLastRowIsLeftAlone(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>Group</th><th>Score</th></tr>\n" +
+		`<tr><td rowspan="4">(A)</td><td>24.9</td></tr>` + "\n" +
+		"</table>"
+	if got := Untable(in); got != in {
+		t.Errorf("got:\n%s\nwant it left alone", got)
+	}
+}

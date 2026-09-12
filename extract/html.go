@@ -148,6 +148,33 @@ func pipeTable(html string) (string, bool) {
 		}
 		out = append(out, row)
 	}
+	// Every row the same width, and no span left hanging over the end of the
+	// table. This is the rectangle test and it is the whole of what keeps a
+	// wrong table out of the corpus.
+	//
+	// It is not a formality. A reader that writes spans writes them from
+	// looking at a picture, and the Transformer paper's third table came back
+	// with `rowspan="4"` over a group of five rows and `colspan="7"` used to
+	// mean seven empty columns rather than one cell seven wide. Expanded as
+	// written, the numbers land under the wrong headings, and a table whose
+	// numbers are under the wrong headings is worse than no table at all
+	// because it reads like a table. The same paper's second table uses both
+	// kinds of span correctly and converts.
+	//
+	// grid.Pipe pads a short row, which is right for a cell the paper left
+	// empty and wrong here: a ragged row out of a span arithmetic that does
+	// not add up is a row this function read wrong, not a row the paper left
+	// short.
+	for _, row := range out {
+		if len(row) != len(out[0]) {
+			return "", false
+		}
+	}
+	for _, n := range held {
+		if n > 0 {
+			return "", false
+		}
+	}
 	return grid.Pipe(out), true
 }
 
@@ -180,6 +207,16 @@ var (
 	// leave it as a tag that the renderer will not render and the M rules
 	// cannot see.
 	script = regexp.MustCompile(`(?is)([\p{L}\p{N}.)\]]+)<(sub|sup)\b[^>]*>(.*?)</(?:sub|sup)\s*>`)
+	// texRun is a run of TeX with no dollars round it, which is how a reader
+	// writes a number in scientific notation inside a cell: `1.0 \cdot
+	// 10^{20}`. The whole reason for converting these tables is that TeX the
+	// splitter cannot see is mathematics the audit cannot check, and a cell
+	// left like this would be exactly that with the angle brackets taken off.
+	//
+	// It has to be a control sequence with something on both sides of it,
+	// because a lone backslash is an escape and a lone `\cdot` in a column of
+	// prose is a typo rather than a formula.
+	texRun = regexp.MustCompile(`[0-9A-Za-z.]+(?:\s*\\[a-zA-Z]+\s*[0-9A-Za-z.^_{}]+)+`)
 )
 
 // cellText turns the inside of one cell into Markdown, and says no if
@@ -196,6 +233,12 @@ func cellText(s string) (string, bool) {
 		}
 		return "$" + p[1] + mark + "{" + strings.TrimSpace(p[3]) + "}$"
 	})
+	// Only a cell with no dollars anywhere in it. A cell that has some is a
+	// cell where the reader already marked the mathematics, and guessing at
+	// the rest of it would put dollars inside dollars.
+	if !strings.Contains(s, "$") {
+		s = texRun.ReplaceAllString(s, "$$$0$$")
+	}
 	// A pipe inside a cell would end the cell, and grid.Pipe escapes it on
 	// the way out. Doing it here as well would escape the backslash.
 	s = strings.Join(strings.Fields(s), " ")

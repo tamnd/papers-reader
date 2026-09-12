@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
 )
 
@@ -95,5 +96,89 @@ func TestSeedingCountsPagesOutsideTheRange(t *testing.T) {
 	seed(s, map[int]bool{8: true, 9: true}, checker, nil)
 	if got := checker.Pages(); got != 7 {
 		t.Fatalf("seeded %d pages, want 7", got)
+	}
+}
+
+// retidyPages exists so that a page already on disk can pick up a step the
+// tidier learned after it was read, without going back to a model. The whole
+// case for it is that re-reading a page that is already right can come back
+// wrong, so these tests are about writing as little as possible.
+func TestRetidyRewritesOnlyThePagesThatChange(t *testing.T) {
+	root := t.TempDir()
+	c := &corpus.Corpus{Root: root}
+	s := extract.Store{Dir: c.Work("paper-1999-example", "pages")}
+	html := "<table>\n<tr><th>Term</th><th>Value</th></tr>\n<tr><td>a</td><td>1</td></tr>\n</table>"
+	clean := "| Term | Value |\n| --- | --- |\n| a | 1 |"
+	for n, text := range map[int]string{1: strings.TrimSpace(page(40)), 2: html, 3: strings.TrimSpace(page(40))} {
+		if err := s.Write(n, text); err != nil {
+			t.Fatal(err)
+		}
+	}
+	papers := []corpus.Paper{{ID: "paper-1999-example"}}
+	if err := retidyPages(c, papers, 0, 0, false, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Read(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != clean+"\n" {
+		t.Errorf("page 2 is:\n%s\nwant:\n%s", got, clean)
+	}
+	if got, err := s.Read(1); err != nil || got != strings.TrimSpace(page(40))+"\n" {
+		t.Errorf("page 1 was rewritten: %q", got)
+	}
+}
+
+// Every step in Tidy is a translation between two spellings, so a second run
+// over a page that is already in the second spelling writes nothing. If this
+// ever fails, a step has been added that is a repair rather than a
+// translation, and --retidy is no longer safe to run over a whole corpus.
+func TestRetidyIsIdempotent(t *testing.T) {
+	c := &corpus.Corpus{Root: t.TempDir()}
+	s := extract.Store{Dir: c.Work("paper-1999-example", "pages")}
+	body := "| Term | Value |\n| --- | --- |\n| $d_k$ | 64 |\n\n" +
+		"```c\nint main(void) { return 0; }\n```\n\nFigure.\n\n" + strings.TrimSpace(page(20))
+	if err := s.Write(1, body); err != nil {
+		t.Fatal(err)
+	}
+	papers := []corpus.Paper{{ID: "paper-1999-example"}}
+	for i := 0; i < 2; i++ {
+		if err := retidyPages(c, papers, 0, 0, false, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.Read(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != body+"\n" {
+		t.Errorf("the page changed:\n%s\nwant:\n%s", got, body)
+	}
+}
+
+func TestRetidyDryRunWritesNothing(t *testing.T) {
+	c := &corpus.Corpus{Root: t.TempDir()}
+	s := extract.Store{Dir: c.Work("paper-1999-example", "pages")}
+	html := "<table>\n<tr><th>a</th></tr>\n<tr><td>1</td></tr>\n</table>"
+	if err := s.Write(1, html); err != nil {
+		t.Fatal(err)
+	}
+	papers := []corpus.Paper{{ID: "paper-1999-example"}}
+	if err := retidyPages(c, papers, 0, 0, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Read(1); got != html+"\n" {
+		t.Errorf("a dry run wrote the page: %q", got)
+	}
+}
+
+// A paper with nothing extracted yet is skipped and not an error, because
+// --retidy over a whole corpus runs across papers at every stage.
+func TestRetidyOverAPaperWithNoPagesIsQuiet(t *testing.T) {
+	c := &corpus.Corpus{Root: t.TempDir()}
+	papers := []corpus.Paper{{ID: "paper-1999-example"}}
+	if err := retidyPages(c, papers, 0, 0, false, false); err != nil {
+		t.Fatalf("a paper with no pages returned %v", err)
 	}
 }

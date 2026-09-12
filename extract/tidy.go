@@ -25,22 +25,24 @@ import (
 // a fence costs another minute and a half of a rationed reader to be told the
 // same thing without it.
 //
-// Untable, Dollars and Unlink are the three habits that are not wrapping.
+// Dollars, Untable and Unlink are the three habits that are not wrapping.
 // They are here rather than beside the acceptance rules because all three are
 // things a reader does after it has read the page correctly, and a page
 // refused for any of them would be asked again and come back the same way.
 //
-// Untable runs first because a table written in HTML can have TeX inside its
-// cells, and Dollars should see that TeX the same way it sees the rest of the
-// page.
+// Dollars runs before Untable so that a cell already written in TeX's own
+// delimiters is in this corpus's delimiters by the time the table is read.
+// Untable puts dollars round a cell that is bare TeX, and a cell it had
+// already put dollars round is a cell it must leave alone, so the two have to
+// happen in this order and not the other one.
 func Tidy(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.TrimSpace(s)
 	s = dropPreamble(s)
 	s = dropTrailer(s)
 	s = unwrap(s)
-	s = Untable(s)
 	s = Dollars(s)
+	s = Untable(s)
 	s = Unlink(s)
 	return strings.TrimSpace(s)
 }
