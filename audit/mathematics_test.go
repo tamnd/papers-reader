@@ -331,3 +331,96 @@ func TestCodeRanges(t *testing.T) {
 		t.Errorf("codeRanges is %v, want %v", got, want)
 	}
 }
+
+// M14 is the rule for the mathematics that was not mangled but deleted. It
+// is the only rule in the group that reads a file with no math span in it
+// and has something to say about it.
+func TestM14FindsAPaperWhoseFormulasWereFlattened(t *testing.T) {
+	cases := []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{
+			"a paper with no mathematics in it",
+			"a section about naming things, which has no formulae in it at all." + pad,
+			false,
+		},
+		{
+			"a paper whose mathematics is marked up",
+			"we divide by $\\sqrt{d}$ where $d \\in \\mathbb{N}$ and the sum $\\sum_i x_i$ is bounded." + pad,
+			false,
+		},
+		{
+			// What pdftotext leaves behind: the radical, the set sign and the
+			// sum are all still on the page, and not one of them is in a span.
+			"a paper whose mathematics was flattened into the prose",
+			"we divide by √ d where d ∈ N and the sum ∑ i x i is bounded." + pad,
+			true,
+		},
+		{
+			// One glyph in a sentence about notation. A rule that failed here
+			// would be a rule people turned off.
+			"a single sign in a sentence about notation",
+			"the paper writes the empty set as ∅ throughout, and nowhere else." + pad,
+			false,
+		},
+		{
+			"two signs are still not enough to be sure",
+			"the paper writes ∅ for the empty set and ≤ for the ordering." + pad,
+			false,
+		},
+		{
+			// The characters prose has a use for. A kernel is three by three,
+			// an error bar is plus or minus, and the authors are separated by
+			// middle dots. None of that is mathematics going missing.
+			"the characters prose uses are not counted",
+			"the 3 × 3 kernel gave 92.1 ± 0.4 on the set · and ran in one hour." + pad,
+			false,
+		},
+		{
+			// A Greek letter is a word in a sentence as often as it is a
+			// variable in a formula.
+			"greek letters are not counted",
+			"the alpha release used the α parameter, the β release the θ one." + pad,
+			false,
+		},
+	}
+	for _, tc := range cases {
+		res := result(t, onePaper(t, tc.body), "M14")
+		if res.Failed() != tc.fails {
+			t.Errorf("%s: M14 failed=%v, want %v (%v)", tc.name, res.Failed(), tc.fails, res.Findings)
+		}
+	}
+}
+
+// Arithmetic in a code block is code. A paper that prints a program is not a
+// paper whose formulas were flattened, and blanking the fences first is what
+// keeps the two apart.
+func TestM14DoesNotReadACodeBlockAsLostMathematics(t *testing.T) {
+	body := "the routine is short:\n\n```\nif x ≤ y && y ≠ z && z ≥ x {\n  return x\n}\n```\n" + pad
+	if res := result(t, onePaper(t, body), "M14"); res.Failed() {
+		t.Errorf("M14 read a code block as lost mathematics: %v", res.Findings)
+	}
+}
+
+// One finding per paper and not one per file. A paper keeps its mathematics
+// in the sections that need it, and a finding per section would be a page of
+// findings about one thing.
+func TestM14IsOneFindingForThePaperAndPointsAtTheFirstSign(t *testing.T) {
+	res := result(t, Run(in(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), "the bound is ≤ n and the limit is ∞ as ∑ grows."+pad),
+		"content/en/vaswani-2017-attention/02_section.md": file(section("section"), "the same again, with ≥ m and ∈ S and ∏ over it."+pad),
+	}), false), "M14")
+	if len(res.Findings) != 1 {
+		t.Fatalf("M14 found %d, want the one paper: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.HasSuffix(res.Findings[0].File, "01_section.md") {
+		t.Errorf("M14 points at %s, want the first section it saw a sign in", res.Findings[0].File)
+	}
+	if !strings.Contains(res.Findings[0].Message, "6 mathematical characters") {
+		t.Errorf("M14 counted the whole paper as %q", res.Findings[0].Message)
+	}
+}

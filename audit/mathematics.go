@@ -90,6 +90,11 @@ func mathematicsRules() []Rule {
 			What:  "no $ inside a fenced code block opened a span.",
 			Check: ruleM13,
 		},
+		{
+			ID: "M14", Hard: true,
+			What:  "a paper with mathematics in its prose has mathematics in its markup.",
+			Check: ruleM14,
+		},
 	}
 }
 
@@ -647,4 +652,94 @@ func inRanges(ranges [][2]int, line int) bool {
 		}
 	}
 	return false
+}
+
+// notation is the characters that appear in mathematics and do not appear in
+// English prose.
+//
+// The list is short on purpose. A middle dot separates authors, a times sign
+// gives the size of a kernel, a plus-or-minus reports an error bar and an
+// arrow points at something in a figure, so none of those is here. Greek
+// letters are not here either: a paper can name one in a sentence about
+// notation without writing any mathematics at all.
+//
+// What is left is glyphs a sentence has no use for. A body carrying several
+// of them is a body with mathematics in it, whatever its markup says.
+const notation = "√∛∈∉∋∌∞∑∏∫∮∂∇∀∃∄⊆⊄⊂⊇⊃⊕⊗⊙∧∨¬≈≅≡≢≪≫≤≥≠≜≔∝∅∪∩⌈⌉⌊⌋∥⟨⟩ℵ"
+
+// enough is how many of those characters make a paper's mathematics certain.
+//
+// One is a glyph that wandered into a sentence. Three is a paper that was
+// doing mathematics on the page and is not doing any in the file.
+const enough = 3
+
+// ruleM14 catches the mathematics that was flattened rather than mangled.
+//
+// Every other rule in this group reads the math spans and asks whether they
+// are right. That leaves the worst outcome unexamined, because a paper whose
+// formulas were dissolved into the prose has no spans to read and every one
+// of those rules reports that it had nothing to look at. Fifty-five green
+// ticks over a corpus with no mathematics in it is the failure this rule
+// exists to stop.
+//
+// It is per paper and per language rather than per file, because a paper
+// keeps its mathematics in the sections that need it and a report that
+// pointed at the introduction would be pointing at the wrong page.
+func ruleM14(in *Input) ([]Finding, error) {
+	if !anyContent(in) {
+		return nil, ErrNotRun
+	}
+	type reading struct {
+		spans int
+		signs int
+		path  string
+		line  int
+	}
+	seen := map[string]*reading{}
+	var order []string
+	for _, f := range in.Content {
+		if f.Broken() {
+			continue
+		}
+		key := f.Paper + "\x00" + string(f.Lang)
+		r := seen[key]
+		if r == nil {
+			r = &reading{}
+			seen[key] = r
+			order = append(order, key)
+		}
+		// Fences are blanked first. A code block full of arithmetic is code
+		// and is not this paper's mathematics going missing.
+		prose := mathtex.BlankFences(f.Body)
+		spans, unclosed := mathtex.Split(prose)
+		r.spans += len(spans)
+		if unclosed != nil {
+			r.spans++
+		}
+		for n, line := range strings.Split(prose, "\n") {
+			for _, c := range line {
+				if !strings.ContainsRune(notation, c) {
+					continue
+				}
+				r.signs++
+				if r.path == "" {
+					r.path, r.line = f.Path, n+1
+				}
+			}
+		}
+	}
+	var out []Finding
+	for _, key := range order {
+		r := seen[key]
+		if r.spans > 0 || r.signs < enough {
+			continue
+		}
+		paper, lang, _ := strings.Cut(key, "\x00")
+		out = append(out, Finding{
+			Rule: "M14", File: r.path, Line: r.line,
+			Message: fmt.Sprintf("%s in %s carries %s and not one math span, so its formulas were flattened into the prose and the paper needs reading again",
+				paper, lang, plural(r.signs, "mathematical character")),
+		})
+	}
+	return out, nil
 }

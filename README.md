@@ -75,6 +75,7 @@ A model that is not in a price table gets a dash in the money column rather than
 Eighty-five numbered rules in nine groups, each one a sentence you can argue with.
 A rule reports pass, fail, or not run, and those are three different states.
 Hard rules fail the build.
+One of them, M14, exists because the other three states can hide the worst outcome: a paper whose formulas were flattened into the prose has no mathematics left to check, so every rule about mathematics reports that it had nothing to look at and the audit comes back green over a paper that was destroyed.
 
 ## Layout
 
