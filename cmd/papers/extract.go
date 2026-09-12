@@ -888,36 +888,6 @@ func known(t layout.Tool) bool {
 	return false
 }
 
-// choosePapers picks the papers a run is about. It is deliberately not
-// resolve's selectPapers: that one skips a paper that already has a record,
-// which is every paper this command can work on.
-func choosePapers(manifest *corpus.Papers, ids, field string) ([]corpus.Paper, error) {
-	var want map[string]bool
-	if ids != "" {
-		want = map[string]bool{}
-		for _, id := range strings.Split(ids, ",") {
-			want[strings.TrimSpace(id)] = true
-		}
-	}
-	var out []corpus.Paper
-	for _, p := range manifest.Papers {
-		switch {
-		case want != nil && !want[p.ID]:
-			continue
-		case field != "" && string(p.Field) != field:
-			continue
-		}
-		out = append(out, p)
-		if want != nil {
-			delete(want, p.ID)
-		}
-	}
-	for id := range want {
-		return nil, fmt.Errorf("there is no paper called %s in the manifest", id)
-	}
-	return out, nil
-}
-
 // pageRange reads the --pages flag, which is a page or a range of them.
 func pageRange(s string) (first, last int, err error) {
 	if s == "" {

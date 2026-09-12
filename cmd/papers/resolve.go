@@ -130,8 +130,16 @@ func line(res *sources.Result) string {
 	return fmt.Sprintf("  %-34s %-10s %-14s %s", res.ID, res.Rung, res.Record.Access, res.Record.URL)
 }
 
-// selectPapers works out which papers to run.
-func selectPapers(manifest *corpus.Papers, recorded *corpus.Sources, ids, field string, again bool) ([]corpus.Paper, error) {
+// choosePapers is the papers the flags name, in manifest order, and an error
+// for an id that is not in the manifest.
+//
+// This is the whole of what a command that reads a file on disk needs, which
+// is extract, classify and anything else that asks nobody anything. It is
+// separate from selectPapers because the rules that follow that one are about
+// not asking somebody else's free service twice for an answer already on
+// disk, and one of them skips every paper that has a record at all, which is
+// every paper those commands can work on.
+func choosePapers(manifest *corpus.Papers, ids, field string) ([]corpus.Paper, error) {
 	var want map[string]bool
 	if ids != "" {
 		want = map[string]bool{}
@@ -139,7 +147,6 @@ func selectPapers(manifest *corpus.Papers, recorded *corpus.Sources, ids, field 
 			want[strings.TrimSpace(id)] = true
 		}
 	}
-
 	var out []corpus.Paper
 	for _, p := range manifest.Papers {
 		switch {
@@ -148,6 +155,33 @@ func selectPapers(manifest *corpus.Papers, recorded *corpus.Sources, ids, field 
 		case field != "" && string(p.Field) != field:
 			continue
 		}
+		out = append(out, p)
+		if want != nil {
+			delete(want, p.ID)
+		}
+	}
+	for id := range want {
+		return nil, fmt.Errorf("there is no paper called %s in the manifest", id)
+	}
+	return out, nil
+}
+
+// selectPapers is choosePapers for a command that goes out to the network,
+// less the papers it should not ask about.
+//
+// The skipping happens after the manifest lookup and not during it, which is
+// the point of the split. Doing both at once meant a paper that was found and
+// then skipped came back as a paper that does not exist, so naming a hand
+// recorded paper on the command line was answered with "there is no paper
+// called chiu-1989-aimd in the manifest" over a paper sitting in the manifest
+// two lines from the one before it.
+func selectPapers(manifest *corpus.Papers, recorded *corpus.Sources, ids, field string, again bool) ([]corpus.Paper, error) {
+	chosen, err := choosePapers(manifest, ids, field)
+	if err != nil {
+		return nil, err
+	}
+	var out []corpus.Paper
+	for _, p := range chosen {
 		if rec, ok := recorded.ByID(p.ID); ok {
 			// A record a person decided is left alone whatever the flags say.
 			// --again means ask the services again, not throw away somebody's
@@ -163,12 +197,6 @@ func selectPapers(manifest *corpus.Papers, recorded *corpus.Sources, ids, field 
 			}
 		}
 		out = append(out, p)
-		if want != nil {
-			delete(want, p.ID)
-		}
-	}
-	for id := range want {
-		return nil, fmt.Errorf("there is no paper called %s in the manifest", id)
 	}
 	return out, nil
 }

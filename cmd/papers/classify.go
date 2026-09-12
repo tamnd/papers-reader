@@ -61,7 +61,13 @@ This needs poppler. Run papers doctor to see whether it is installed.
 	if err != nil {
 		return err
 	}
-	todo, err := selectPapers(manifest, recorded, *ids, *field, true)
+	// Every paper the flags name, including the ones somebody recorded by
+	// hand. Measuring a text layer reads a file on this disk and asks nobody
+	// anything, so the reasons resolve and fetch have for leaving a hand
+	// record alone do not apply, and leaving it alone here meant a PDF
+	// adopted by hand could never have its pages counted or its text layer
+	// measured at all.
+	todo, err := choosePapers(manifest, *ids, *field)
 	if err != nil {
 		return err
 	}

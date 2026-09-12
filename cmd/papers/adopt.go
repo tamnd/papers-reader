@@ -119,6 +119,18 @@ restricted, which publishes front matter and a short abstract and no more.
 	if *note != "" {
 		rec.Note = *note
 	}
+	// A different file is a different paper's worth of measurements. Page
+	// count and text layer were measured off whatever was there before, and
+	// adopting over it is usually adopting over something wrong: the record
+	// this was written for said 33 pages and no text layer, from a lecture
+	// slide deck the resolver had found in place of the paper. Leaving the
+	// old numbers would leave the audit reading them as if they were about
+	// the file on disk.
+	replaced := rec.SHA256 != "" && rec.SHA256 != file.SHA256
+	if replaced {
+		rec.Pages = 0
+		rec.TextLayer = ""
+	}
 	rec.By = corpus.ByHand
 	rec.SHA256 = file.SHA256
 	rec.Fetched = time.Now().UTC().Format(time.DateOnly)
@@ -128,6 +140,9 @@ restricted, which publishes front matter and a short abstract and no more.
 		return err
 	}
 	fmt.Printf("  %-34s %s %d KB, %s, by hand from %s\n", rec.ID, short(rec.SHA256), file.Bytes>>10, rec.Access, rec.URL)
+	if replaced {
+		fmt.Printf("  %-34s this replaced a different file, so its pages and text layer are cleared: run papers classify --id %s\n", "", rec.ID)
+	}
 	fmt.Println("wrote", c.SourcesManifest())
 	return nil
 }
