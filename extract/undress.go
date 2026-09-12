@@ -85,10 +85,10 @@ func Undress(pages map[int]string) map[int]string {
 // top and another repeated line under it is far likelier to be two lines of
 // a heading than two running heads, and this has no coordinates to tell it
 // otherwise.
-func peel(lines []string, end func([]string) int, repeated func(string) bool) []string {
-	number, head := false, false
+func peel(lines []string, end func([]string, int) int, repeated func(string) bool) []string {
+	number, head, past := false, false, 0
 	for {
-		at := end(lines)
+		at := end(lines, past)
 		if at < 0 {
 			return lines
 		}
@@ -96,6 +96,15 @@ func peel(lines []string, end func([]string) int, repeated func(string) bool) []
 		switch {
 		case delimiter(line), equationNumber.MatchString(line):
 			return lines
+		// A footnote is not at the edge of the page, wherever it is written.
+		// Markdown puts every definition at the foot of the document, so a
+		// model that reads a footnote off the middle of the page writes it
+		// last, under the folio, and the folio is then the second line up
+		// rather than the first. Page 7 of the ResNet paper is one and it
+		// published with its page number on it.
+		case footnote.MatchString(line):
+			past++
+			continue
 		// A bare number on its own line at the edge of a page is a page
 		// number whether or not it repeats, and it never repeats, because it
 		// counts. This is the same call Furniture.Is makes.
@@ -109,6 +118,10 @@ func peel(lines []string, end func([]string) int, repeated func(string) bool) []
 		lines = append(lines[:at], lines[at+1:]...)
 	}
 }
+
+// footnote is a Markdown footnote definition, which is a label in brackets
+// with a caret in front of it and a colon after it.
+var footnote = regexp.MustCompile(`^\[\^[^\]]+\]:`)
 
 // delimiter says whether a line is the edge of a block rather than a line of
 // the page, and nothing here ever takes one off.
@@ -158,13 +171,15 @@ var equationNumber = regexp.MustCompile(`^\(\s*[0-9]{1,4}\s*\)$`)
 // head is the lines at the top of a page that the furniture could be on,
 // and foot is the ones at the bottom. Blank lines are passed over, because
 // the model leaves one between the head and the text and one between the
-// text and the folio. A page with nothing on it, which a full page plate is,
-// has neither a head nor a foot.
+// text and the folio. Footnote definitions are passed over for the reason
+// peel passes over them, which is that Markdown moves them and the edge of
+// the page is where they land. A page with nothing on it, which a full page
+// plate is, has neither a head nor a foot.
 func head(text string) []string {
 	var out []string
 	lines := strings.Split(text, "\n")
 	for i := 0; i < len(lines) && len(out) < edgeLines; i++ {
-		if l := strings.TrimSpace(lines[i]); l != "" {
+		if l := strings.TrimSpace(lines[i]); edge(l) {
 			out = append(out, l)
 		}
 	}
@@ -175,29 +190,43 @@ func foot(text string) []string {
 	var out []string
 	lines := strings.Split(text, "\n")
 	for i := len(lines) - 1; i >= 0 && len(out) < edgeLines; i-- {
-		if l := strings.TrimSpace(lines[i]); l != "" {
+		if l := strings.TrimSpace(lines[i]); edge(l) {
 			out = append(out, l)
 		}
 	}
 	return out
 }
 
+func edge(line string) bool {
+	return line != "" && !footnote.MatchString(line)
+}
+
 // firstLine and lastLine are the first and last lines of a page with
-// anything on them, and -1 for a page with nothing on it.
-func firstLine(lines []string) int {
+// anything on them, and -1 for a page with nothing on it. past is how many
+// of those to step over first, which is how peel looks under a line it has
+// decided is neither furniture nor a reason to stop.
+func firstLine(lines []string, past int) int {
 	for i, l := range lines {
-		if strings.TrimSpace(l) != "" {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if past == 0 {
 			return i
 		}
+		past--
 	}
 	return -1
 }
 
-func lastLine(lines []string) int {
+func lastLine(lines []string, past int) int {
 	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(lines[i]) != "" {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		if past == 0 {
 			return i
 		}
+		past--
 	}
 	return -1
 }

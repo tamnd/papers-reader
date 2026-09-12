@@ -281,6 +281,59 @@ func TestABareNumberIsStillAFolio(t *testing.T) {
 	}
 }
 
+// Markdown puts every footnote definition at the foot of the document, so a
+// model that reads one off the middle of the page writes it last, and the
+// folio is then the second line up. Page 7 of the ResNet paper is one and it
+// published with "7" on a line of its own in the middle of section 4.
+func TestAFolioUnderAFootnoteStillComesOff(t *testing.T) {
+	pages := map[int]string{}
+	for i := 1; i <= 6; i++ {
+		pages[i] = "A paragraph about " + topics[i-1] + " and what it is for.\n\n" +
+			strconv.Itoa(307+i) + "\n\n[^1]: A note about " + topics[i-1] + ".\n"
+	}
+	for i, text := range Undress(pages) {
+		if strings.Contains(text, strconv.Itoa(307+i)) {
+			t.Errorf("page %d kept its folio:\n%s", i, text)
+		}
+		if !strings.Contains(text, "[^1]:") {
+			t.Errorf("page %d lost its footnote:\n%s", i, text)
+		}
+	}
+}
+
+// The footnote is stepped over and not taken off, which is the whole of the
+// difference between it and the folio above it.
+func TestAFootnoteIsNotFurnitureEvenWhenEveryPageHasOne(t *testing.T) {
+	pages := map[int]string{}
+	for i := 1; i <= 6; i++ {
+		pages[i] = "A paragraph about " + topics[i-1] + " and what it is for.\n\n[^1]: See above.\n"
+	}
+	for i, text := range Undress(pages) {
+		if !strings.Contains(text, "[^1]: See above.") {
+			t.Errorf("page %d lost its footnote:\n%s", i, text)
+		}
+	}
+}
+
+// Passing over a footnote does not buy an extra line. One folio and one
+// running head come off each end, which is all a page has, and the body
+// under them stays where it is.
+func TestPassingOverAFootnoteDoesNotEatTheBody(t *testing.T) {
+	pages := map[int]string{}
+	for i := 1; i <= 6; i++ {
+		pages[i] = "A paragraph about " + topics[i-1] + " and what it is for.\n\nOne last word on " +
+			topics[i-1] + ".\n\n" + strconv.Itoa(307+i) + "\n\n[^1]: A note.\n"
+	}
+	for i, text := range Undress(pages) {
+		if strings.Contains(text, strconv.Itoa(307+i)) {
+			t.Errorf("page %d kept its folio:\n%s", i, text)
+		}
+		if !strings.Contains(text, "One last word on") {
+			t.Errorf("page %d lost the line under its folio:\n%s", i, text)
+		}
+	}
+}
+
 // A body line to a page, each saying something the others do not. fold turns
 // every number into the same token, so pages that differ only by a page
 // number are one repeated line as far as Undress is concerned.
