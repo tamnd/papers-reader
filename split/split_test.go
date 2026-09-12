@@ -232,3 +232,79 @@ func names(r *Result) []string {
 	}
 	return out
 }
+
+// A vision model writes the title of the paper as a level one heading, and it
+// is the title and not the first section. The GAN paper came back that way and
+// 00_front.md kept only the line arXiv prints down the side of page 1.
+func TestThePapersOwnTitleIsNotASection(t *testing.T) {
+	r := Titled(doc(
+		"arXiv:1000.00000v1 [cs.XX] 1 Jan 2000",
+		"# A Study of Something",
+		"Alice Adams, Bob Brown",
+		"# Abstract",
+		"We did a thing and it worked.",
+		"# 1 Introduction", prose,
+		"# 2 Background", prose,
+		"# 3 Results", prose,
+	), "A Study of Something")
+	if len(r.Sections) != 4 {
+		t.Fatalf("split into %d sections, want 4: %v", len(r.Sections), names(r))
+	}
+	if got := r.Sections[0].Kind; got != KindFront {
+		t.Errorf("the first section is %q, want front", got)
+	}
+	for _, want := range []string{"A Study of Something", "Alice Adams", "We did a thing"} {
+		if !strings.Contains(r.Sections[0].Body, want) {
+			t.Errorf("the front matter does not have %q in it:\n%s", want, r.Sections[0].Body)
+		}
+	}
+	if got := r.Sections[1].Title; got != "Introduction" {
+		t.Errorf("the second section is %q, want Introduction", got)
+	}
+}
+
+// Compared the way a reader compares them, because the page breaks the title
+// over two lines and prints the colon where the record does not.
+func TestTheTitleIsMatchedThroughCaseAndPunctuation(t *testing.T) {
+	r := Titled(doc(
+		"# MAPPING AND REDUCING: A SIMPLE MODEL",
+		"Alice Adams",
+		"# 1 Introduction", prose,
+		"# 2 Background", prose,
+		"# 3 Results", prose,
+	), "Mapping and Reducing, a Simple Model")
+	if got := r.Sections[0].Kind; got != KindFront {
+		t.Fatalf("the first section is %q, want front: %v", got, names(r))
+	}
+}
+
+// Only the first heading is offered the comparison. A paper that prints its
+// title again in the middle is printing a running head, and the section it
+// heads is still a section.
+func TestATitlePrintedAgainDoesNotSwallowASection(t *testing.T) {
+	r := Titled(doc(
+		"# A Study of Something",
+		"Alice Adams",
+		"# 1 Introduction", prose,
+		"# A Study of Something",
+		"# 2 Background", prose,
+		"# 3 Results", prose,
+	), "A Study of Something")
+	want := []string{"00_front.md", "01_introduction.md", "02_a_study_of_something.md", "03_background.md", "04_results.md"}
+	if got := names(r); !equal(got, want) {
+		t.Errorf("split into %v, want %v", got, want)
+	}
+}
+
+// A paper with no title on record keeps every heading, because a comparison
+// against nothing that matched would eat the first section.
+func TestAPaperWithNoTitleOnRecordKeepsItsFirstSection(t *testing.T) {
+	r := Split(doc(
+		"# Introduction", prose,
+		"# Background", prose,
+	))
+	want := []string{"01_introduction.md", "02_background.md"}
+	if got := names(r); !equal(got, want) {
+		t.Errorf("split into %v, want %v", got, want)
+	}
+}

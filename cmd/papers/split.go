@@ -241,7 +241,7 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, dry, 
 	if err != nil || d == nil {
 		return n, err
 	}
-	r := split.Split(d)
+	r := split.Titled(d, p.Title)
 	n.notes = r.Notes
 	n.notes = append(n.notes, cite(c, p.ID, r)...)
 

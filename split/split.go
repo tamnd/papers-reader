@@ -53,7 +53,24 @@ type Result struct {
 // title block, the authors, the abstract if it is not headed. It comes back as
 // the first section, with the front kind, and the writer files it as
 // 00_front.md.
-func Split(d *assemble.Document) *Result {
+func Split(d *assemble.Document) *Result { return Titled(d, "") }
+
+// Titled is Split for a paper whose title is known, which lets it tell the
+// title block from the first section.
+//
+// A vision model writes the title of the paper as a level one heading, which
+// is what it is on the page and is not a section of the argument. Split on its
+// own cannot tell: to it the title is a heading like any other, so it cuts
+// there and 00_front.md keeps only whatever the page printed above the title.
+// On the GAN paper that was the line arXiv prints down the side, so the front
+// matter came out as one sentence with no authors and no abstract in it, and
+// rule T06 said so.
+//
+// The title is compared and not guessed at. A heading that reads as the paper
+// is the paper's title, and anything else is a section however it is set. Only
+// the first heading is offered the comparison, because a paper that prints its
+// title again is printing a running head.
+func Titled(d *assemble.Document, title string) *Result {
 	// Unrun first, because everything below counts paragraphs and a heading
 	// that is still inside one is a heading nothing here can find.
 	paragraphs := Unrun(d.Paragraphs)
@@ -74,6 +91,11 @@ func Split(d *assemble.Document) *Result {
 			continue
 		}
 		sub[h.Index] = h
+	}
+	// The title goes before the abstract on the page, so it comes off the
+	// front of the cuts before the abstract does.
+	if len(cuts) > 0 && sameText(cuts[0].Title, title) {
+		cuts = cuts[1:]
 	}
 	// The abstract is not a section. It is what 00_front.md is for, along
 	// with the title and the authors, because the abstract is the one part of
@@ -231,4 +253,40 @@ func Slug(title string) string {
 		}
 	}
 	return s
+}
+
+// sameText compares two titles as a reader would, ignoring the things an
+// extraction changes and a person does not read as a difference.
+//
+// Case, because a model reads a title set in capitals and titleCase puts it
+// back in a capitalisation of its own. Spacing, because a title set over two
+// lines is joined with whatever the reader felt like. Punctuation, because the
+// record has "MapReduce: Simplified Data Processing on Large Clusters" and the
+// page prints the colon on the line break.
+//
+// An empty title matches nothing. A paper with no title on record is a paper
+// this cannot help, and matching everything would eat its first section.
+func sameText(a, b string) bool {
+	if strings.TrimSpace(b) == "" {
+		return false
+	}
+	return plain(a) == plain(b)
+}
+
+func plain(s string) string {
+	var b strings.Builder
+	space := false
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsNumber(r):
+			if space && b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			space = false
+			b.WriteRune(r)
+		default:
+			space = true
+		}
+	}
+	return b.String()
 }
