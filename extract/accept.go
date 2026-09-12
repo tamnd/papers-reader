@@ -108,6 +108,15 @@ type Checker struct {
 	// would be a rule that never ran.
 	n        int
 	mean, m2 float64
+
+	// ln and lmean are the same running mean over how much prose the file's
+	// own text layer holds on each of those pages, which is what lets A5 ask
+	// whether a short answer is a short page or a short reading. Counted
+	// separately from n because a paper can have a layer on some pages and
+	// not on others, and an average over the pages that have one is the only
+	// average worth comparing a page that has one against.
+	ln    int
+	lmean float64
 }
 
 // MinLengthSample is how many pages have to have been seen before A5 says
@@ -139,7 +148,7 @@ const Slack = 0.25
 func (c *Checker) Check(page int, text string) []Fault {
 	faults := c.faults(page, text)
 	if len(faults) == 0 {
-		c.observe(text)
+		c.observe(page, text)
 	}
 	return faults
 }
@@ -170,12 +179,89 @@ func (c *Checker) Accept(page int, text string) error {
 // that A5 had enough to work with.
 func (c *Checker) Pages() int { return c.n }
 
-func (c *Checker) observe(text string) {
+func (c *Checker) observe(page int, text string) {
 	n := float64(len(text))
 	c.n++
 	d := n - c.mean
 	c.mean += d / float64(c.n)
 	c.m2 += d * (n - c.mean)
+	if l, ok := c.layer(page); ok {
+		c.ln++
+		c.lmean += (l - c.lmean) / float64(c.ln)
+	}
+}
+
+// tooShort is what A5 says about a page, which is two different sentences.
+//
+// When the expectation came from the page's own text layer, saying the paper
+// averages 4426 characters would be telling a person the wrong thing to go
+// and check: the complaint is not that the page is unlike the others, it is
+// that the reading is unlike the page. Naming the file's own count is what
+// sends them to the right place.
+func (c *Checker) tooShort(text string, want float64, fromLayer bool) string {
+	if fromLayer {
+		return fmt.Sprintf("the page is %d characters where the file's own text layer on it is worth about %.0f", len(text), want)
+	}
+	return fmt.Sprintf("the page is %d characters where this paper's pages average %.0f", len(text), c.mean)
+}
+
+// layer is how much prose the file's own text layer holds on a page, and
+// whether it holds any. A paper read by a model off a scan has no layer and
+// this says so on every page of it.
+func (c *Checker) layer(page int) (float64, bool) {
+	if c.Layer == nil {
+		return 0, false
+	}
+	text, ok := c.Layer(page)
+	if !ok {
+		return 0, false
+	}
+	return float64(len(text)), true
+}
+
+// expected is how long a reading of this page ought to be, in characters,
+// given that it came back got characters long.
+//
+// The paper's average, scaled by how much prose the file says is on this
+// page against how much it says is on an average page of it. A page with a
+// full page figure on it holds a third of the words of an ordinary page and
+// its reading is a third as long, and A5 refusing it for that was the whole
+// of issue #47: three pages of the Transformer paper, nine asks of a
+// rationed reader, and the answer was right the first time.
+//
+// The scaling is what keeps the rule's teeth rather than blunting them. A
+// reading that stopped half way down a full page of prose is short while the
+// layer says the page is full, so the expectation stays high and the gap is
+// as wide as it ever was. It is only a page the file itself calls short that
+// is now allowed to come back short.
+//
+// Why the length of the answer comes into deciding what to expect of it,
+// which looks circular and is not. Prose is a floor under what is on a page
+// and not an estimate of it: it drops the labels inside a figure and the
+// cells of a table by design, and a reader transcribes a table. So the file
+// can say a page is at least this full and it cannot say a page is at most
+// this full. Under the floor is a real answer and over it is no answer at
+// all, so a reading shorter than the paper's average is measured against the
+// file and a longer one is measured against the paper, the way it always
+// was. Page 11 of the ResNet paper is what taught this: 6062 characters of
+// correct reading where the layer on it is worth 1848, because most of the
+// page is a table and a table is not prose.
+//
+// It needs a sample of pages that have a layer before it means anything, the
+// same as the mean it scales, and on a paper read off a scan there is no
+// layer at all and this is the plain average.
+func (c *Checker) expected(page, got int) (float64, bool) {
+	if float64(got) >= c.mean {
+		return c.mean, false
+	}
+	if c.ln < MinLengthSample || c.lmean <= 0 {
+		return c.mean, false
+	}
+	l, ok := c.layer(page)
+	if !ok {
+		return c.mean, false
+	}
+	return c.mean * l / c.lmean, true
 }
 
 func (c *Checker) faults(page int, text string) []Fault {
@@ -221,8 +307,9 @@ func (c *Checker) faults(page int, text string) []Fault {
 	// A5 is the only rule that can be wrong about a page that is perfectly
 	// fine, so it is worded as a doubt and the report says so.
 	if c.Model && c.n >= MinLengthSample {
-		if d := math.Abs(float64(len(text)) - c.mean); d > Sigma*c.stddev() && d > Slack*c.mean {
-			add(A5, fmt.Sprintf("the page is %d characters where this paper's pages average %.0f", len(text), c.mean), 0)
+		want, fromLayer := c.expected(page, len(text))
+		if d := math.Abs(float64(len(text)) - want); d > Sigma*c.stddev() && d > Slack*want {
+			add(A5, c.tooShort(text, want, fromLayer), 0)
 		}
 	}
 

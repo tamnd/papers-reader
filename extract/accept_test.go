@@ -117,6 +117,92 @@ func TestATruncatedPageIsRefused(t *testing.T) {
 	}
 }
 
+// layered is a checker whose pages the file itself can be asked about, which
+// is what a born digital paper gives A5. Each page's layer is as long as the
+// share of a full page the caller asks for.
+func layered(share map[int]float64) *Checker {
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	return &Checker{Model: true, Layer: func(page int) (string, bool) {
+		s, ok := share[page]
+		if !ok {
+			s = 1
+		}
+		return full[:int(float64(len(full))*s)], true
+	}}
+}
+
+// Issue #47. Pages 13, 14 and 15 of the Transformer paper are a full page
+// figure and a caption, they came back at about 270 characters against a
+// paper average of 3542, and A5 refused all three and had them read again at
+// 400 dpi and again at 600. Nine asks of a rationed reader, and the answer
+// was right the first time. The file says how much prose is on the page, so
+// the rule can ask whether the reading is short or the page is.
+func TestAPageTheFileItselfSaysIsShortIsNotRefused(t *testing.T) {
+	c := layered(map[int]float64{9: 0.15})
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	short := full[:int(0.15*float64(len(full)))]
+	if faults := c.Check(9, short); has(faults, A5) {
+		t.Errorf("a short page on a short page of the file gave %v", rules(faults))
+	}
+}
+
+// The other half of it, and the reason this is a narrowing rather than a
+// hole. A reading that stopped part way down a full page is short while the
+// file says the page is full, so the expectation stays where it was.
+func TestATruncatedPageIsStillRefusedWhenTheFileSaysThePageIsFull(t *testing.T) {
+	c := layered(nil)
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	if faults := c.Check(9, "a sentence.\n"); !has(faults, A5) {
+		t.Errorf("a truncated page on a full page of the file gave %v", rules(faults))
+	}
+}
+
+// Page 11 of the ResNet paper. Prose is a floor under what is on a page and
+// not an estimate of it, because it drops the cells of a table by design and
+// a reader transcribes a table. The page came back at 6062 characters of
+// correct reading where the layer on it is worth 1848, so a reading longer
+// than the paper's average is measured against the paper and not the file.
+func TestAPageThatReadsLongerThanItsLayerIsMeasuredAgainstThePaper(t *testing.T) {
+	c := layered(map[int]float64{9: 0.15})
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	if faults := c.Check(9, full); has(faults, A5) {
+		t.Errorf("a full length reading of a page whose layer is thin gave %v", rules(faults))
+	}
+}
+
+// What the rule says has to send a person to the right place. When the
+// expectation came from the file, the complaint is that the reading is
+// unlike the page and not that the page is unlike the paper.
+func TestTheLengthRuleNamesWhateverItMeasuredAgainst(t *testing.T) {
+	c := layered(nil)
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		c.Check(i, full)
+	}
+	faults := c.Check(9, "a sentence.\n")
+	if len(faults) == 0 {
+		t.Fatal("the truncated page was accepted")
+	}
+	if !strings.Contains(faults[0].Detail, "text layer") {
+		t.Errorf("A5 says %q, which does not say what it measured against", faults[0].Detail)
+	}
+}
+
 func TestTheLengthRuleSaysNothingUntilItHasSeenEnoughPages(t *testing.T) {
 	c := Checker{Model: true}
 	long := strings.Repeat("a sentence of the paper. ", 40)
