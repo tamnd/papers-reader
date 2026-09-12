@@ -7,5 +7,11 @@
 // pass can list exactly which translations are answers to a question that has
 // since changed.
 //
-// Arrives in milestone M6.
+// The proof is Protect and Compare. Protect finds every span of a body that a
+// translation has to reproduce byte for byte, and Compare says how an answer's
+// spans differ from the source's, position by position. An answer with a
+// single difference is thrown away and asked for again, because a translation
+// that has quietly renamed a variable or renumbered a footnote is worse than
+// no translation at all: nothing further down the toolchain will ever catch
+// it, and a reader has no way to know.
 package translate
