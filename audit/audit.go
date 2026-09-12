@@ -108,6 +108,10 @@ type Input struct {
 	// rather than present and empty, so that group R can tell "nothing to
 	// check" apart from "a bibliography with nothing in it".
 	Refs map[string]*refs.Manifest
+	// Content is every committed Markdown file, split and parsed once, in
+	// path order. Groups T and M both walk all of it, and reading the corpus
+	// once per rule would mean reading it twenty-three times.
+	Content []*File
 }
 
 // Load reads everything the rules need out of a corpus.
@@ -130,6 +134,9 @@ func Load(c *corpus.Corpus) (*Input, error) {
 		return nil, err
 	}
 	if in.Refs, err = loadRefs(c, in.Papers); err != nil {
+		return nil, err
+	}
+	if in.Content, err = loadContent(c, in.Papers); err != nil {
 		return nil, err
 	}
 	return in, nil

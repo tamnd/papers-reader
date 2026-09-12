@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -17,7 +18,7 @@ func front(paper, kind, body string) string {
 
 func TestGroupRIsQuietWithNoBibliographies(t *testing.T) {
 	rep := Run(build(t, nil), false)
-	for _, id := range []string{"R01", "R02", "R03", "R04", "R05", "R08"} {
+	for _, id := range []string{"R01", "R02", "R03", "R04", "R05", "R06", "R07", "R08"} {
 		res := result(t, rep, id)
 		if !res.NotRun {
 			t.Errorf("%s claims to have run on a corpus with no bibliographies", id)
@@ -229,5 +230,175 @@ func TestR08FindsTheSectionByKind(t *testing.T) {
 	})
 	if res := result(t, Run(in, true), "R08"); res.NotRun {
 		t.Error("R08 did not find a reference section under an unexpected name")
+	}
+}
+
+// R06 is the check on the graph as a whole. Two papers 47 years apart cannot
+// both cite the other, and the usual cause is the matcher joining two
+// different works with similar titles.
+func TestR06FindsALoopAcrossTheYears(t *testing.T) {
+	in := build(t, map[string]string{
+		"manifests/refs/vaswani-2017-attention.yaml": `paper: vaswani-2017-attention
+style: bracket
+entries:
+  - key: "1"
+    raw: E. F. Codd. A relational model of data. CACM, 1970.
+    resolves_to: codd-1970-relational
+`,
+		"manifests/refs/codd-1970-relational.yaml": `paper: codd-1970-relational
+style: bracket
+entries:
+  - key: "1"
+    raw: A. Vaswani. Attention is all you need. NeurIPS, 2017.
+    resolves_to: vaswani-2017-attention
+`,
+	})
+	res := result(t, Run(in, false), "R06")
+	if len(res.Findings) != 1 {
+		t.Fatalf("R06 found %d, want 1: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.Contains(res.Findings[0].Message, "47 years apart") {
+		t.Errorf("R06 measured the gap wrong: %s", res.Findings[0].Message)
+	}
+}
+
+// A conference paper and the journal version of it a year later cite one
+// another's drafts, and that is not a mistake.
+func TestR06LeavesARevisionAlone(t *testing.T) {
+	in := build(t, map[string]string{
+		"manifests/papers.yaml": `papers:
+  - id: nkemelu-1991-indexes
+    title: A Theory of Slow Indexes
+    authors: [A. Nkemelu]
+    year: 1991
+    field: databases
+    status: listed
+  - id: nkemelu-1992-indexes
+    title: A Theory of Slow Indexes, Revised
+    authors: [A. Nkemelu]
+    year: 1992
+    field: databases
+    status: listed
+`,
+		"manifests/refs/nkemelu-1991-indexes.yaml": `paper: nkemelu-1991-indexes
+style: bracket
+entries:
+  - key: "1"
+    raw: A. Nkemelu. A theory of slow indexes, revised. In preparation, 1992.
+    resolves_to: nkemelu-1992-indexes
+`,
+		"manifests/refs/nkemelu-1992-indexes.yaml": `paper: nkemelu-1992-indexes
+style: bracket
+entries:
+  - key: "1"
+    raw: A. Nkemelu. A theory of slow indexes. Slow Things Quarterly, 1991.
+    resolves_to: nkemelu-1991-indexes
+`,
+	})
+	if res := result(t, Run(in, false), "R06"); res.Failed() {
+		t.Errorf("R06 read a revision as a mistake: %v", res.Findings)
+	}
+}
+
+// A chain that goes forward and stops is what a citation graph looks like.
+func TestR06PassesOnAGraphThatOnlyGoesBackwards(t *testing.T) {
+	in := build(t, map[string]string{
+		"manifests/refs/vaswani-2017-attention.yaml": `paper: vaswani-2017-attention
+style: bracket
+entries:
+  - key: "1"
+    raw: E. F. Codd. A relational model of data. CACM, 1970.
+    resolves_to: codd-1970-relational
+`,
+	})
+	if res := result(t, Run(in, false), "R06"); res.Failed() || res.NotRun {
+		t.Errorf("R06 objected to an ordinary citation: %v %v", res.NotRun, res.Findings)
+	}
+}
+
+// R07 is the reading list telling the people who keep it what it is missing.
+func TestR07NamesAWorkThreePapersCite(t *testing.T) {
+	cites := func(paper, doi string) string {
+		return "paper: " + paper + `
+style: bracket
+entries:
+  - key: "1"
+    raw: A. Nkemelu. A theory of slow indexes. Slow Things Quarterly, 1991.
+    title: A Theory of Slow Indexes
+    doi: ` + doi + `
+    resolves_to: ""
+`
+	}
+	in := build(t, map[string]string{
+		"manifests/papers.yaml": papersYAML + `  - id: oyelaran-1994-slower
+    title: Indexes That Are Slower Still
+    authors: [B. Oyelaran]
+    year: 1994
+    field: databases
+    status: listed
+`,
+		"manifests/refs/vaswani-2017-attention.yaml": cites("vaswani-2017-attention", "10.1000/slow"),
+		"manifests/refs/codd-1970-relational.yaml":   cites("codd-1970-relational", "10.1000/SLOW"),
+		"manifests/refs/oyelaran-1994-slower.yaml":   cites("oyelaran-1994-slower", "10.1000/slow"),
+	})
+	res := result(t, Run(in, false), "R07")
+	if len(res.Findings) != 1 {
+		t.Fatalf("R07 found %d, want 1: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.Contains(res.Findings[0].Message, "A Theory of Slow Indexes") {
+		t.Errorf("R07 named the wrong work: %s", res.Findings[0].Message)
+	}
+}
+
+// Two papers citing the same work is what a field is, and a reference the
+// parser could read no title from is not evidence of anything.
+func TestR07IsQuietAboutTwoAndAboutNothing(t *testing.T) {
+	cites := func(paper, title string) string {
+		return "paper: " + paper + `
+style: bracket
+entries:
+  - key: "1"
+    raw: A reference the parser could not read.
+    title: ` + title + `
+    resolves_to: ""
+`
+	}
+	in := build(t, map[string]string{
+		"manifests/refs/vaswani-2017-attention.yaml": cites("vaswani-2017-attention", "A Theory of Slow Indexes"),
+		"manifests/refs/codd-1970-relational.yaml":   cites("codd-1970-relational", "A Theory of Slow Indexes"),
+	})
+	if res := result(t, Run(in, false), "R07"); res.Failed() {
+		t.Errorf("R07 reported a work only two papers cite: %v", res.Findings)
+	}
+
+	short := build(t, map[string]string{
+		"manifests/papers.yaml": papersYAML + `  - id: oyelaran-1994-slower
+    title: Indexes That Are Slower Still
+    authors: [B. Oyelaran]
+    year: 1994
+    field: databases
+    status: listed
+`,
+		"manifests/refs/vaswani-2017-attention.yaml": cites("vaswani-2017-attention", "Notes"),
+		"manifests/refs/codd-1970-relational.yaml":   cites("codd-1970-relational", "Notes"),
+		"manifests/refs/oyelaran-1994-slower.yaml":   cites("oyelaran-1994-slower", "Notes"),
+	})
+	if res := result(t, Run(short, false), "R07"); res.Failed() {
+		t.Errorf("R07 grouped references by a title too short to tell them apart: %v", res.Findings)
+	}
+}
+
+func TestCycles(t *testing.T) {
+	got := cycles(map[string][]string{
+		"a": {"b"},
+		"b": {"c"},
+		"c": {"a"},
+		"d": {"a"},
+		"e": {"f"},
+		"f": {"e"},
+	})
+	want := [][]string{{"a", "b", "c"}, {"e", "f"}}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("cycles found %v, want %v", got, want)
 	}
 }

@@ -1,13 +1,18 @@
 package audit
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/extract"
+	"github.com/tamnd/papers-reader/split"
 	"github.com/tamnd/papers-reader/tags"
 )
 
@@ -41,11 +46,33 @@ func Rules() []Rule {
 			Check: ruleS04,
 		},
 		{
+			ID: "S05", Hard: true,
+			What:  "every fetched PDF hashes to what sources.yaml records.",
+			Check: ruleS05,
+		},
+		{
 			ID: "S06", Hard: true,
 			What:  "every open and permissive paper names a licence, not just a URL.",
 			Check: ruleS06,
 		},
+		{
+			ID: "S07", Hard: true,
+			What:  "a restricted paper quotes under 250 words.",
+			Check: ruleS07,
+		},
+		{
+			ID: "S08", Hard: true,
+			What:  "no content is longer than the PDF it claims to come from could hold.",
+			Check: ruleS08,
+		},
+		{
+			ID: "S09", Hard: true,
+			What:  "the pages that were read carry as much text as a paper's pages do.",
+			Check: ruleS09,
+		},
 	}
+	out = append(out, structureRules()...)
+	out = append(out, mathematicsRules()...)
 	out = append(out, figuresRules()...)
 	out = append(out, refsRules()...)
 	return append(out, []Rule{
@@ -211,6 +238,51 @@ func ruleS04(in *Input) ([]Finding, error) {
 	return out, nil
 }
 
+// ruleS05 asks whether the file on the disk is still the file the record was
+// written about. Everything downstream is an assertion about that PDF: the
+// licence, the page count, the page map, and every content file's
+// pdf_sha256. A paper that was re-fetched and came back different, or a
+// working copy somebody replaced by hand, invalidates all of it silently.
+//
+// It only looks at the PDFs that are here. A corpus checked out in CI has
+// none of them, because none of them are ever committed, and a rule that
+// failed there would be a rule everybody learned to ignore.
+func ruleS05(in *Input) ([]Finding, error) {
+	var out []Finding
+	seen := 0
+	for _, rec := range in.Sources.Sources {
+		if rec.SHA256 == "" {
+			continue
+		}
+		path := in.Corpus.PDF(rec.ID)
+		f, err := os.Open(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.New()
+		_, err = io.Copy(sum, f)
+		f.Close()
+		if err != nil {
+			return nil, err
+		}
+		seen++
+		if got := hex.EncodeToString(sum.Sum(nil)); got != rec.SHA256 {
+			out = append(out, Finding{
+				Rule: "S05", File: "manifests/sources.yaml",
+				Message: fmt.Sprintf("%s on the disk hashes to %s and the record says %s, so everything extracted from it is about a different file",
+					rec.ID, short12(got), short12(rec.SHA256)),
+			})
+		}
+	}
+	if seen == 0 {
+		return nil, ErrNotRun
+	}
+	return out, nil
+}
+
 // ruleS06 refuses "we could download it" as a licence. An open access paper
 // states its terms somewhere, and if nobody wrote them down then nobody
 // checked them.
@@ -229,6 +301,152 @@ func ruleS06(in *Input) ([]Finding, error) {
 				})
 			}
 		}
+	}
+	return out, nil
+}
+
+// ruleS07 is the one number in the corpus that is a legal position rather
+// than an engineering one. A restricted paper publishes a quotation, and a
+// quotation long enough to substitute for the paper is not a quotation.
+//
+// S02 says a restricted paper gets one file. This says how much may be in
+// it, and the two together are the whole of what the corpus claims about a
+// paper it may not redistribute.
+func ruleS07(in *Input) ([]Finding, error) {
+	restricted := 0
+	var out []Finding
+	for _, f := range in.Content {
+		if f.Broken() || in.Sources.Access(f.Paper) != corpus.AccessRestricted {
+			continue
+		}
+		restricted++
+		if n := len(strings.Fields(f.Body)); n > split.AbstractWords {
+			out = append(out, Finding{
+				Rule: "S07", File: f.Path,
+				Message: fmt.Sprintf("%d words quoted from a restricted paper, and the limit is %d", n, split.AbstractWords),
+			})
+		}
+	}
+	if restricted == 0 {
+		return nil, ErrNotRun
+	}
+	return out, nil
+}
+
+// PageChars is the most text one page of a PDF is taken to hold, and it is
+// the whole of rule S08.
+//
+// The densest paper in the corpus today is the Transformer paper at 2,656
+// characters a page, so the cap is near twice anything real. It is set that
+// wide because the rule is a tripwire for a model that answered about a
+// paper instead of reading one, and that failure is out by a factor rather
+// than by a fifth. A three column proceedings page from the 1960s is the one
+// thing that could reach it honestly, and when one does somebody has to look
+// at the paper and raise the number, which is the right amount of friction
+// for a rule that decides whether the corpus is telling the truth.
+const PageChars = 5000
+
+// ruleS08 asks whether the text could have come out of the file it says it
+// came out of. Nothing else in the audit asks this: every other rule reads
+// the content and judges the content, and a fabricated paper is
+// well-formed, parses, renders and passes all of them.
+func ruleS08(in *Input) ([]Finding, error) {
+	chars := map[string]int{}
+	for _, f := range in.Content {
+		if f.Broken() || f.Lang != corpus.EN {
+			continue
+		}
+		chars[f.Paper] += len(f.Body)
+	}
+	if len(chars) == 0 {
+		return nil, ErrNotRun
+	}
+	sized := 0
+	var out []Finding
+	for _, p := range in.Papers.Papers {
+		rec, ok := in.Sources.ByID(p.ID)
+		if !ok || rec.Pages <= 0 {
+			continue
+		}
+		sized++
+		most := rec.Pages * PageChars
+		if n := chars[p.ID]; n > most {
+			out = append(out, Finding{
+				Rule: "S08", File: "content/en/" + p.ID,
+				Message: fmt.Sprintf("%d characters from a %d page PDF, which is more than %d pages can hold", n, rec.Pages, rec.Pages),
+			})
+		}
+	}
+	if sized == 0 {
+		return nil, ErrNotRun
+	}
+	return out, nil
+}
+
+// SparsePage is the least text a page of a paper is taken to hold, averaged
+// over the pages that were read, and it is the whole of rule S09.
+//
+// The sparsest paper in the corpus today averages 1,917 characters a page
+// over its first three, title page included, and the densest 5,393. Six
+// hundred is under a third of the sparsest and is several times what the two
+// documents this rule was written for carried.
+//
+// It is an average and not a floor on every page, because a plate, a blank
+// verso and a page that is one full width figure are all real pages of real
+// papers and all of them are nearly empty.
+const SparsePage = 600
+
+// ruleS09 asks whether the file that was fetched is the paper at all.
+//
+// Nothing in the audit used to ask this and the corpus paid for it. The
+// resolver's ladder found, for two of the first eight papers, a lecture slide
+// deck about the paper rather than the paper: 38 slides "Presented by Manu
+// Reddy, Sep 9 2015" for Rosenblatt's perceptron, and 12 slides on the
+// sumcheck protocol for Shamir's IP = PSPACE. Both were plausible. Both had
+// the right title on the first page, the right author, a native text layer
+// and a hash that matched what was downloaded. Both passed every rule in
+// this file, were extracted, were split, and were published as the corpus's
+// account of those papers.
+//
+// What gives a deck away is that there is almost nothing on a slide. A page
+// of a journal carries two thousand characters and a slide carries a heading
+// and four bullets, so the text per page separates the two by a factor of ten
+// and no threshold in between needs defending.
+//
+// It reads the pages under work/, which is where extraction puts them and
+// which is not committed, so in CI it has nothing to look at and says so.
+// That is the right place for it: a wrong document enters the corpus on the
+// machine that fetched it, and this is the rule that should stop it there.
+func ruleS09(in *Input) ([]Finding, error) {
+	read := 0
+	var out []Finding
+	for _, p := range in.Papers.Papers {
+		store := extract.Store{Dir: in.Corpus.Work(p.ID, "pages")}
+		pages, err := store.Pages()
+		if err != nil {
+			return nil, err
+		}
+		if len(pages) == 0 {
+			continue
+		}
+		read++
+		chars := 0
+		for _, page := range pages {
+			text, err := store.Read(page)
+			if err != nil {
+				return nil, err
+			}
+			chars += len(text)
+		}
+		if per := chars / len(pages); per < SparsePage {
+			out = append(out, Finding{
+				Rule: "S09", File: "manifests/sources.yaml",
+				Message: fmt.Sprintf("%s reads %d characters a page over %s, which is a slide deck or a scan and not a paper", p.ID, per, plural(len(pages), "page")),
+			})
+		}
+	}
+	if read == 0 {
+		return nil, ErrNotRun
 	}
 	return out, nil
 }
