@@ -21,7 +21,7 @@ split      cut the paper into one file per section
 tags       hand out permanent identifiers
 translate  produce Vietnamese, Chinese and Japanese
 audit      check the result against numbered rules
-report     write what the corpus knows about itself, starting with what it cost
+report     write what the corpus knows about itself: coverage, and what it cost
 emit       build the JSON the reading app consumes
 ```
 
@@ -65,6 +65,11 @@ Pages read by a layout model or a vision model say so, and the audit treats them
 
 **Tags are permanent.**
 A section keeps its tag across re-extraction, re-splitting and renumbering, which is what lets a link written today survive the paper being read again by a better model next year.
+
+**A stub is not a shortfall.**
+`papers report coverage` writes `reports/coverage.md`, which counts every paper as full, stub or none, per field and per language.
+A restricted paper gets its front matter and a short abstract and that is the whole of what its licence allows, so it counts as done rather than as a paper somebody forgot.
+The last table in the report is the one to act on: it names what each unfinished paper is waiting on, which is a fetch, a licence check, a layout tool or a vision model, and the count behind each of those is what decides whether to go and get it.
 
 **What it cost is written down.**
 Every ask put to a model is one line in a ledger, and `papers report usage` rolls that up into `reports/usage.md` by stage, by model and by paper.

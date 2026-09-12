@@ -21,10 +21,12 @@ func runReport(args []string) error {
 	switch args[0] {
 	case "usage":
 		return runReportUsage(args[1:])
+	case "coverage":
+		return runReportCoverage(args[1:])
 	case "-h", "--help", "help":
 		reportUsage(os.Stdout)
 		return nil
-	case "coverage", "graph":
+	case "graph":
 		return fmt.Errorf("the %s report arrives in milestone M7", args[0])
 	}
 	reportUsage(os.Stderr)
@@ -32,14 +34,71 @@ func runReport(args []string) error {
 }
 
 func reportUsage(w *os.File) {
-	fmt.Fprint(w, `usage: papers report <usage> [flags]
+	fmt.Fprint(w, `usage: papers report <coverage|usage> [flags]
 
+    coverage   how much of each paper is published, and what the rest waits on
     usage      what the machine time cost, by stage
-    coverage   how much of each paper is done (milestone M7)
     graph      the citations between papers in the corpus (milestone M7)
 
-Run papers report usage -h for the flags.
+Run papers report coverage -h or papers report usage -h for the flags.
 `)
+}
+
+func runReportCoverage(args []string) error {
+	fs := flag.NewFlagSet("report coverage", flag.ContinueOnError)
+	root := fs.String("corpus", "", "path to a checkout of tamnd/papers")
+	write := fs.Bool("write", false, "write reports/coverage.md as well as printing")
+	quiet := fs.Bool("quiet", false, "print the summary line only")
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `usage: papers report coverage [flags]
+
+Counts how much of each paper the corpus publishes, per field and per
+language, and what the rest is waiting on.
+
+A paper is full, stub or none. Full is a paper whose body is here. Stub is
+the front matter and a short abstract, which is the whole of what a
+restricted paper may ever have, so it counts as done rather than as a
+shortfall. None is a paper nothing is published of yet.
+
+The last table is the one to act on: it names every paper that is not done
+and what it is waiting on, which is a fetch, a licence check, a layout tool
+or a vision model. The count of papers behind one missing tool is the
+number that decides whether to go and get it.
+
+`)
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	c, err := openCorpus(*root)
+	if err != nil {
+		return err
+	}
+	cov, err := report.BuildCoverage(c)
+	if err != nil {
+		return err
+	}
+	if *quiet {
+		fmt.Println(cov.Summary())
+	} else {
+		fmt.Print(cov.Markdown())
+	}
+	if !*write {
+		return nil
+	}
+	if err := os.MkdirAll(c.Reports(), 0o755); err != nil {
+		return err
+	}
+	// No keep() here, unlike the usage report. This one is counted off the
+	// corpus itself, so a second checkout builds the same file as the first
+	// and there is nothing on one machine that the other cannot see.
+	out := filepath.Join(c.Reports(), "coverage.md")
+	if err := os.WriteFile(out, []byte(cov.Markdown()), 0o644); err != nil {
+		return err
+	}
+	fmt.Println("wrote", out)
+	return nil
 }
 
 func runReportUsage(args []string) error {
