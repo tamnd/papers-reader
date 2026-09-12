@@ -100,10 +100,10 @@ func Vision(registry route.Registry) *route.Pool { return wire(route.NewVisionPo
 // endpoint. The route package cannot build one itself without importing
 // llm/exec, and llm/exec imports llm/route, so the caller closes the loop.
 //
-// Both pools get it although only the text pool can use it today: the CLI
-// does not read images, so no exec route declares vision and the vision pool
-// holds none. Wiring one pool and not the other would be a difference nobody
-// could see the reason for, until the day a subscription grows an eye.
+// Both pools get it. The CLI reads a page image as well as a hosted model
+// does: llm/exec writes the image where the program can open it and puts the
+// path on the command line, so an exec route that declares vision is a reader
+// like any other and the vision pool is where it belongs.
 func wire(p *route.Pool) *route.Pool {
 	p.Build = exec.Build
 	return p
