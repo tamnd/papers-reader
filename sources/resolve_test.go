@@ -26,6 +26,9 @@ const arxivAtom = `<?xml version="1.0" encoding="UTF-8"?>
     <author><name>Noam Shazeer</name></author>
     <link href="http://arxiv.org/abs/1706.03762v7" rel="alternate" type="text/html"/>
     <link title="pdf" href="http://arxiv.org/pdf/1706.03762v7" rel="related" type="application/pdf"/>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
   </entry>
 </feed>`
 

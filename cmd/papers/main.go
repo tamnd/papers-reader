@@ -35,7 +35,7 @@ var commands = []command{
 	{"version", "", "print the version", runVersion},
 	{"list", "", "list papers in the corpus", runList},
 	{"audit", "", "check the corpus against the numbered rules", runAudit},
-	{"add", "M9", "add a paper to the manifest from an arXiv id or a DOI", nil},
+	{"add", "M9", "add a paper to the manifest from an arXiv id or a DOI", runAdd},
 	{"resolve", "M1", "find where each paper can be fetched, and its licence", runResolve},
 	{"fetch", "M1", "download the PDFs that resolved, and hash them", runFetch},
 	{"adopt", "M1", "record a PDF a person fetched by hand, and where from", runAdopt},
@@ -58,7 +58,7 @@ var commands = []command{
 	{"queue", "M1", "show and drain the work queue", runQueue},
 	{"routes", "M1", "show the model routing table", runRoutes},
 	{"doctor", "M1", "check that the tools and the routes are usable", runDoctor},
-	{"suggest", "M9", "list works cited often and not yet in the corpus", nil},
+	{"suggest", "M9", "list works cited often and not yet in the corpus", runSuggest},
 }
 
 func main() {

@@ -11,10 +11,11 @@ import (
 
 // Papers is manifests/papers.yaml, the list of what the corpus is for.
 //
-// There is deliberately no Save. The file carries a header and per group
-// comments that yaml.v3 does not round trip, and re-marshalling it would throw
-// them away silently. When `papers add` arrives it edits the file as a
-// yaml.Node so the comments survive.
+// There is deliberately no Save. The file carries a header, per group
+// comments, blank lines between entries and author lists wrapped by hand, and
+// yaml.v3 does not round trip any of that. AppendPaper is the one thing that
+// writes it, and it splices a rendered entry into the text rather than
+// re-marshalling the file, for the reasons written up there.
 type Papers struct {
 	Papers []Paper `yaml:"papers"`
 }
@@ -53,14 +54,19 @@ type Paper struct {
 	// it, so a seed URL is tried after every service has had a go and it never
 	// carries a licence with it. A paper whose only location is a seed stays
 	// unknown, and unknown publishes nothing.
-	Seed          string   `yaml:"seed,omitempty"`
+	Seed string `yaml:"seed,omitempty"`
+	// Expect is a guess at the access class made before resolution. Nothing is
+	// fetched on the strength of it; the fact lives in sources.yaml.
+	//
+	// It sits here, between the locations and the reading notes, because that
+	// is where the hundred hand written entries put it and because papers add
+	// writes an entry in the order these fields are declared in. An entry a
+	// program wrote should be indistinguishable from one a person wrote.
+	Expect        Access   `yaml:"expect,omitempty"`
 	Difficulty    int      `yaml:"difficulty,omitempty"`
 	Prerequisites []string `yaml:"prerequisites,omitempty"`
 	CoreIdea      string   `yaml:"core_idea,omitempty"`
-	// Expect is a guess at the access class made before resolution. Nothing is
-	// fetched on the strength of it; the fact lives in sources.yaml.
-	Expect Access `yaml:"expect,omitempty"`
-	Status Status `yaml:"status"`
+	Status        Status   `yaml:"status"`
 }
 
 // LoadPapers reads manifests/papers.yaml.

@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/tamnd/papers-reader/corpus"
 )
 
 // arXiv is the first service on the ladder because it is the only one that is
@@ -34,6 +36,14 @@ type arxivEntry struct {
 		Type  string `xml:"type,attr"`
 		Title string `xml:"title,attr"`
 	} `xml:"link"`
+	// Primary is the one category the author picked out of however many they
+	// cross listed under, and it is the only one worth reading. A transformer
+	// paper is cross listed under cs.CL, cs.LG and stat.ML and the author
+	// chose the first, which is the closest thing to a person saying what
+	// field this is.
+	Primary struct {
+		Term string `xml:"term,attr"`
+	} `xml:"primary_category"`
 }
 
 // ArXivByID looks a submission up by its identifier.
@@ -91,6 +101,12 @@ func parseArXiv(body []byte) ([]Candidate, error) {
 			Landing:  "https://arxiv.org/abs/" + id,
 			URL:      "https://arxiv.org/pdf/" + id,
 			Abstract: collapse(e.Summary),
+			Category: strings.TrimSpace(e.Primary.Term),
+			// A preprint's venue is arXiv until somebody knows better. The
+			// journal reference is in the Atom feed for maybe a third of
+			// submissions and is free text when it is there, so it is not
+			// something to write into a manifest unread.
+			Venue: "arXiv",
 		}
 		for _, a := range e.Authors {
 			cand.Authors = append(cand.Authors, collapse(a.Name))
@@ -144,6 +160,49 @@ func parseOAILicence(body []byte) (licence string, stated bool, err error) {
 		return l, true, nil
 	}
 	return "http://arxiv.org/licenses/nonexclusive-distrib/1.0/", false, nil
+}
+
+// arxivFields is the arXiv primary category a paper was filed under and the
+// group of the manifest it belongs in.
+//
+// The two taxonomies are not the same shape and this is not an attempt to
+// make them one. arXiv has no category for a database paper and files them
+// all under cs.DB alongside data management, and it has one category for
+// graphics and none for interaction, so cs.HC has to carry both. What this
+// table is for is saving a person from typing -field on the two thirds of
+// submissions where there is only one sensible answer, and leaving them to
+// say for the rest. A category not listed here is not a mistake, it is a
+// category where arXiv's answer and the corpus's answer come apart often
+// enough that guessing would be worse than asking.
+var arxivFields = map[string]corpus.Field{
+	"cs.CC":   corpus.Theory,
+	"cs.LO":   corpus.Theory,
+	"cs.FL":   corpus.Theory,
+	"math.LO": corpus.Theory,
+	"cs.DS":   corpus.Algorithms,
+	"cs.PL":   corpus.Languages,
+	"cs.OS":   corpus.Systems,
+	"cs.DC":   corpus.Systems,
+	"cs.NI":   corpus.Networks,
+	"cs.DB":   corpus.Databases,
+	"cs.AR":   corpus.Architecture,
+	"cs.CR":   corpus.Security,
+	"cs.LG":   corpus.AIML,
+	"cs.CL":   corpus.AIML,
+	"cs.CV":   corpus.AIML,
+	"cs.AI":   corpus.AIML,
+	"cs.NE":   corpus.AIML,
+	"stat.ML": corpus.AIML,
+	"cs.GR":   corpus.Graphics,
+	"cs.HC":   corpus.HCI,
+	"cs.SE":   corpus.Software,
+}
+
+// FieldOf is the manifest group an arXiv category belongs in, and false where
+// the corpus would rather be told than guess. See arxivFields.
+func FieldOf(category string) (corpus.Field, bool) {
+	f, ok := arxivFields[strings.TrimSpace(category)]
+	return f, ok
 }
 
 // CleanArXivID pulls the bare identifier out of whatever form it arrived in:

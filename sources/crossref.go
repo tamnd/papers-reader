@@ -146,6 +146,9 @@ func crossrefCandidate(w crossrefWork) Candidate {
 	if len(w.Title) > 0 {
 		cand.Title = collapse(w.Title[0])
 	}
+	if len(w.Container) > 0 {
+		cand.Venue = collapse(w.Container[0])
+	}
 	for _, a := range w.Author {
 		if name := a.name(); name != "" {
 			cand.Authors = append(cand.Authors, name)

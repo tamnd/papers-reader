@@ -45,6 +45,14 @@ type Candidate struct {
 	// used for a restricted paper, where it is the one piece of the paper the
 	// corpus may carry.
 	Abstract string
+	// Venue is the journal or conference the work appeared in, where the
+	// service names one. Crossref is the one that reliably does, which is
+	// most of why it is on the ladder at all.
+	Venue string
+	// Category is the arXiv primary category, and empty for everything else.
+	// Nothing in the resolver reads it. papers add does, to guess which group
+	// of the manifest a new paper belongs in.
+	Category string
 	// Source names the rung of the ladder this came off, so that a record can
 	// be traced back to the service that produced it.
 	Source string

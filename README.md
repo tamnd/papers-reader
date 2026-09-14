@@ -9,6 +9,8 @@ The model plumbing underneath is [tamnd/llm](https://github.com/tamnd/llm).
 ## What it does
 
 ```
+add        put a paper in the manifest from an arXiv id or a DOI
+suggest    list the works the corpus keeps citing and does not hold
 resolve    find where a paper can legally be fetched from, and under what licence
 fetch      download it, hash it, record it
 classify   measure what each PDF's text layer is worth, and pick the path
@@ -42,6 +44,8 @@ export PAPERS_CORPUS=~/github/tamnd/papers
 papers list --field ai-ml
 papers audit --hard
 ```
+
+[docs/adding-a-paper.md](docs/adding-a-paper.md) is the walk through for putting a new paper into the corpus, with what each step of it costs in time and in tokens.
 
 ## Design
 
