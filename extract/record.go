@@ -45,6 +45,25 @@ type Record struct {
 	// all: two papers read with different notes were asked different
 	// questions and saying otherwise would be a lie about both.
 	Prompt string `yaml:"prompt_sha256,omitempty"`
+	// Source is the sha256 of the PDF the pages were read from, which is the
+	// same hash sources.yaml records for the file it fetched.
+	//
+	// It is here because a PDF gets replaced. Rule S09 found that the
+	// resolver had fetched an eighteen page lecture deck about Royce's paper
+	// rather than the paper, somebody corrected the record by hand, papers
+	// fetch pulled the real eleven page scan, and the next extraction read
+	// the deck anyway: the page images were still on disk from the first
+	// fetch, the render cache keys on the page number and the resolution and
+	// nothing else, and every page it needed was already there. The deck went
+	// through the reader a second time and the corrected record made no
+	// difference at all.
+	//
+	// So the run writes down which file it read, and a run that finds a
+	// different hash throws away the pages and the images and starts again.
+	// A record with no Source in it was written before this field existed and
+	// is left alone, because there is nothing to compare and clearing on that
+	// basis would re-read the whole corpus.
+	Source string `yaml:"source_sha256,omitempty"`
 	// First and Last are the pages of the PDF this covers.
 	First int `yaml:"first_page"`
 	Last  int `yaml:"last_page"`
@@ -81,8 +100,14 @@ func ReadRecord(dir string) (*Record, error) {
 // pages 9 to 12 did not undo pages 1 to 8. The path and the tool are the
 // new run's: a paper re-read by a different tool is that tool's text now,
 // whatever read it the first time.
+//
+// A run over a different PDF widens nothing. Pages 1 to 8 of the file that
+// was there last week are pages of another document, and a range that
+// covered both would say this record described pages it has never seen. A
+// record from before Source existed does not say which file it read, and it
+// widens as it always did rather than being treated as a different one.
 func (r Record) Write(dir string) error {
-	if old, err := ReadRecord(dir); err == nil && old != nil && old.Path == r.Path {
+	if old, err := ReadRecord(dir); err == nil && old != nil && old.Path == r.Path && !Replaced(old, r.Source) {
 		if old.First > 0 && old.First < r.First {
 			r.First = old.First
 		}
@@ -98,4 +123,15 @@ func (r Record) Write(dir string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, RecordFile), b, 0o644)
+}
+
+// Replaced says the PDF has changed since this paper was read.
+//
+// False for a record that does not name a file and false for a caller that
+// does not know the hash, because a comparison needs two sides and guessing
+// on one costs a whole corpus of re-reads. Both of those are the state the
+// corpus was in the day this was added, so the field fills itself in on the
+// next run of each paper and the check starts working from there.
+func Replaced(old *Record, sha string) bool {
+	return old != nil && old.Source != "" && sha != "" && old.Source != sha
 }

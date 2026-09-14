@@ -85,3 +85,58 @@ func TestANewPathReplacesTheRecord(t *testing.T) {
 		t.Errorf("got %s over %d to %d, want layout over 3 to 5", got.Path, got.First, got.Last)
 	}
 }
+
+// A different PDF is a different document, and the pages the old one had
+// read are not pages of it.
+func TestANewPDFReplacesTheRange(t *testing.T) {
+	dir := t.TempDir()
+	if err := (Record{Path: "vision", Source: "aaaa", First: 1, Last: 18}).Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Record{Path: "vision", Source: "bbbb", First: 1, Last: 3}).Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadRecord(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.First != 1 || got.Last != 3 {
+		t.Errorf("after the PDF was replaced the record covers %d to %d, want 1 to 3", got.First, got.Last)
+	}
+}
+
+func TestARecordFromBeforeTheSourceFieldStillWidens(t *testing.T) {
+	dir := t.TempDir()
+	if err := (Record{Path: "native", First: 1, Last: 8}).Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Record{Path: "native", Source: "aaaa", First: 9, Last: 12}).Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadRecord(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.First != 1 || got.Last != 12 {
+		t.Errorf("the record covers %d to %d, want 1 to 12", got.First, got.Last)
+	}
+}
+
+func TestReplacedNeedsBothSides(t *testing.T) {
+	for _, c := range []struct {
+		why  string
+		old  *Record
+		sha  string
+		want bool
+	}{
+		{"nothing was read before", nil, "aaaa", false},
+		{"the record does not say which file", &Record{}, "aaaa", false},
+		{"the caller does not know the hash", &Record{Source: "aaaa"}, "", false},
+		{"the same file", &Record{Source: "aaaa"}, "aaaa", false},
+		{"a different file", &Record{Source: "aaaa"}, "bbbb", true},
+	} {
+		if got := Replaced(c.old, c.sha); got != c.want {
+			t.Errorf("%s: Replaced gave %v, want %v", c.why, got, c.want)
+		}
+	}
+}

@@ -666,6 +666,9 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 	if _, err := os.Stat(file); err != nil {
 		return n, fmt.Errorf("not fetched yet")
 	}
+	if err := e.refetched(); err != nil {
+		return n, err
+	}
 	path, err := e.path()
 	if err != nil {
 		return n, err
@@ -729,17 +732,45 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 		// Written last, so that a run killed halfway leaves a record of
 		// pages that are really there rather than of pages it meant to do.
 		record := extract.Record{
-			Path:  string(path),
-			Tool:  got.tool,
-			First: e.first,
-			Last:  e.last,
-			When:  time.Now().UTC().Truncate(time.Second),
+			Path:   string(path),
+			Tool:   got.tool,
+			Source: e.source.SHA256,
+			First:  e.first,
+			Last:   e.last,
+			When:   time.Now().UTC().Truncate(time.Second),
 		}
 		if err := record.Write(e.corpus.Work(e.paper.ID)); err != nil {
 			return n, err
 		}
 	}
 	return n, nil
+}
+
+// refetched throws away what was read from a PDF that is no longer there.
+//
+// The pages and the page images both, because both are caches keyed on the
+// paper and the page number and neither of them knows which file it came
+// from. Leaving either behind is what let a corrected record make no
+// difference: the pages were already extracted so the run had nothing to do,
+// and had it had something to do the images it would have been given were
+// still the old document's.
+//
+// It is silent when there is nothing to compare. See extract.Replaced.
+func (e *extraction) refetched() error {
+	old, err := extract.ReadRecord(e.corpus.Work(e.paper.ID))
+	if err != nil || !extract.Replaced(old, e.source.SHA256) {
+		return err
+	}
+	fmt.Printf("    %s: the PDF has been replaced since it was read, so the pages and the page images go\n", e.paper.ID)
+	if e.dry {
+		return nil
+	}
+	for _, dir := range []string{e.corpus.Work(e.paper.ID, "pages"), e.corpus.Images(e.paper.ID)} {
+		if err := os.RemoveAll(dir); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // path is the extraction path this paper takes.
@@ -1020,6 +1051,7 @@ func (e *extraction) vision(ctx context.Context, file string, store extract.Stor
 			Path:   string(classify.PathVision),
 			Tool:   tool,
 			Prompt: pinned.SHA,
+			Source: e.source.SHA256,
 			First:  e.first,
 			Last:   e.last,
 			When:   time.Now().UTC().Truncate(time.Second),
