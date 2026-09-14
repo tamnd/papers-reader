@@ -119,7 +119,8 @@ func TestATruncatedPageIsRefused(t *testing.T) {
 
 // layered is a checker whose pages the file itself can be asked about, which
 // is what a born digital paper gives A5. Each page's layer is as long as the
-// share of a full page the caller asks for.
+// share of a full page the caller asks for, and a share over one is a page
+// the file says holds more than an ordinary one.
 func layered(share map[int]float64) *Checker {
 	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
 	return &Checker{Model: true, Layer: func(page int) (string, bool) {
@@ -127,7 +128,8 @@ func layered(share map[int]float64) *Checker {
 		if !ok {
 			s = 1
 		}
-		return full[:int(float64(len(full))*s)], true
+		text := strings.Repeat(full, int(s)+1)
+		return text[:int(float64(len(full))*s)], true
 	}}
 }
 
@@ -182,6 +184,40 @@ func TestAPageThatReadsLongerThanItsLayerIsMeasuredAgainstThePaper(t *testing.T)
 	}
 	if faults := c.Check(9, full); has(faults, A5) {
 		t.Errorf("a full length reading of a page whose layer is thin gave %v", rules(faults))
+	}
+}
+
+// Page 63 of the GPT-3 paper, which is the other way about. The page is one
+// appendix table of every score in the paper, the layer on it is worth 8744
+// against a paper that averages 3188, and a correct reading of 11556
+// characters was refused nine times against the average. A floor can raise
+// what is expected of a reading and it must never lower it.
+func TestAPageTheFileItselfSaysIsLongIsNotRefusedForBeingLong(t *testing.T) {
+	c := layered(map[int]float64{9: 3})
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	if faults := c.Check(9, strings.Repeat(full, 3)); has(faults, A5) {
+		t.Errorf("a long reading of a page the file calls long gave %v", rules(faults))
+	}
+}
+
+// And the teeth are still in it. A page the file calls long that comes back
+// at four times what even the file says is on it is a reading that ran away
+// with itself.
+func TestAReadingFarPastWhatTheFileSaysIsOnThePageIsStillRefused(t *testing.T) {
+	c := layered(map[int]float64{9: 3})
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	if faults := c.Check(9, strings.Repeat(full, 12)); !has(faults, A5) {
+		t.Errorf("a runaway reading gave %v", rules(faults))
 	}
 }
 

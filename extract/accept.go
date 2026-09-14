@@ -238,25 +238,29 @@ func (c *Checker) layer(page int) (float64, bool) {
 // as wide as it ever was. It is only a page the file itself calls short that
 // is now allowed to come back short.
 //
-// Why the length of the answer comes into deciding what to expect of it,
-// which looks circular and is not. Prose is a floor under what is on a page
-// and not an estimate of it: it drops the labels inside a figure and the
-// cells of a table by design, and a reader transcribes a table. So the file
-// can say a page is at least this full and it cannot say a page is at most
-// this full. Under the floor is a real answer and over it is no answer at
-// all, so a reading shorter than the paper's average is measured against the
-// file and a longer one is measured against the paper, the way it always
-// was. Page 11 of the ResNet paper is what taught this: 6062 characters of
-// correct reading where the layer on it is worth 1848, because most of the
-// page is a table and a table is not prose.
+// Prose is a floor under what is on a page and not an estimate of it: it
+// drops the labels inside a figure and the cells of a table by design, and a
+// reader transcribes a table. So the file can say a page is at least this
+// full and it cannot say a page is at most this full, and a floor can raise
+// what is expected of a reading and must never lower it. That is the whole
+// of the rule here: the expectation is the paper's average scaled by the
+// layer, or the paper's average, whichever is the larger.
+//
+// Both halves of that were paid for. Page 11 of the ResNet paper is 6062
+// characters of correct reading where the layer on it is worth 1848, because
+// most of the page is a table and a table is not prose, and scaling the
+// expectation down to match the layer would refuse it. Page 63 of the GPT-3
+// paper is the other way about: 11556 characters of correct reading against
+// a paper that averages 3188, because the page is one appendix table of
+// every score in the paper, and the layer on it is worth 8744 and says so.
+// Measuring that against the plain average refused nine correct readings in
+// a row and left the page written out as a fence with most of its rows
+// missing.
 //
 // It needs a sample of pages that have a layer before it means anything, the
 // same as the mean it scales, and on a paper read off a scan there is no
 // layer at all and this is the plain average.
 func (c *Checker) expected(page, got int) (float64, bool) {
-	if float64(got) >= c.mean {
-		return c.mean, false
-	}
 	if c.ln < MinLengthSample || c.lmean <= 0 {
 		return c.mean, false
 	}
@@ -264,7 +268,11 @@ func (c *Checker) expected(page, got int) (float64, bool) {
 	if !ok {
 		return c.mean, false
 	}
-	return c.mean * l / c.lmean, true
+	want := c.mean * l / c.lmean
+	if float64(got) >= c.mean && want <= c.mean {
+		return c.mean, false
+	}
+	return want, true
 }
 
 func (c *Checker) faults(page int, text string) []Fault {
