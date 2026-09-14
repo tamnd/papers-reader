@@ -54,22 +54,31 @@ slightly blurred but no claim of the paper has changed. Use
 believing something the first passage does not say, or would miss something
 it does. A dropped sentence is material. A flipped comparison is material.
 
-After the verdict line, one line per difference, each starting with a dash.
-Say what the original claims and what the back-translation claims, in that
-order, in one sentence. Write no differences at all if the verdict is `same`.
+After the verdict line, one line per difference. Each line starts with a
+dash, then one of two words, then what the original claims and what the
+back-translation claims, in that order, in one sentence:
 
-Two things about the list, and they are the whole of the job.
+    - material: the original says X, the back-translation says Y
+    - wording: the original says X, the back-translation says Y
 
-A difference you would end by saying it is equivalent, that it preserves the
-claim, or that it does not materially change anything, is not a difference.
-Leave it out. It is a wording difference and the verdict line is where
-wording differences are reported.
+Write no differences at all if the verdict is `same`.
 
-The verdict has to follow the list. If every line under it is a word that
-came back as a synonym of itself, the verdict is `differs-in-wording`,
-however many lines there are. Ten of those are still ten wording
-differences. `differs-materially` means at least one line is a claim of the
-paper that changed, and that line should be first.
+Which word goes on a line is the whole of the job.
+
+`material:` is a claim of the paper that changed. A reader of the
+back-translation would believe something the original does not say, or would
+miss something it does.
+
+`wording:` is everything else. If the sentence you are writing would end with
+"which is equivalent", "this preserves the claim", "this is only a slight
+difference" or "this does not materially change anything", then the word at
+the head of the line is `wording:`. Write the line anyway, with that word on
+it, and stop there. Do not write the closing remark.
+
+The verdict has to agree with the list. `differs-materially` means at least
+one line is `material:`, and that line comes first. If every line is
+`wording:`, the verdict is `differs-in-wording`, however many lines there
+are. Ten wording differences are still ten wording differences.
 
 Do not explain your reasoning, do not summarise either passage, and do not
 add a closing remark.

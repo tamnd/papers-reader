@@ -283,9 +283,24 @@ func (c *Checker) logf(format string, args ...any) {
 // tolerated is an answer with no verdict in it at all, or with two different
 // verdicts: the first is a judge that did something else, and the second is
 // a judge arguing with itself, and neither is a result.
+//
+// The label is read against the list, because the label on its own is not
+// reliable. The first run over the corpus came back with twelve pages marked
+// material, and reading them, nine were a list of lines the judge had itself
+// ended with "which is equivalent", "this preserves the claim" and "this is
+// only a slight difference. Every one of those is a wording difference by the
+// definition the judge was given, and the judge labelled the page material
+// anyway. A check that reports nine false alarms out of twelve is a check
+// nobody reads.
+//
+// So the judge now puts material: or wording: at the head of each line and
+// the verdict comes off the list. The label still decides when the list does
+// not: a judge that ignored the tagging is a judge whose label is all there
+// is, and taking it is the conservative reading.
 func Parse(answer string) (Verdict, []string, error) {
 	var found Verdict
 	var differences []string
+	material, tagged := 0, 0
 	for _, line := range strings.Split(answer, "\n") {
 		line = strings.TrimSpace(line)
 		if rest, ok := cut(line, "verdict:"); ok {
@@ -299,24 +314,56 @@ func Parse(answer string) (Verdict, []string, error) {
 			found = v
 			continue
 		}
-		if d := strings.TrimSpace(strings.TrimPrefix(line, "-")); d != line && d != "" {
-			differences = append(differences, d)
+		d := strings.TrimSpace(strings.TrimPrefix(line, "-"))
+		if d == line || d == "" {
+			continue
+		}
+		differences = append(differences, d)
+		switch kind(d) {
+		case Material:
+			material++
+			tagged++
+		case Wording:
+			tagged++
 		}
 	}
 	if found == "" {
 		return "", nil, fmt.Errorf("the judge answered without a verdict line: %s", shorten(answer))
 	}
-	// A verdict of same with a list of differences under it is the judge
-	// contradicting itself, and the differences are what it actually found.
-	// Believing the list rather than the label is the conservative reading
-	// and it is the one that puts a page in front of a person.
-	if found == Same && len(differences) > 0 {
+	switch {
+	case material > 0:
+		// One line of the list is a claim of the paper that changed, and
+		// that is the finding whatever the label says.
+		found = Material
+	case tagged > 0 && tagged == len(differences):
+		// Every line is tagged and none of them is material, so the judge
+		// has said in the list that nothing the paper claims has moved.
+		found = Wording
+	case found == Same && len(differences) > 0:
+		// A verdict of same with a list of differences under it is the judge
+		// contradicting itself, and the differences are what it actually
+		// found. Believing the list rather than the label is the
+		// conservative reading and it is the one that puts a page in front
+		// of a person.
 		found = Wording
 	}
 	if found == Same {
 		differences = nil
 	}
 	return found, differences, nil
+}
+
+// kind is how the judge tagged one line of its list, and empty when it did
+// not tag it at all.
+func kind(line string) Verdict {
+	head := strings.ToLower(strings.TrimLeft(line, " `*"))
+	switch {
+	case strings.HasPrefix(head, "material:"):
+		return Material
+	case strings.HasPrefix(head, "wording:"):
+		return Wording
+	}
+	return ""
 }
 
 // cut finds a prefix on a line that may be quoted, bulleted or bolded, which

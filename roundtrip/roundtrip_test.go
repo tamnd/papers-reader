@@ -175,6 +175,47 @@ func TestTheJudgeIsRead(t *testing.T) {
 			verdict: Wording,
 			count:   1,
 		},
+		{
+			// The case the first run over the corpus was full of: a page
+			// labelled material under a list the judge itself had tagged as
+			// wording, every line of it. The list is the evidence and the
+			// label is not.
+			name: "a material label over a list of wording",
+			answer: "verdict: differs-materially\n" +
+				"- wording: the original says dramatically and the back-translation says significantly\n" +
+				"- wording: the original says extend and the back-translation says is an extension",
+			verdict: Wording,
+			count:   2,
+		},
+		{
+			// One tagged line is enough, and the rest of the list being
+			// wording does not soften it.
+			name: "one material line among the wording",
+			answer: "verdict: differs-in-wording\n" +
+				"- material: the original says the optimum is a minimum and the back-translation says a maximum\n" +
+				"- wording: the original says several and the back-translation says many",
+			verdict: Material,
+			count:   2,
+		},
+		{
+			// A judge that ignored the tagging is a judge whose label is all
+			// there is, and taking it is the conservative reading.
+			name: "a list the judge did not tag",
+			answer: "verdict: differs-materially\n" +
+				"- the original says every input and the back-translation says some",
+			verdict: Material,
+			count:   1,
+		},
+		{
+			// Half a tagged list is not a tagged list. One untagged line
+			// could be the material one the judge forgot to mark.
+			name: "a list the judge tagged halfway",
+			answer: "verdict: differs-materially\n" +
+				"- wording: the original says dramatically and the back-translation says significantly\n" +
+				"- the original's second sentence has no counterpart",
+			verdict: Material,
+			count:   2,
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			v, differences, err := Parse(c.answer)
