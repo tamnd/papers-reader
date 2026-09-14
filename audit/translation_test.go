@@ -214,6 +214,10 @@ terms:
   - en: library
     vi: thư viện
     common: true
+  - en: hash
+    vi: băm
+  - en: performance
+    vi: hiệu năng
 `
 
 // glossaryPair is pairOf with a glossary on disk, for L06 and L10.
@@ -270,6 +274,46 @@ func TestACommonTermIsStillL10sBusiness(t *testing.T) {
 	tr := "Thuật toán đã tăng tốc một chương trình tra cứu thư mục của library lên gấp năm đến mười lần.\n"
 	if res := result(t, glossaryPair(t, en, tr), "L10"); !res.Failed() {
 		t.Error("L10 passed a common term the translation left in English")
+	}
+}
+
+// What is under the ACM headings is a controlled vocabulary and not prose.
+// Dynamo's translator translated the headings and left the codes under them
+// standing, which is the right answer, and L10 reported it for it.
+func TestL10LeavesTheACMClassificationAlone(t *testing.T) {
+	en := "This section is about the storage layer and the paragraph is here so that the rules with a length floor have something to read.\n\n" +
+		"Categories and Subject Descriptors\nD.4.2 [Operating Systems]: Storage Management; D.4.5 [Operating Systems]: Performance;\n\n" +
+		"General Terms\nAlgorithms, Management, Measurement, Performance, Design, Reliability.\n"
+	tr := "Mục này nói về tầng lưu trữ và đoạn văn này ở đây để các quy tắc có ngưỡng độ dài có cái để đọc.\n\n" +
+		"Các danh mục và mô tả đối tượng\nD.4.2 [Operating Systems]: Storage Management; D.4.5 [Operating Systems]: Performance;\n\n" +
+		"Các thuật ngữ chung\nAlgorithms, Management, Measurement, Performance, Design, Reliability.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L10"); res.Failed() {
+		t.Errorf("L10 asked for the ACM classification to be translated: %v", res.Findings)
+	}
+}
+
+// The same word in a sentence is still the rule's business, or the test
+// above passes because the term went missing rather than because the block
+// was skipped.
+func TestL10StillReadsTheProseAroundTheClassification(t *testing.T) {
+	en := "The storage layer was built for performance and this sentence is long enough for the rules to have something to read.\n\n" +
+		"General Terms\nAlgorithms, Management, Measurement, Performance, Design, Reliability.\n"
+	tr := "Tầng lưu trữ được xây dựng cho performance và câu này đủ dài để các quy tắc có cái để đọc ở đây.\n\n" +
+		"Các thuật ngữ chung\nAlgorithms, Management, Measurement, Performance, Design, Reliability.\n"
+	res := result(t, glossaryPair(t, en, tr), "L10")
+	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "performance") {
+		t.Errorf("L10 said %v about a term left standing in a sentence", res.Findings)
+	}
+}
+
+// A name with its arguments stuck to it is an identifier and an identifier
+// is the same in every language. MapReduce sets its partition function as
+// running text rather than as code, so this is what the Vietnamese sees.
+func TestL10ReadsANameWithItsArgumentsAsAName(t *testing.T) {
+	en := "The intermediate key space is partitioned into R pieces using a partitioning function, for example hash(key) mod R.\n"
+	tr := "Không gian khóa trung gian được phân vùng thành R phần bằng một hàm phân vùng, ví dụ hash(key) mod R.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L10"); res.Failed() {
+		t.Errorf("L10 asked for a function call to be translated: %v", res.Findings)
 	}
 }
 
@@ -399,6 +443,35 @@ func TestL07LeavesALineOfAProgramAlone(t *testing.T) {
 	for _, id := range []string{"L07", "L11"} {
 		if res := result(t, rep, id); res.Failed() {
 			t.Errorf("%s asked for a line of ALGOL to be translated: %v", id, res.Findings)
+		}
+	}
+}
+
+// listing is a fence with a blank line in the middle of it, which is what
+// nearly every program in this corpus looks like. Both halves are over the
+// word floor and both are the same in every language.
+const listing = "```cpp\n" +
+	"// Store the list of input files into the specification\n" +
+	"for (int i = 1; i < argc; i++) {\n" +
+	"  MapReduceInput* input = spec.add_input();\n" +
+	"}\n" +
+	"\n" +
+	"// Optional: do partial sums within the map tasks to save bandwidth\n" +
+	"out->set_combiner_class(\"Adder\");\n" +
+	"```"
+
+func TestL07LeavesAListingWithABlankLineInItAlone(t *testing.T) {
+	en, tr := englishBody+"\n"+listing+"\n", viBody+"\n"+listing+"\n"
+	// The halves have to be long enough to reach the rule, or this passes
+	// for the wrong reason and goes on passing after the fence is broken.
+	for _, half := range strings.Split(listing, "\n\n") {
+		if n := proseWords(half); n < prosePerParagraph {
+			t.Fatalf("half of the listing holds %d words, under the floor, so this test proves nothing", n)
+		}
+	}
+	for _, id := range []string{"L07", "L11"} {
+		if res := result(t, pairOf(t, corpus.VI, en, tr), id); res.Failed() {
+			t.Errorf("%s asked for a listing to be translated: %v", id, res.Findings)
 		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/glossary"
+	"github.com/tamnd/papers-reader/markdown"
 	"github.com/tamnd/papers-reader/split"
 	"github.com/tamnd/papers-reader/translate"
 )
@@ -505,15 +506,28 @@ func cap5(list []string) []string {
 // an English name that was kept on purpose. A whole English sentence left
 // standing is not this rule's business: L11 has it, and L07 has a whole
 // English paragraph.
+//
+// An open bracket after it, third. "hash(key) mod R" is the partition
+// function in the MapReduce paper and it is set as running text rather than
+// as code, so the Vietnamese carries it through as printed and should. A
+// name with its argument list stuck to it is an identifier, and an
+// identifier is the same in every language. Rendering it would be writing a
+// call to a function nobody wrote.
 func alone(text, other, term string) bool {
 	rs := []rune(text)
 	for _, s := range spans(rs, term) {
-		if copied(rs, other, s[0], s[1]) {
+		if called(rs, s[1]) || copied(rs, other, s[0], s[1]) {
 			continue
 		}
 		return true
 	}
 	return false
+}
+
+// called says whether what ends at end is a call rather than a word: the
+// next character is an open bracket, with no space between.
+func called(rs []rune, end int) bool {
+	return end < len(rs) && (rs[end] == '(' || rs[end] == '[')
 }
 
 // spans is every place term stands as a word of rs, as half open rune
@@ -785,17 +799,21 @@ func masthead(blocks []string) int {
 	return len(blocks)
 }
 
-// blocksOf cuts a body at blank lines, which is the same cut the chunker
-// makes and the same one the span comparison makes.
-func blocksOf(body string) []string {
-	var out []string
-	for _, b := range strings.Split(body, "\n\n") {
-		if strings.TrimSpace(b) != "" {
-			out = append(out, b)
-		}
-	}
-	return out
-}
+// blocksOf cuts a body into the blocks the rest of the toolchain sees.
+//
+// This used to split on blank lines here, which is nearly right and is wrong
+// in one place that matters: a listing with a blank line in it came apart
+// into several blocks, and the pieces that were pure program text were then
+// held up against the English as paragraphs. The MapReduce appendix is
+// ninety lines of C++ in one fence and it produced nine findings against a
+// translator for not translating C++.
+//
+// markdown.Blocks is what the emitter cuts with and package translate's
+// chunker keeps a fence whole for the same reason, so this is the two of
+// them agreeing rather than a third opinion. It also means the paragraph
+// number in a finding is the block index the reading app shows, which is
+// what somebody chasing the finding is going to be looking at.
+func blocksOf(body string) []string { return markdown.Blocks(body) }
 
 // plainProse is the prose of a passage, lowercased, with the protected spans
 // and the runs of whitespace taken out, which is what two paragraphs have to
@@ -898,6 +916,8 @@ func ruleL09(in *Input) ([]Finding, error) {
 //
 // Terms the glossary keeps in English are skipped, because keeping them is
 // the decision the glossary recorded.
+//
+// The ACM classification on a front page is skipped too. See classification.
 func ruleL10(in *Input) ([]Finding, error) {
 	if in.Glossary == nil || len(in.Glossary.Terms) == 0 {
 		return nil, ErrNotRun
@@ -907,10 +927,15 @@ func ruleL10(in *Input) ([]Finding, error) {
 			return nil
 		}
 		en := strings.ToLower(translate.Prose(p.en.Body))
-		tr := strings.ToLower(translate.Prose(p.tr.Body))
+		// Looked for in the prose, and found anywhere in the file. A gloss
+		// put on the term in a caption still explains it, so the rendering
+		// is searched for in the whole of the translation and the English
+		// term only in the part of it that was there to be translated.
+		whole := strings.ToLower(translate.Prose(p.tr.Body))
+		tr := strings.ToLower(translate.Prose(translatable(p)))
 		var left []string
 		for _, t := range renderings(in.Glossary, p.en.Front.Field, p.tr.Lang) {
-			if t.as == t.en || !alone(tr, en, t.en) || t.rendered(tr) {
+			if t.as == t.en || !alone(tr, en, t.en) || t.rendered(whole) {
 				continue
 			}
 			left = append(left, fmt.Sprintf("%q, which is %q", t.en, t.as))
@@ -923,6 +948,68 @@ func ruleL10(in *Input) ([]Finding, error) {
 			Message: "these terms stand in English with their rendering nowhere in the file: " + strings.Join(cap5(left), ", "),
 		}}
 	})
+}
+
+// translatable is the body of a translation with the blocks that were never
+// anybody's to translate taken out of it.
+//
+// There is one kind so far and it is the ACM classification. See
+// classification. The blocks are matched through the English, because the
+// heading on them is translated and the content under it is not, which is
+// the correct answer and is also exactly what makes them hard to recognise
+// from the translation alone.
+//
+// A pair whose block counts disagree gets the body whole. That disagreement
+// is rule L03's finding and guessing which block is which on top of it
+// would turn one clear finding into two confusing ones.
+func translatable(p pair) string {
+	en, tr := blocksOf(p.en.Body), blocksOf(p.tr.Body)
+	if len(en) != len(tr) {
+		return p.tr.Body
+	}
+	var keep []string
+	for i, b := range tr {
+		if classification(en[i]) {
+			continue
+		}
+		keep = append(keep, b)
+	}
+	return strings.Join(keep, "\n\n")
+}
+
+// acmHeadings are the two blocks of an ACM front page that carry a
+// controlled vocabulary rather than a sentence.
+var acmHeadings = []string{
+	"categories and subject descriptors",
+	"categories & subject descriptors",
+	"general terms",
+}
+
+// classification says whether an English block is one of them.
+//
+// What is under those headings is not prose. "D.4.2 [Operating Systems]:
+// Storage Management" is a code in the ACM Computing Classification System
+// and "Algorithms, Management, Measurement, Performance, Design" is the
+// fixed list of ACM general terms, and both of them are identifiers that
+// happen to be spelled as English words. Rendering "Performance" into
+// Vietnamese there does not translate anything, it breaks the code.
+//
+// The Dynamo paper is what found this. Its translator got it exactly right,
+// translating the two headings and leaving the vocabulary under them
+// standing, and L10 reported it for leaving "performance" in English.
+//
+// Matched on the heading and not on the shape of what follows, because the
+// shape is a full stop away from an ordinary sentence and the heading is
+// printed by the ACM template.
+func classification(block string) bool {
+	line, _, _ := strings.Cut(block, "\n")
+	line = strings.ToLower(strings.TrimSpace(strings.Trim(strings.TrimSpace(line), "#* ")))
+	for _, h := range acmHeadings {
+		if line == h {
+			return true
+		}
+	}
+	return false
 }
 
 // ruleL11 finds a sentence that came back as its English inside a paragraph

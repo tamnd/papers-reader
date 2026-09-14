@@ -20,6 +20,24 @@ func TestAFencedListingIsOneBlockHoweverManyBlankLinesItHas(t *testing.T) {
 	}
 }
 
+// A listing inside a list item is indented and so is the fence that closes
+// it. Finding the open at column zero and the close anywhere reads the open
+// as a paragraph and then swallows the rest of the file looking for a close
+// it walked past, which is one block where there should be three.
+func TestAnIndentedFenceIsStillAFence(t *testing.T) {
+	const body = "1. Run it:\n\n   ```\n   read x\n\n   write x\n   ```\n\nThen read the output.\n"
+	got := Blocks(body)
+	if len(got) != 3 {
+		t.Fatalf("%d blocks, want 3: %q", len(got), got)
+	}
+	if !strings.Contains(got[1], "write x") {
+		t.Errorf("the listing was cut in half: %q", got[1])
+	}
+	if !strings.HasPrefix(got[2], "Then read") {
+		t.Errorf("the prose after the listing was swallowed by it: %q", got[2])
+	}
+}
+
 func TestTheSplitterDropsNothingAndInventsNothing(t *testing.T) {
 	const body = "One.\n\n\n\nTwo.\n   \nThree.\n"
 	got := Blocks(body)

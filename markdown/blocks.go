@@ -14,6 +14,12 @@ import (
 // on every blank line would set the halves of a shell transcript as three
 // paragraphs of prose with the escaping applied, which is how a document
 // grows a stray backslash in the middle of a command line.
+//
+// A fence is found after its indent, not at the start of the line. A listing
+// inside a list item is indented and its closing fence is indented with it,
+// so matching the open at column zero and the close anywhere would read the
+// open as a paragraph and then run to the end of the file looking for a
+// close it had already passed.
 func Blocks(body string) []string {
 	var out []string
 	var cur []string
@@ -34,9 +40,10 @@ func Blocks(body string) []string {
 				fence = ""
 				flush()
 			}
-		case strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~"):
+		case strings.HasPrefix(strings.TrimSpace(line), "```"),
+			strings.HasPrefix(strings.TrimSpace(line), "~~~"):
 			flush()
-			fence = line[:3]
+			fence = strings.TrimSpace(line)[:3]
 			cur = append(cur, line)
 		case strings.TrimSpace(line) == "":
 			flush()
