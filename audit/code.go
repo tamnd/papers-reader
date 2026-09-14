@@ -22,34 +22,6 @@ import (
 // listing is not, because a space in a listing is part of the program and a
 // published listing with a bug in it is a published listing with a bug in it.
 
-// codeLangs is the tags a fence in this corpus may carry.
-//
-// A list and not a pattern, because the point of the rule is that the tag is
-// one the renderer and the translator both recognise, and a pattern would
-// accept `algo`, `lang-c` and `C++ (1998)` alike. Anything genuinely missing
-// from it is one line to add, and the rule failing is how anybody finds out
-// that it is missing.
-//
-// `text` is on it and is not a language. It is what the prompt asks for when a
-// listing is in no language anybody names, and it is also what a table that a
-// pipe table cannot carry is written in, so it is the most common tag in the
-// corpus and the one that means "do not colour this, do not reflow it, and do
-// not translate a word of it".
-var codeLangs = map[string]bool{
-	"abnf": true, "algol": true, "apl": true, "asm": true, "awk": true,
-	"basic": true, "bash": true, "bnf": true, "c": true, "clu": true,
-	"cobol": true, "cpp": true, "csharp": true, "css": true, "diff": true,
-	"ebnf": true, "erlang": true, "forth": true, "fortran": true, "go": true,
-	"haskell": true, "html": true, "java": true, "javascript": true,
-	"json": true, "lisp": true, "lua": true, "makefile": true, "matlab": true,
-	"ml": true, "modula": true, "ocaml": true, "pascal": true, "perl": true,
-	"pl1": true, "postscript": true, "prolog": true, "python": true,
-	"r": true, "ruby": true, "rust": true, "scala": true, "scheme": true,
-	"sh": true, "simula": true, "smalltalk": true, "snobol": true,
-	"sql": true, "swift": true, "tcl": true, "tex": true, "text": true,
-	"verilog": true, "vhdl": true, "xml": true, "yaml": true,
-}
-
 // eachCodeFile runs a check over every content file that parsed.
 //
 // The group stands down on a corpus with nothing committed rather than on a
@@ -106,7 +78,7 @@ func ruleC02(in *Input) ([]Finding, error) {
 					Rule: "C02", File: f.Path, Line: b.Line,
 					Message: "the fence carries no language tag, and every fence carries one, `text` where the listing is in no language anybody names",
 				})
-			case !codeLangs[b.Lang]:
+			case !code.Langs[b.Lang]:
 				out = append(out, Finding{
 					Rule: "C02", File: f.Path, Line: b.Line,
 					Message: fmt.Sprintf("the fence is tagged %s, which is not a tag this corpus uses", b.Lang),

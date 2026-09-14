@@ -9,6 +9,7 @@ import (
 
 	"github.com/tamnd/papers-reader/assemble"
 	"github.com/tamnd/papers-reader/classify"
+	"github.com/tamnd/papers-reader/code"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
 	"github.com/tamnd/papers-reader/refs"
@@ -365,7 +366,14 @@ func document(c *corpus.Corpus, id string) (*assemble.Document, error) {
 		// so that fixing it does not mean reading a hundred papers again.
 		pages = append(pages, assemble.Page{Number: page, Text: extract.Unalign(text[page])})
 	}
-	return assemble.Join(pages), nil
+	doc := assemble.Join(pages)
+	// After the join, because a listing can carry over a page break and the
+	// tag belongs to the whole of it. Before the split, because the split is
+	// what writes the file and a fence with no tag on it is rule C02.
+	for i := range doc.Paragraphs {
+		doc.Paragraphs[i].Text = code.Label(doc.Paragraphs[i].Text)
+	}
+	return doc, nil
 }
 
 // modelRead is whether a paper's pages came out of a model rather than out
