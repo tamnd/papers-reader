@@ -2,6 +2,7 @@ package extract
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -57,8 +58,24 @@ func Undress(pages map[int]string) map[int]string {
 	// half, and two pages that share a line share it by coincidence as often
 	// as not.
 	least := max(len(pages)/3, 2)
+	// A head that is established on enough pages carries its rotations with
+	// it, whatever they are counted on. See bag for what a rotation is and
+	// which paper wanted this.
+	turned := map[string]bool{}
+	for k, on := range seen {
+		if len(on) < least {
+			continue
+		}
+		if b := bag(k); b != "" {
+			turned[b] = true
+		}
+	}
 	repeated := func(line string) bool {
-		return len(pages) >= minPages && len(seen[fold(line)]) >= least
+		if len(pages) < minPages {
+			return false
+		}
+		k := fold(line)
+		return len(seen[k]) >= least || turned[bag(k)]
 	}
 	out := make(map[int]string, len(pages))
 	for number, text := range pages {
@@ -118,6 +135,32 @@ func peel(lines []string, end func([]string, int) int, repeated func(string) boo
 		lines = append(lines[:at], lines[at+1:]...)
 	}
 }
+
+// bag is a folded line's words in one fixed order, so that the same running
+// head set the other way round on the facing page comes out the same.
+//
+// The MapReduce paper wanted this. It prints "USENIX Association  OSDI '04:
+// 6th Symposium on Operating Systems Design and Implementation" at the foot
+// of a recto and the same words the other way round at the foot of a verso,
+// which is two lines as far as fold is concerned. Thirteen pages means four,
+// and the model transcribed the recto head on five pages and the verso head
+// on two, so the recto came off and the verso stayed and published on two
+// sections. Counting the words rather than the line makes it seven pages of
+// one piece of furniture, which is what it is.
+//
+// Four words, because two lines of three short words each are a permutation
+// of one another often enough to worry about and a running head is never
+// that short. Over the corpus the shortest is six.
+func bag(folded string) string {
+	words := strings.Fields(folded)
+	if len(words) < bagWords {
+		return ""
+	}
+	sort.Strings(words)
+	return strings.Join(words, " ")
+}
+
+const bagWords = 4
 
 // footnote is a Markdown footnote definition, which is a label in brackets
 // with a caret in front of it and a colon after it.

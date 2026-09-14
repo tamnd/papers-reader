@@ -338,3 +338,45 @@ func TestPassingOverAFootnoteDoesNotEatTheBody(t *testing.T) {
 // every number into the same token, so pages that differ only by a page
 // number are one repeated line as far as Undress is concerned.
 var topics = []string{"sorting", "hashing", "routing", "caching", "locking", "logging"}
+
+// The MapReduce paper sets its running head one way round on the recto and
+// the other way round on the verso, and the model read the verso head on
+// two pages of thirteen, which is under the floor. The words are the same
+// words, so it comes off with the recto head.
+func TestAHeadSetTheOtherWayRoundOnTheVersoComesOffToo(t *testing.T) {
+	const recto = "USENIX Association  OSDI '04: 6th Symposium on Operating Systems Design"
+	const verso = "OSDI '04: 6th Symposium on Operating Systems Design USENIX Association"
+	pages := map[int]string{}
+	for i := 1; i <= 12; i++ {
+		head := recto
+		// Two of the twelve, which is under max(12/3, 2).
+		if i == 6 || i == 10 {
+			head = verso
+		}
+		pages[i] = "A paragraph about " + topics[(i-1)%len(topics)] + " and what it is for.\n\n" + head + "\n"
+	}
+	for i, text := range Undress(pages) {
+		if strings.Contains(text, "USENIX") {
+			t.Errorf("page %d kept its running head:\n%s", i, text)
+		}
+		if !strings.Contains(text, "A paragraph about") {
+			t.Errorf("page %d lost its body:\n%s", i, text)
+		}
+	}
+}
+
+// A rotation is only furniture next to a head that is furniture on its own
+// count. Three pages that happen to share a word bag and nothing else are
+// three pages of body text.
+func TestAWordBagNoHeadStandsOnIsNotFurniture(t *testing.T) {
+	pages := map[int]string{
+		1: "The cache holds the key and the value.\n\nsorting hashing routing caching\n",
+		2: "The log holds the key and the value.\n\ncaching routing hashing sorting\n",
+		3: "The lock holds the key and the value.\n\nrouting caching sorting hashing\n",
+	}
+	for i, text := range Undress(pages) {
+		if !strings.Contains(text, "sorting") {
+			t.Errorf("page %d lost a line no head was ever on:\n%s", i, text)
+		}
+	}
+}
