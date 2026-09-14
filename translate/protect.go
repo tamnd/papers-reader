@@ -311,19 +311,22 @@ func compare(want, got []Span, base int) []Difference {
 
 // same compares two spans of the same kind.
 //
-// Byte for byte, with two exceptions, both of them inside mathematics. A
+// Byte for byte, with three exceptions, all of them inside mathematics. A
 // word set with \text{...} is prose put in a formula because TeX has no
 // other way of writing a word in one, and "$(\text{not } A) \text{ or } B$"
 // has two words in it that become Vietnamese. So the argument of a \text is
 // masked before the comparison, unless the name inside it is one of the
-// upright names that is not prose. And the whitespace of a formula is
-// normalised, because TeX ignores it.
+// upright names that is not prose. The braces TeX would have inferred are
+// written out, because "\frac12" is "\frac{1}{2}". And the whitespace of a
+// formula is normalised, because TeX ignores it.
 func same(want, got Span) bool {
 	if want.Kind != Math {
 		return want.Text == got.Text
 	}
-	return spacing(maskText(want.Text)) == spacing(maskText(got.Text))
+	return canonical(want.Text) == canonical(got.Text)
 }
+
+func canonical(s string) string { return spacing(rebrace(maskText(s))) }
 
 // blanks is a run of whitespace.
 var blanks = regexp.MustCompile(`\s+`)
