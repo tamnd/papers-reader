@@ -730,6 +730,17 @@ func TestL10ReadsAHyphenatedNameAsTheSameName(t *testing.T) {
 	}
 }
 
+// A pair with a hyphen of its own still matches. Spanner's Table 2 lists a
+// "Read-Write Transaction" in both languages, and reading the hyphen as a
+// space on one side only would have lost this to gain the case above.
+func TestL10ReadsAHyphenInsideTheNameOnBothSides(t *testing.T) {
+	en := "| Read-Write Encoder | leader |\n\nThe table above lists the kinds and there is nothing else on this page.\n"
+	tr := "| Read-Write Encoder | leader |\n\nBảng ở trên liệt kê các loại và trên trang này không còn nội dung nào khác.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L10"); res.Failed() {
+		t.Errorf("L10 read a row label both sides wrote the same way as a term: %v", res.Findings)
+	}
+}
+
 // And it is the name that earns it. The same word with no such name around
 // it on the English side is the finding it always was.
 func TestL10StillReadsATermWithNoNameAroundIt(t *testing.T) {

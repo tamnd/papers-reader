@@ -644,19 +644,30 @@ func within(ranges [][2]int, s [2]int) bool {
 // same thing from Google, and L10 read the Vietnamese one as the glossary's
 // "buffer" left standing on its own, because the pair it looked for on the
 // English side had a hyphen in the middle of it.
+//
+// Both sides, so that a pair which has a hyphen of its own still matches.
+// Spanner's Table 2 lists a "Read-Write Transaction" in both languages, and
+// dehyphenating only the English would have lost that one to gain the other.
 func copied(rs []rune, other string, at, end int) bool {
-	if strings.ContainsRune(other, '-') {
-		other = strings.ReplaceAll(other, "-", " ")
-	}
+	other = unhyphenated(other)
 	for _, p := range []string{
 		string(rs[back(rs, at):end]),
 		string(rs[at:forward(rs, end)]),
 	} {
-		if len([]rune(p)) > end-at && strings.Contains(other, p) {
+		if len([]rune(p)) > end-at && strings.Contains(other, unhyphenated(p)) {
 			return true
 		}
 	}
 	return false
+}
+
+// unhyphenated is s with its hyphens read as spaces, and s itself when it
+// has none, which is nearly always and is worth not allocating for.
+func unhyphenated(s string) string {
+	if !strings.ContainsRune(s, '-') {
+		return s
+	}
+	return strings.ReplaceAll(s, "-", " ")
 }
 
 // back is where the word before at starts, and at itself when the term
