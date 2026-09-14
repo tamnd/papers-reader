@@ -12,6 +12,11 @@
 /pdf/
 /images/
 
+# A build of the site. Everything in it is derived from a corpus and is
+# built again in the job that deploys it, so a copy in here would only ever
+# be a stale one somebody read by mistake.
+/site/
+
 # Web app.
 /web/node_modules/
 /web/dist/

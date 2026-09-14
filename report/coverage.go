@@ -119,7 +119,7 @@ func BuildCoverage(c *corpus.Corpus) (*Coverage, error) {
 				rec = found
 			}
 		}
-		english, err := files(c, corpus.EN, p.ID)
+		english, err := Files(c, corpus.EN, p.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +127,7 @@ func BuildCoverage(c *corpus.Corpus) (*Coverage, error) {
 		if rec != nil {
 			row.Access = rec.Access
 		}
-		row.State = state(english)
+		row.State = StateOf(english)
 		row.Why = why(c, p, rec, row.State)
 
 		cov.Papers = append(cov.Papers, row)
@@ -149,7 +149,7 @@ func BuildCoverage(c *corpus.Corpus) (*Coverage, error) {
 		}
 
 		for _, lang := range corpus.Langs {
-			found, err := files(c, lang, p.ID)
+			found, err := Files(c, lang, p.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -196,8 +196,8 @@ func BuildCoverage(c *corpus.Corpus) (*Coverage, error) {
 	return cov, nil
 }
 
-// state is how much of a paper is published, from what is on disk.
-func state(english []string) State {
+// StateOf is how much of a paper is published, from what is on disk.
+func StateOf(english []string) State {
 	switch {
 	case len(english) == 0:
 		return None
@@ -239,8 +239,13 @@ func why(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, s State) string {
 	return "not classified yet"
 }
 
-// files is the content files of one paper in one language, in name order.
-func files(c *corpus.Corpus, lang corpus.Lang, id string) ([]string, error) {
+// Files is the content files of one paper in one language, in name order.
+//
+// A language the paper has nothing in is no files and no error. That is the
+// ordinary case for most of the corpus in most of the languages, and a
+// caller that had to tell a missing directory from a real failure at every
+// call site would get it wrong somewhere.
+func Files(c *corpus.Corpus, lang corpus.Lang, id string) ([]string, error) {
 	dir := c.Content(lang, id)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {

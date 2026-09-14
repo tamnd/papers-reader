@@ -41,6 +41,13 @@ check:
 audit: build
 	$(BIN) audit
 
+# Builds the site and validates it without writing anything, which is what
+# CI wants: the question is whether the corpus can produce a site, not
+# whether this machine has one lying around.
+.PHONY: emit
+emit: build
+	$(BIN) emit -check
+
 .PHONY: clean
 clean:
 	rm -rf bin dist coverage.out

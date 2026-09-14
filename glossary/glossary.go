@@ -252,6 +252,33 @@ func TermsSHA(g *Glossary, f corpus.Field, l corpus.Lang) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// Floor is the glossary coverage a language needs, as a percentage, before
+// a body is translated against it.
+//
+// Ninety per cent, and the reason it is not a hundred is that the last few
+// terms of a glossary are the ones nobody can decide, and a corpus that
+// cannot start until they are settled never starts. The reason it is not
+// fifty is the arithmetic of the other direction: a body translated against
+// half a glossary is a body that will have to be translated again once the
+// other half lands, and the second run costs exactly what the first did.
+//
+// The reading app reads the same number the other way round. A language
+// under the floor is offered as a draft rather than as a translation, which
+// is audit rule P04, so the one threshold decides both what gets written and
+// how honestly it is presented.
+const Floor = 90
+
+// Under says a language is below the floor and its pages are drafts.
+//
+// A language with no glossary at all is not under the floor, because there
+// is nothing there to be under it. That is a corpus before anybody has
+// started rather than a language in trouble, and the rules that care about
+// an empty glossary say so themselves.
+func (g *Glossary) Under(l corpus.Lang) bool {
+	have, total := g.Coverage(l)
+	return total > 0 && have*100/total < Floor
+}
+
 // Coverage is how many terms have a rendering in a language, out of how
 // many there are.
 //

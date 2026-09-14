@@ -18,11 +18,10 @@ import (
 
 // Rules is every rule the toolchain implements today, in id order.
 //
-// The full set is nine groups and eighty-eight rules. The ones here are the
-// licensing rules that decide what may be published at all, the tag register
-// rules, and the groups whose files the toolchain can already produce: code,
-// figures and references. The rest arrive with the milestone that produces
-// the files they read.
+// The full set is nine groups and ninety-one rules. The three of group P that
+// are not here yet are about the paper pages, which papers emit does not
+// write yet; the rest arrive with the milestone that produces the files
+// they read.
 func Rules() []Rule {
 	out := []Rule{
 		{
@@ -121,7 +120,8 @@ func Rules() []Rule {
 		// out tags in the wrong order, which is pinned where it can be
 		// decided for certain, in the assigner's own test.
 	}...)
-	return append(out, translationRules()...)
+	out = append(out, translationRules()...)
+	return append(out, publicationRules()...)
 }
 
 // contentFiles lists the Markdown a paper has in any language, relative to

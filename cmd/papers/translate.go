@@ -24,17 +24,6 @@ import (
 	"github.com/tamnd/papers-reader/work"
 )
 
-// Floor is the glossary coverage a language needs before a body is
-// translated against it.
-//
-// Ninety per cent, and the reason it is not a hundred is that the last few
-// terms of a glossary are the ones nobody can decide, and a corpus that
-// cannot start until they are settled never starts. The reason it is not
-// fifty is the arithmetic of the other direction: a body translated against
-// half a glossary is a body that will have to be translated again once the
-// other half lands, and the second run costs exactly what the first did.
-const Floor = 90
-
 func runTranslate(args []string) error {
 	fs := flag.NewFlagSet("translate", flag.ContinueOnError)
 	root := fs.String("corpus", "", "path to a checkout of tamnd/papers")
@@ -45,7 +34,7 @@ func runTranslate(args []string) error {
 	routes := fs.String("routes", "", "path to a routing table, instead of the one in the config directory")
 	escalate := fs.String("escalate", "", "route names to send a refused chunk to, comma separated")
 	tries := fs.Int("tries", translate.Tries, "how many times one chunk is asked before the file is given up on")
-	floor := fs.Int("floor", Floor, "the glossary coverage a language needs, as a percentage")
+	floor := fs.Int("floor", glossary.Floor, "the glossary coverage a language needs, as a percentage")
 	force := fs.Bool("force", false, "translate again even where the English has not changed")
 	atOnce := fs.Int("jobs", 0, "how many files to translate at once, or 0 for one per lane in the fleet")
 	every := fs.Int("publish", 0, "push the papers the run has finished to the corpus and merge them, once so many files are ready")

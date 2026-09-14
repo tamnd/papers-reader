@@ -91,6 +91,17 @@ A model that is not in a price table gets a dash in the money column rather than
 `papers report all` writes all four of these and the audit in one pass, which is the step before publishing.
 Running the commands one at a time is four chances to forget one, and a corpus whose coverage says ninety seven per cent while its audit was written a week ago is worse than one with no reports at all.
 
+**The reading app reads a build, not the corpus.**
+`papers emit` turns the corpus into static JSON: `index.json`, the catalogue with every paper, field and reading list, and `graph.json`, the citation graph in the shape a chart wants rather than the shape a table wants.
+The shape of both is pinned by `schema/site.schema.json`, which the Go emitter and the TypeScript reader both validate against, so the two sides cannot drift apart without something saying so.
+Audit rule P05 runs that validation over a build of the corpus on every audit, which is what makes the file a contract rather than documentation: a change to the shape has to move the schema, the emitter and the app in one commit or the build fails.
+Nothing it writes is committed, and a site directory can be deleted and built again from a checkout at any time.
+
+**A draft says it is a draft.**
+A language whose glossary covers less than ninety per cent of the terms is emitted with `draft` against it, and the page says so.
+It is still offered, because hiding it would be the same corpus with less of it visible and no more of it true.
+Rule P04 is the one that checks the emitter has not quietly stopped saying it.
+
 **The audit is a contract, not a lint.**
 Eighty-eight numbered rules in nine groups, each one a sentence you can argue with.
 A rule reports pass, fail, or not run, and those are three different states.
@@ -129,6 +140,7 @@ roundtrip/       the back translation check on a sample of the translations
 audit/           the numbered rules
 report/          the coverage, graph, resolve and usage reports
 emit/            JSON for the reading app
+schema/          site.schema.json, the contract between the emitter and the app
 web/             the Astro reading app
 ```
 
@@ -137,7 +149,7 @@ web/             the Astro reading app
 Go 1.27 or later.
 `pdftotext` and `pdftoppm` from Poppler for the extraction commands.
 Node 22 or later for the web app.
-Nothing else. The Go side has three dependencies: `gopkg.in/yaml.v3`, `github.com/tamnd/llm`, which is ours and has none of its own, and `github.com/dop251/goja`, a JavaScript engine that exists so the toolchain can run the real KaTeX to check every formula it writes without putting Node in the build.
+Nothing else. The Go side has four dependencies: `gopkg.in/yaml.v3`, `github.com/tamnd/llm`, which is ours and has none of its own, `github.com/dop251/goja`, a JavaScript engine that exists so the toolchain can run the real KaTeX to check every formula it writes without putting Node in the build, and `github.com/santhosh-tekuri/jsonschema`, which runs the site schema so that the contract with the reading app is checked by a validator rather than by hand.
 
 ## Licence
 

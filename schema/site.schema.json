@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tamnd.github.io/papers/site.schema.json",
+  "title": "The reading app's input",
+  "description": "The shape of the JSON that papers emit writes and the reading app consumes. The Go emitter and the TypeScript reader both validate against this file, and audit rule P05 runs it over a build of the corpus, so the two sides cannot drift apart without something saying so. A change to the shape bumps the version integer and updates both sides in one commit, which is the reason this file lives in the same repository as both. There is one file rather than one per document so that the shared definitions are shared and not copied: a paper identifier is the same string in index.json and in graph.json, and it should be impossible to tighten one and forget the other. A document is validated against the definition named after it, index.json against #/$defs/index and graph.json against #/$defs/graph.",
+
+  "$defs": {
+    "index": {
+      "$anchor": "index",
+      "title": "index.json",
+      "description": "The catalogue: every paper, every field, every reading list. It is read on the first request of every visit, which is why it holds what a catalogue page needs and nothing a paper page would need.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "generated", "langs", "draft_langs", "fields", "collections", "papers"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "generated": {
+          "description": "When the build ran, in UTC to the second. A site built twice from one commit differs in this field and in nothing else.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "langs": {
+          "description": "Every language the corpus can be read in, English first.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/lang" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "draft_langs": {
+          "description": "The languages whose glossary is under the coverage floor. A draft language is still offered, with the page saying what it is, because hiding it would be the same corpus with less of it visible and no more of it true. English is never in this list.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/lang" },
+          "uniqueItems": true
+        },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/indexField" }
+        },
+        "collections": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/indexList" }
+        },
+        "papers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/indexPaper" }
+        }
+      }
+    },
+
+    "indexField": {
+      "description": "One subject field and how many papers are in it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "count"],
+      "properties": {
+        "id": { "$ref": "#/$defs/field" },
+        "title": { "type": "string", "minLength": 1 },
+        "count": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "indexList": {
+      "description": "One reading list, its members resolved to identifiers in the order the list says to read them. Resolved by the emitter rather than by the app, because the words a collection may hold instead of a list and the order that sorts by prerequisites are corpus rules, and an app that reimplemented them would be a second place for them to be wrong.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "members"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "members": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "indexPaper": {
+      "description": "One paper as the catalogue knows it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "authors", "year", "field", "access", "status", "sections", "figures", "equations", "refs", "cited_by", "cites_in_corpus"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "number": {
+          "description": "The position in the seed list of a hundred, absent on every paper added afterwards. That is how the hundred stay a hundred while the corpus grows.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "description": "The title as the paper printed it, in English.",
+          "type": "string",
+          "minLength": 1
+        },
+        "titles": {
+          "description": "The title as each translation printed it, keyed by language. A language whose translator left the title in English is absent rather than present and equal to the English. English is never a key here.",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/lang" },
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "authors": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
+        "venue": { "type": "string" },
+        "field": { "$ref": "#/$defs/field" },
+        "core_idea": {
+          "description": "The one thing the paper is remembered for, which is the line a catalogue card is read for.",
+          "type": "string"
+        },
+        "difficulty": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "access": { "$ref": "#/$defs/access" },
+        "landing": { "$ref": "#/$defs/landing" },
+        "status": {
+          "description": "How much of the paper exists in each language. A language the paper has nothing in is absent rather than present and none, so the app can offer what is there without filtering.",
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/lang" },
+          "additionalProperties": { "$ref": "#/$defs/state" }
+        },
+        "sections": { "type": "integer", "minimum": 0 },
+        "figures": { "type": "integer", "minimum": 0 },
+        "equations": { "type": "integer", "minimum": 0 },
+        "refs": { "type": "integer", "minimum": 0 },
+        "cited_by": {
+          "description": "How many papers of this corpus cite it. Carried here so the catalogue can sort by influence without loading the graph.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "cites_in_corpus": { "type": "integer", "minimum": 0 },
+        "prerequisites": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/id" },
+          "uniqueItems": true
+        }
+      }
+    },
+
+    "graph": {
+      "$anchor": "graph",
+      "title": "graph.json",
+      "description": "The citation graph as the app draws it: the same edges as reports/graph.md and built from the same place, in the shape a layout wants rather than the shape a table wants.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "nodes", "edges"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/graphNode" } },
+        "edges": { "type": "array", "items": { "$ref": "#/$defs/graphEdge" } }
+      }
+    },
+
+    "graphNode": {
+      "description": "One paper at a point on the chart. The year and the field are where the layout puts it, and the two degrees are what a hover needs.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "year", "field", "in", "out", "parsed"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1 },
+        "year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
+        "field": { "$ref": "#/$defs/field" },
+        "in": {
+          "description": "How many papers here cite it.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "out": {
+          "description": "How many papers here it cites.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "parsed": {
+          "description": "Whether anybody has read this paper's bibliography. A node with no out edges and this false cites nothing here because nobody has looked, which the chart draws differently from a paper that was read and cites nothing.",
+          "type": "boolean"
+        }
+      }
+    },
+
+    "graphEdge": {
+      "description": "One paper citing another, both of them in the corpus. Self loops are not edges and a paper cited twice by one bibliography is one edge.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "$ref": "#/$defs/id" },
+        "to": { "$ref": "#/$defs/id" }
+      }
+    },
+
+    "version": {
+      "description": "The shape of the emitted JSON. Every file of a build carries the same one, and a reader that finds a version it does not know refuses to render rather than guessing.",
+      "type": "integer",
+      "minimum": 1
+    },
+
+    "id": {
+      "description": "A paper identifier: an author, a year and one keyword, lowercase, joined by hyphens.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+-[0-9]{4}-[a-z0-9]+$"
+    },
+
+    "lang": {
+      "type": "string",
+      "enum": ["en", "vi", "zh", "ja"]
+    },
+
+    "field": {
+      "type": "string",
+      "enum": [
+        "theory",
+        "algorithms",
+        "languages",
+        "systems",
+        "networks",
+        "databases",
+        "architecture",
+        "security",
+        "ai-ml",
+        "graphics",
+        "hci",
+        "software"
+      ]
+    },
+
+    "access": {
+      "description": "What may be published from the paper. A restricted paper is a stub of front matter and a short abstract, and an unknown one is nothing at all.",
+      "type": "string",
+      "enum": ["public-domain", "open", "permissive", "restricted", "unknown"]
+    },
+
+    "state": {
+      "description": "How much of a paper exists in one language. Three states and not a percentage, because a paper is not sixty per cent done.",
+      "type": "string",
+      "enum": ["full", "stub", "none"]
+    },
+
+    "landing": {
+      "description": "The publisher's page for the paper. A landing page and never a PDF: the corpus links a reader to where the paper is published and does not republish the file.",
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://"
+    }
+  }
+}
