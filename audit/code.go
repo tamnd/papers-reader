@@ -197,6 +197,15 @@ func ruleC05(in *Input) ([]Finding, error) {
 // What counts as a mark is code.Mark, because the assembler reads the same
 // marks when it decides whether a paragraph is prose, and two ideas about
 // what a line of a program looks like would be two answers about one page.
+//
+// One of the marks has to be a statement, though, and not a semicolon at the
+// end of a line. A semicolon there is how a program is written and also how
+// verse is punctuated, and the GPT-3 paper prints nine lines of a generated
+// poem with one at the end of two of them: over the whole corpus that was
+// the only thing this rule found that was not a listing. A brace, a
+// directive, a comment or a declaration has no reading in English, so
+// asking for one of those is asking for the evidence that cannot be
+// punctuation. The bitcoin C program has all four.
 const (
 	minLooseRun   = 3
 	minLooseMarks = 2
@@ -228,14 +237,17 @@ func ruleC08(in *Input) ([]Finding, error) {
 			if skip[i+1] || strings.TrimSpace(lines[i]) == "" {
 				continue
 			}
-			end, marks := i, 0
+			end, marks, statements := i, 0, 0
 			for end < len(lines) && !skip[end+1] && strings.TrimSpace(lines[end]) != "" {
 				if code.Mark(lines[end]) {
 					marks++
 				}
+				if code.Statement(lines[end]) {
+					statements++
+				}
 				end++
 			}
-			if end-i >= minLooseRun && marks >= minLooseMarks {
+			if end-i >= minLooseRun && marks >= minLooseMarks && statements > 0 {
 				out = append(out, Finding{
 					Rule: "C08", File: f.Path, Line: i + 1,
 					Message: fmt.Sprintf("%d lines here read as program text and are not in a fence", end-i),

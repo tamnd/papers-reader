@@ -180,3 +180,24 @@ func TestAnEmptyBodyHasNoBlocks(t *testing.T) {
 		t.Errorf("found %+v and %+v, want nothing", blocks, unclosed)
 	}
 }
+
+func TestStatementIsTheHalfOfAMarkThatIsNotPunctuation(t *testing.T) {
+	for _, c := range []struct {
+		line       string
+		mark, stmt bool
+	}{
+		{"}", true, true},
+		{"#include <math.h>", true, true},
+		{"// the probability of catching up", true, true},
+		{"int i = 0;", true, true},
+		{"hears the wind and the rustling of leaves;", true, false},
+		{"the shadows wait,", false, false},
+	} {
+		if got := Mark(c.line); got != c.mark {
+			t.Errorf("Mark(%q) is %v, want %v", c.line, got, c.mark)
+		}
+		if got := Statement(c.line); got != c.stmt {
+			t.Errorf("Statement(%q) is %v, want %v", c.line, got, c.stmt)
+		}
+	}
+}

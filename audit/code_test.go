@@ -197,6 +197,14 @@ func TestC08LeavesProseAlone(t *testing.T) {
 			name: "a list",
 			body: "- the first condition, which holds always\n- the second condition, which holds for honest nodes\n- the third condition, which is assumed",
 		},
+		{
+			// Verse. The GPT-3 paper prints the poems its model
+			// generated, and two of the nine lines of one of them end
+			// in a semicolon, which is punctuation and not a
+			// statement.
+			name: "a verse punctuated with semicolons",
+			body: "He sees shadows on the way, hears voices,\nhears the wind and the rustling of leaves;\nThrough an open glade\nHe sees a shape and the shape hears:\nIt waits as he waits,\nAs the voices wait;\nShadows on the way, voices in the wind.",
+		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if res := result(t, onePaper(t, c.body+pad), "C08"); res.Failed() {

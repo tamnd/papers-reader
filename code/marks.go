@@ -55,6 +55,19 @@ func Mark(line string) bool {
 	return statement.MatchString(line) || semicolon.MatchString(line)
 }
 
+// Statement reports whether a line carries the stronger half of a mark: a
+// brace, a directive, a comment or a declaration, and not merely a semicolon
+// at the end of it.
+//
+// The two halves are not equal evidence and one caller needs to know which
+// it has. A semicolon ending a line is how a program is written and also how
+// verse is punctuated, and the GPT-3 paper prints nine lines of a generated
+// poem with a semicolon at the end of two of them. Nothing else about those
+// lines says program. The other marks have no reading in English at all.
+func Statement(line string) bool {
+	return statement.MatchString(line)
+}
+
 // Marks is how many lines of a stretch of text carry one.
 func Marks(text string) int {
 	n := 0
