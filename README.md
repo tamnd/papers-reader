@@ -92,11 +92,13 @@ A model that is not in a price table gets a dash in the money column rather than
 Running the commands one at a time is four chances to forget one, and a corpus whose coverage says ninety seven per cent while its audit was written a week ago is worse than one with no reports at all.
 
 **The reading app reads a build, not the corpus.**
-`papers emit` turns the corpus into static JSON: `index.json`, the catalogue with every paper, field and reading list, `graph.json`, the citation graph in the shape a chart wants rather than the shape a table wants, and `p/<id>/<lang>.json`, one paper in one language, whole.
+`papers emit` turns the corpus into static JSON: `index.json`, the catalogue with every paper, field and reading list, `graph.json`, the citation graph in the shape a chart wants rather than the shape a table wants, `p/<id>/<lang>.json`, one paper in one language, whole, and `search-<lang>.json`, an inverted index over that language.
 A page is a list of blocks, and every language of a paper has the same blocks in the same order with the same indices, which is what makes reading two languages side by side a matter of putting block i against block i with no diffing and no guessing.
 The formulas are rendered by KaTeX at build time rather than in the browser, so a page costs no JavaScript to read and does not reflow under the reader.
 The HTML on a page is held to an allowlist of seventeen elements with nothing on it that can execute, which matters here more than it would in most places: most of this text was written by a model reading a photograph of a page, and a model that returned a script tag instead of a sentence has to produce a broken paragraph and not a broken site.
 Rules P01, P02 and P03 are the three that fail a build whose formulas will not render, whose links point at nothing, or whose figures are not there.
+Search runs in the browser against the emitted index rather than against a search service, because there is no server between the reader and the corpus anywhere else on this site and sending every query somebody types somewhere else would mean their reading list existing somewhere else.
+The whole English index is nine hundred kilobytes, under three hundred gzipped, and each language is a separate file loaded on the first search, so a reader reading the Vietnamese does not pay for the Japanese.
 The shape of both is pinned by `schema/site.schema.json`, which the Go emitter and the TypeScript reader both validate against, so the two sides cannot drift apart without something saying so.
 Audit rule P05 runs that validation over a build of the corpus on every audit, which is what makes the file a contract rather than documentation: a change to the shape has to move the schema, the emitter and the app in one commit or the build fails.
 Nothing it writes is committed, and a site directory can be deleted and built again from a checkout at any time.
@@ -107,7 +109,7 @@ It is still offered, because hiding it would be the same corpus with less of it 
 Rule P04 is the one that checks the emitter has not quietly stopped saying it.
 
 **The audit is a contract, not a lint.**
-Ninety-one numbered rules in nine groups, each one a sentence you can argue with.
+Ninety-two numbered rules in nine groups, each one a sentence you can argue with.
 A rule reports pass, fail, or not run, and those are three different states.
 Hard rules fail the build.
 Three of them exist because the other three states can hide the worst outcome.

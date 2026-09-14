@@ -23,6 +23,8 @@ type Site struct {
 	Index *Index
 	Graph *Graph
 	Pages []*Page
+	// Search is one index per language the corpus has pages in.
+	Search []*Search
 	// Figures is every picture a page refers to, as a path relative to the
 	// root of both the corpus and the site, which are deliberately the same
 	// path. They are copied rather than rendered, so they are not in Files
@@ -57,6 +59,7 @@ func Build(c *corpus.Corpus) (*Site, error) {
 	}
 	s.Figures = usedFigures(pages)
 	s.Faults = append(s.Faults, absentFigures(c.Root, pages)...)
+	s.Search = BuildSearch(pages)
 	return s, nil
 }
 
@@ -145,6 +148,16 @@ func (s *Site) Files() (map[string][]byte, error) {
 			return nil, err
 		}
 	}
+	// The search index is the one file here that nobody reads, so it is
+	// written compactly rather than indented. It is also the largest, and
+	// two spaces in front of every posting is a megabyte of nothing.
+	for _, ix := range s.Search {
+		b, err := json.Marshal(ix)
+		if err != nil {
+			return nil, err
+		}
+		out[SearchPath(ix.Lang)] = append(b, '\n')
+	}
 	return out, nil
 }
 
@@ -219,6 +232,11 @@ func (s *Site) Summary() string {
 	fmt.Fprintf(&b, "version %d, %d papers, %d fields, %d reading lists, %d edges, %d pages, %d figures",
 		s.Index.Version, len(s.Index.Papers), len(s.Index.Fields),
 		len(s.Index.Collections), len(s.Graph.Edges), len(s.Pages), len(s.Figures))
+	terms := 0
+	for _, ix := range s.Search {
+		terms += len(ix.Terms) + len(ix.Symbols)
+	}
+	fmt.Fprintf(&b, ", %d search terms", terms)
 	switch n := len(s.Faults); {
 	case n == 1:
 		b.WriteString(", 1 fault")

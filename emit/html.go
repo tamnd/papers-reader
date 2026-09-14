@@ -75,9 +75,11 @@ func (p *pager) block(b string) Block {
 	if labelled {
 		blk.Anchor, blk.Tag = attr.Anchor, string(attr.Tag)
 	}
+	blk.plain, blk.symbols = strip(text)
 	switch {
 	case markdown.IsFenced(text):
 		blk.Kind, blk.Syntax, blk.Text = "code", markdown.Fence(text), markdown.Fenced(text)
+		blk.plain, blk.symbols = "", blk.Text
 	case markdown.IsHeading(text):
 		depth, title, _ := markdown.Heading(text)
 		blk.Kind, blk.Level, blk.HTML = "heading", depth, p.inline(title)
@@ -87,6 +89,7 @@ func (p *pager) block(b string) Block {
 		tex := markdown.TeX(text)
 		blk.Kind, blk.TeX = "math", tex
 		blk.Number, blk.HTML = markdown.Tag(tex), p.math(tex, true)
+		blk.plain, blk.symbols = "", tex
 	case labelled && markdown.Has(attr.Classes, "figure"):
 		return p.figure(text, attr, blk)
 	case markdown.IsList(text):

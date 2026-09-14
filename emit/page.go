@@ -151,6 +151,14 @@ type Block struct {
 	Text   string `json:"text,omitempty"`
 	Anchor string `json:"anchor,omitempty"`
 	Tag    string `json:"tag,omitempty"`
+
+	// plain and symbols are the block as the search index wants it: the
+	// prose in one, the mathematics and the program text in the other. They
+	// are set by the renderer, which is the only place the Markdown source
+	// of the block still exists, and they are unexported because they are
+	// the same content again in another form and a page that carried both
+	// would be twice the size for nothing. See search.go.
+	plain, symbols string
 }
 
 // A Ref is one entry of the paper's bibliography.

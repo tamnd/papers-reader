@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tamnd.github.io/papers/site.schema.json",
   "title": "The reading app's input",
-  "description": "The shape of the JSON that papers emit writes and the reading app consumes. The Go emitter and the TypeScript reader both validate against this file, and audit rule P05 runs it over a build of the corpus, so the two sides cannot drift apart without something saying so. A change to the shape bumps the version integer and updates both sides in one commit, which is the reason this file lives in the same repository as both. There is one file rather than one per document so that the shared definitions are shared and not copied: a paper identifier is the same string in index.json and in graph.json, and it should be impossible to tighten one and forget the other. A document is validated against the definition named after it, index.json against #/$defs/index, graph.json against #/$defs/graph and every p/<id>/<lang>.json against #/$defs/page.",
+  "description": "The shape of the JSON that papers emit writes and the reading app consumes. The Go emitter and the TypeScript reader both validate against this file, and audit rule P05 runs it over a build of the corpus, so the two sides cannot drift apart without something saying so. A change to the shape bumps the version integer and updates both sides in one commit, which is the reason this file lives in the same repository as both. There is one file rather than one per document so that the shared definitions are shared and not copied: a paper identifier is the same string in index.json and in graph.json, and it should be impossible to tighten one and forget the other. A document is validated against the definition named after it, index.json against #/$defs/index, graph.json against #/$defs/graph, every p/<id>/<lang>.json against #/$defs/page and every search-<lang>.json against #/$defs/search.",
 
   "$defs": {
     "index": {
@@ -300,11 +300,7 @@
       "additionalProperties": false,
       "required": ["kind", "i"],
       "properties": {
-        "kind": {
-          "description": "Headings and lists are kinds of their own rather than prose, because a heading is what rule L03 compares across languages and a list set as a paragraph would align against a real paragraph somewhere else.",
-          "type": "string",
-          "enum": ["p", "heading", "list", "math", "figure", "code", "table"]
-        },
+        "kind": { "$ref": "#/$defs/blockKind" },
         "i": { "type": "integer", "minimum": 0 },
         "html": {
           "description": "The rendered block, sanitised against the allowlist the emitter holds. For a heading it is the heading text and not an h element, because the level is a field of its own and the app chooses the element.",
@@ -371,6 +367,71 @@
       "properties": {
         "key": { "type": "string", "minLength": 1 },
         "html": { "type": "string" }
+      }
+    },
+
+    "blockKind": {
+      "description": "Headings and lists are kinds of their own rather than prose, because a heading is what rule L03 compares across languages and a list set as a paragraph would align against a real paragraph somewhere else.",
+      "type": "string",
+      "enum": ["p", "heading", "list", "math", "figure", "code", "table"]
+    },
+
+    "search": {
+      "$anchor": "search",
+      "description": "search-<lang>.json: an inverted index over one language of the corpus, built at emit time and searched in the browser. One file per language, loaded on the first search, so that a reader reading the Vietnamese does not pay for the Japanese. There is no search service because there is no server anywhere else on this site either, and sending every query a reader types somewhere else would mean the reading list of everybody who uses this site existing somewhere else.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "lang", "posts", "terms", "symbols"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "lang": { "$ref": "#/$defs/lang" },
+        "posts": {
+          "description": "Every block worth finding, in a fixed order. A posting in either index is a position in this list.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/post" }
+        },
+        "terms": {
+          "description": "The prose: an ordinary word index over the text of the corpus. A term in more than a third of the blocks is dropped, which is a stopword list that does not have to be written four times in four languages.",
+          "$ref": "#/$defs/postings"
+        },
+        "symbols": {
+          "description": "The mathematics and the program text, indexed apart from the prose so that the app can rank a hit in a formula against a hit in a paragraph rather than having to guess which the reader wanted.",
+          "$ref": "#/$defs/postings"
+        }
+      }
+    },
+
+    "postings": {
+      "description": "A term to the positions in posts it occurs in, ascending and without repeats.",
+      "type": "object",
+      "propertyNames": { "minLength": 1 },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "post": {
+      "description": "One block a search can return. It carries enough to draw a result line without fetching the page, because a page of ten results would otherwise be ten page fetches to show any of them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["p", "i", "k", "x"],
+      "properties": {
+        "p": { "$ref": "#/$defs/id" },
+        "s": {
+          "description": "The section the block is in. Absent on the front page, which is the paper itself rather than a section of it.",
+          "$ref": "#/$defs/anchor"
+        },
+        "i": { "type": "integer", "minimum": 0 },
+        "t": { "type": "string", "minLength": 1 },
+        "k": { "$ref": "#/$defs/blockKind" },
+        "x": {
+          "description": "The opening of the block as plain text, cut at a word boundary.",
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
 

@@ -18,9 +18,10 @@ func runEmit(args []string) error {
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `usage: papers emit [flags]
 
-Builds the JSON the reading app consumes: the catalogue, the citation graph
-and a page per paper per language, derived from the corpus and written as
-static files, with the figures those pages show copied in beside them.
+Builds the JSON the reading app consumes: the catalogue, the citation graph,
+a page per paper per language and a search index per language, derived from
+the corpus and written as static files, with the figures those pages show
+copied in beside them.
 
 Everything it writes is derived, so the output directory can be deleted and
 built again from a checkout at any time. It is not committed to the corpus.

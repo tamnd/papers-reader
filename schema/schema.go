@@ -49,24 +49,31 @@ var Site []byte
 // this package's callers.
 //
 // Index and Graph are also the paths those two are written to, because there
-// is one of each. A page is one per paper per language, so Page is the kind
-// and Kind below works out which kind a path is.
+// is one of each. A page is one per paper per language and a search index is
+// one per language, so those two are kinds rather than paths and Kind below
+// works out which kind a path is.
 const (
-	Index = "index.json"
-	Graph = "graph.json"
-	Page  = "page"
+	Index  = "index.json"
+	Graph  = "graph.json"
+	Page   = "page"
+	Search = "search"
 )
 
 // definitions maps a kind of document to the subschema it is held to.
 var definitions = map[string]string{
-	Index: "index",
-	Graph: "graph",
-	Page:  "page",
+	Index:  "index",
+	Graph:  "graph",
+	Page:   "page",
+	Search: "search",
 }
 
-// pagePath is p/<id>/<lang>.json, which is the only shape of name a build
-// writes other than the two fixed ones.
-var pagePath = regexp.MustCompile(`^p/[a-z0-9]+-[0-9]{4}-[a-z0-9]+/[a-z]{2}\.json$`)
+// The two shapes of name a build writes other than the fixed two:
+// p/<id>/<lang>.json for a paper in a language, and search-<lang>.json for
+// one language's index.
+var (
+	pagePath   = regexp.MustCompile(`^p/[a-z0-9]+-[0-9]{4}-[a-z0-9]+/[a-z]{2}\.json$`)
+	searchPath = regexp.MustCompile(`^search-[a-z]{2}\.json$`)
+)
 
 // Kind says which definition a path in a build is held to.
 //
@@ -80,6 +87,8 @@ func Kind(path string) (string, bool) {
 		return path, true
 	case pagePath.MatchString(path):
 		return Page, true
+	case searchPath.MatchString(path):
+		return Search, true
 	}
 	return "", false
 }

@@ -19,7 +19,7 @@ import (
 // somebody emitted earlier, so they say something about the corpus as it
 // stands now and not about the last time anybody ran papers emit.
 //
-// All five read one build, made once by Input.Site and shared, because
+// All six read one build, made once by Input.Site and shared, because
 // building the corpus renders every formula in it through KaTeX.
 func publicationRules() []Rule {
 	return []Rule{
@@ -47,6 +47,11 @@ func publicationRules() []Rule {
 			ID: "P05", Hard: true,
 			What:  "the emitted JSON validates against schema/site.schema.json.",
 			Check: ruleP05,
+		},
+		{
+			ID: "P06", Hard: true,
+			What:  "every search result leads to a block that is in the build.",
+			Check: ruleP06,
 		},
 	}
 }
@@ -158,6 +163,68 @@ func ruleP05(in *Input) ([]Finding, error) {
 		}
 		for _, why := range bad {
 			out = append(out, Finding{Rule: "P05", File: name, Message: why})
+		}
+	}
+	return out, nil
+}
+
+// ruleP06 checks that the search index agrees with the pages.
+//
+// The index is built from the pages, so in a correct build this rule can
+// only fail if BuildSearch and BuildPages disagree about what a page holds.
+// That is worth checking anyway, because the two are separate walks over the
+// same structure and the failure they would produce is the worst kind: a
+// search result that looks right in the list and scrolls to nothing when the
+// reader clicks it. The schema pins a posting to a non-negative integer and
+// nothing more, because a schema cannot count the posts.
+//
+// Hard, for the same reason the other build rules are. A result that goes
+// nowhere is worse than no result.
+func ruleP06(in *Input) ([]Finding, error) {
+	site, err := in.Site()
+	if err != nil {
+		return nil, err
+	}
+	if len(site.Search) == 0 {
+		return nil, ErrNotRun
+	}
+	blocks := map[string]bool{}
+	for _, p := range site.Pages {
+		at := string(p.Lang) + " " + p.ID
+		for _, b := range p.Front.Blocks {
+			blocks[fmt.Sprintf("%s  %d", at, b.I)] = true
+		}
+		for _, sec := range p.Sections {
+			for _, b := range sec.Blocks {
+				blocks[fmt.Sprintf("%s %s %d", at, sec.Anchor, b.I)] = true
+			}
+		}
+	}
+	var out []Finding
+	for _, ix := range site.Search {
+		file := emit.SearchPath(ix.Lang)
+		say := func(format string, args ...any) {
+			out = append(out, Finding{Rule: "P06", File: file, Message: fmt.Sprintf(format, args...)})
+		}
+		for _, post := range ix.Posts {
+			key := fmt.Sprintf("%s %s %s %d", ix.Lang, post.Paper, post.Section, post.Block)
+			if !blocks[key] {
+				say("a result points at %s block %d of %s, which is not in the build",
+					post.Section, post.Block, post.Paper)
+			}
+		}
+		for _, name := range []string{"terms", "symbols"} {
+			m := ix.Terms
+			if name == "symbols" {
+				m = ix.Symbols
+			}
+			for _, term := range ix.Sorted(m) {
+				for _, at := range m[term] {
+					if at < 0 || at >= len(ix.Posts) {
+						say("the %s entry %q points at result %d of %d", name, term, at, len(ix.Posts))
+					}
+				}
+			}
 		}
 	}
 	return out, nil

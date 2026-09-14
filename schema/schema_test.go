@@ -167,7 +167,7 @@ func TestTheCatalogueIsNotAGraph(t *testing.T) {
 }
 
 func TestAnUnknownDocumentIsAnError(t *testing.T) {
-	if _, err := Validate("search-vi.json", []byte(`{}`)); err == nil {
+	if _, err := Validate("tags.json", []byte(`{}`)); err == nil {
 		t.Error("a document the schema does not cover was validated anyway")
 	}
 }
@@ -330,5 +330,121 @@ func TestAPageIsNotACatalogue(t *testing.T) {
 	}
 	if why := bad(t, Index, []byte(smallestPage)); len(why) == 0 {
 		t.Error("a page validated as the catalogue")
+	}
+}
+
+// smallestSearch is the least a search index can be and still be one: a
+// language with nothing indexed in it yet, which is what a corpus that has
+// not been translated into that language emits.
+const smallestSearch = `{
+  "version": 1,
+  "lang": "vi",
+  "posts": [],
+  "terms": {},
+  "symbols": {}
+}`
+
+// searchWith returns smallestSearch with one post in it and one term
+// pointing at it, built from maps so a test can change one field.
+func searchWith(t *testing.T, post map[string]any, terms map[string]any) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(smallestSearch), &doc); err != nil {
+		t.Fatal(err)
+	}
+	full := map[string]any{
+		"p": "cook-1971-np", "s": "cook-1971-np-s1", "i": 3,
+		"t": "2. The theorem", "k": "p", "x": "Every language accepted by a machine.",
+	}
+	for k, v := range post {
+		full[k] = v
+	}
+	doc["posts"] = []any{full}
+	if terms == nil {
+		terms = map[string]any{"machine": []any{0}}
+	}
+	doc["terms"] = terms
+	b, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestASearchIndexIsRecognisedByItsPath(t *testing.T) {
+	for _, path := range []string{"search-en.json", "search-ja.json"} {
+		kind, ok := Kind(path)
+		if !ok || kind != Search {
+			t.Errorf("%s is %q %v", path, kind, ok)
+		}
+	}
+	for _, path := range []string{"search.json", "search-en.js", "search-english.json", "p/search-en.json"} {
+		if _, ok := Kind(path); ok {
+			t.Errorf("%s was read as a document of the site", path)
+		}
+	}
+}
+
+func TestTheSmallestValidSearchIndexValidates(t *testing.T) {
+	if why := bad(t, "search-vi.json", []byte(smallestSearch)); len(why) != 0 {
+		t.Errorf("an empty index does not validate: %v", why)
+	}
+	if why := bad(t, "search-vi.json", searchWith(t, nil, nil)); len(why) != 0 {
+		t.Errorf("an index with one post in it does not validate: %v", why)
+	}
+}
+
+// A post has to be able to draw a result line on its own, so the paper, the
+// block, the kind and the snippet are all required. The section and the
+// title are not, because a block of the front page belongs to no section.
+func TestAPostMustBeAbleToDrawAResultLine(t *testing.T) {
+	if why := bad(t, "search-vi.json", searchWith(t, map[string]any{"s": nil, "t": nil}, nil)); len(why) == 0 {
+		t.Error("a post with a null section was accepted")
+	}
+	for _, field := range []string{"p", "i", "k", "x"} {
+		var doc map[string]any
+		if err := json.Unmarshal(searchWith(t, nil, nil), &doc); err != nil {
+			t.Fatal(err)
+		}
+		post := doc["posts"].([]any)[0].(map[string]any)
+		delete(post, field)
+		b, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if why := bad(t, "search-vi.json", b); len(why) == 0 {
+			t.Errorf("a post with no %s was accepted", field)
+		}
+	}
+}
+
+// A posting is a position in the posts list, so a negative one is a bug in
+// the emitter and a repeated one is a term filed twice against one block.
+func TestAPostingListIsPositionsAndNotRepeats(t *testing.T) {
+	for _, posts := range []any{[]any{-1}, []any{0, 0}, []any{}, "0", []any{"machine"}} {
+		body := searchWith(t, nil, map[string]any{"machine": posts})
+		if why := bad(t, "search-vi.json", body); len(why) == 0 {
+			t.Errorf("the posting list %v was accepted", posts)
+		}
+	}
+}
+
+// The kinds a post can carry are the kinds a block can be, from the one
+// definition, so the two cannot drift apart.
+func TestAPostCarriesABlockKind(t *testing.T) {
+	if why := bad(t, "search-vi.json", searchWith(t, map[string]any{"k": "math"}, nil)); len(why) != 0 {
+		t.Errorf("a formula post does not validate: %v", why)
+	}
+	if why := bad(t, "search-vi.json", searchWith(t, map[string]any{"k": "blockquote"}, nil)); len(why) == 0 {
+		t.Error("a post of a kind the app cannot draw was accepted")
+	}
+}
+
+func TestASearchIndexIsNotAPage(t *testing.T) {
+	if why := bad(t, "search-vi.json", []byte(smallestPage)); len(why) == 0 {
+		t.Error("a page validated as a search index")
+	}
+	if why := bad(t, "p/cook-1971-np/en.json", []byte(smallestSearch)); len(why) == 0 {
+		t.Error("a search index validated as a page")
 	}
 }

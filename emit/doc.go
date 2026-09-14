@@ -4,10 +4,12 @@
 // layout can change without breaking a deployed site, and the site can be
 // served as static files with no server between it and the reader.
 //
-// Three kinds of document. index.json is the catalogue, read on the first
+// Four kinds of document. index.json is the catalogue, read on the first
 // request of every visit. graph.json is the citation graph in the shape a
 // layout wants. p/<id>/<lang>.json is one paper in one language, whole,
 // which is one request to read a paper rather than one per section.
+// search-<lang>.json is an inverted index over one language, fetched on the
+// first search and not before.
 //
 // A page is a list of blocks and the block index is the alignment key.
 // Every language of a paper has the same blocks in the same order with the

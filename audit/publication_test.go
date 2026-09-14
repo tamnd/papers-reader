@@ -235,14 +235,66 @@ func TestP03FindsAFigureThatIsNotInTheBuild(t *testing.T) {
 }
 
 // All three are hard, because a page that refers to something that is not
-// there renders as a gap in a paper.
+// there renders as a gap in a paper. So is P06, for the same reason: a
+// search result that goes nowhere is worse than no result.
 func TestTheFaultRulesAreHard(t *testing.T) {
 	for _, r := range Rules() {
 		switch r.ID {
-		case "P01", "P02", "P03":
+		case "P01", "P02", "P03", "P06":
 			if !r.Hard {
 				t.Errorf("%s is soft", r.ID)
 			}
 		}
+	}
+}
+
+// P06 is the search index against the pages. In a correct build it cannot
+// fail, because the index is built from the pages, and that is the point:
+// the two are separate walks over one structure and the failure they would
+// produce is a result that looks right in the list and scrolls to nothing.
+func TestP06PassesOnABuildOfAPaper(t *testing.T) {
+	in := build(t, map[string]string{
+		"content/en/vaswani-2017-attention/01_method.md": page("vaswani-2017-attention", "1",
+			"The rule is\n\n$$E = \\tfrac{1}{2}\\sum_j (y_j - d_j)^2$$\n\nand it holds.\n"),
+	})
+	res := result(t, Run(in, true), "P06")
+	if res.NotRun || res.Failed() {
+		t.Errorf("P06 came back %+v", res)
+	}
+	site, err := in.Site()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(site.Search) != 1 || len(site.Search[0].Posts) == 0 {
+		t.Fatalf("the build indexed %v", site.Search)
+	}
+}
+
+// A corpus with nothing extracted has no pages, so it has no index either,
+// and a rule that passed on it would be a rule that passes on everything.
+func TestP06StandsDownWithNoPages(t *testing.T) {
+	if !result(t, Run(build(t, nil), true), "P06").NotRun {
+		t.Error("P06 claimed a result on a corpus with no pages")
+	}
+}
+
+// A posting that is not a position in the posts list is the one thing the
+// schema cannot catch, because a schema cannot count the posts.
+func TestP06FindsAPostingThatIsNotAPosition(t *testing.T) {
+	in := build(t, map[string]string{
+		"content/en/vaswani-2017-attention/01_method.md": page("vaswani-2017-attention", "1",
+			"Some prose about attention.\n"),
+	})
+	site, err := in.Site()
+	if err != nil {
+		t.Fatal(err)
+	}
+	site.Search[0].Terms["attention"] = []int{len(site.Search[0].Posts)}
+	res := result(t, Run(in, true), "P06")
+	if !res.Failed() {
+		t.Fatal("a posting off the end of the list was accepted")
+	}
+	if !strings.Contains(strings.Join(messages(res), " "), `"attention"`) {
+		t.Errorf("the findings are %v", res.Findings)
 	}
 }
