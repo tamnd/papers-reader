@@ -19,6 +19,13 @@ import (
 type Page struct {
 	Number int
 	Text   string
+	// Model says the page came out of a model rather than out of the PDF's
+	// own text layer, and so that the blank lines in it are a guess.
+	//
+	// It is what lets Join heal a paragraph that was broken in the middle of
+	// the page. See Join for why the two kinds of page are treated
+	// differently, and cmd/papers for where the answer comes from.
+	Model bool
 }
 
 // A Paragraph is one paragraph of the assembled paper.
@@ -48,6 +55,19 @@ type Document struct {
 // paragraph wrongly broken in two reads as two paragraphs and a person can
 // see where it happened. Over a hundred papers the second is the one to
 // prefer.
+//
+// Where the rule is applied depends on Page.Model. On a page read natively
+// the blank lines were put there from the coordinates of the lines, so a
+// break inside the page is a fact and the rule is only asked about the join
+// between one page and the next. On a page read by a model the blank lines
+// are the model's guess at where the paragraphs are, and a model reading a
+// two column page guesses wrong in one particular way: it reaches the foot
+// of the left column in the middle of a sentence, and starts a new paragraph
+// at the head of the right one. Page 9 of the MapReduce book had "using a
+// partitioning function on" and then a paragraph break and then "the
+// intermediate key", which is that. So on a model's page the rule is asked
+// at every break, and it is the same narrow rule: the half above has to end
+// unfinished and the half below has to start lower case.
 func Join(pages []Page) *Document {
 	d := &Document{}
 	for _, p := range pages {
@@ -59,12 +79,15 @@ func Join(pages []Page) *Document {
 		}
 		for i, text := range paragraphs(p.Text) {
 			n := len(d.Paragraphs)
-			// Only the first paragraph of a page can continue the page
-			// before it. Inside a page the break was decided by the
-			// geometry, which knows more than the punctuation does.
-			if i == 0 && n > 0 && continues(d.Paragraphs[n-1].Text, text) {
+			if n > 0 && (i == 0 || p.Model) && continues(d.Paragraphs[n-1].Text, text) {
 				d.Paragraphs[n-1].Text = JoinText(d.Paragraphs[n-1].Text, text)
-				d.Paragraphs[n-1].Pages++
+				// Only a join at the head of a page crossed a page break.
+				// Pages is what tells a reader a paragraph ran across two
+				// of them, and counting a repair inside one page would say
+				// it ran across a break that is not there.
+				if i == 0 {
+					d.Paragraphs[n-1].Pages++
+				}
 				continue
 			}
 			d.Paragraphs = append(d.Paragraphs, Paragraph{Text: text, Page: p.Number, Pages: 1})

@@ -237,3 +237,50 @@ func TestABlockIsNeverJoinedAcrossAPageBreak(t *testing.T) {
 		}
 	}
 }
+
+// model is one page read by a model, which is the case where the blank
+// lines in the page are a guess rather than a measurement.
+func model(text string) *Document {
+	return Join([]Page{{Number: 1, Text: text, Model: true}})
+}
+
+func TestAModelsBreakInTheMiddleOfASentenceIsHealed(t *testing.T) {
+	// The foot of the left column and the head of the right one, which is
+	// where a model reading two columns puts a paragraph break it invented.
+	d := model("using a partitioning function on\n\nthe intermediate key.\n")
+	if len(d.Paragraphs) != 1 {
+		t.Fatalf("assembled %d paragraphs, want 1: %q", len(d.Paragraphs), d.Text())
+	}
+	want := "using a partitioning function on the intermediate key."
+	if got := d.Paragraphs[0].Text; got != want {
+		t.Errorf("assembled %q, want %q", got, want)
+	}
+	if d.Paragraphs[0].Pages != 1 {
+		t.Errorf("the paragraph ran across %d pages, want 1: it never left the page", d.Paragraphs[0].Pages)
+	}
+}
+
+func TestANativeBreakInTheMiddleOfThePageStands(t *testing.T) {
+	// The same text with the break measured rather than guessed. The
+	// coordinates said there were two paragraphs here, so there are two.
+	d := join("using a partitioning function on\n\nthe intermediate key.\n")
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("assembled %d paragraphs, want 2: %q", len(d.Paragraphs), d.Text())
+	}
+}
+
+func TestTheRuleIsNoWiderInsideAModelsPage(t *testing.T) {
+	for _, text := range []string{
+		// Finished above.
+		"the section ends here.\n\nThe next one starts under it.\n",
+		// Upper case below.
+		"a list of the things that follow\n\nThe first of them.\n",
+		// A block on either side.
+		"the sentence that ran out of room and\n\n```text\nlisting\n```\n",
+		"## 3.1 Gated units\n\nthe paragraph under the heading.\n",
+	} {
+		if d := model(text); len(d.Paragraphs) != 2 {
+			t.Errorf("%q assembled as %d paragraphs, want 2: %q", text, len(d.Paragraphs), d.Text())
+		}
+	}
+}

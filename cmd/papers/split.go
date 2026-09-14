@@ -364,7 +364,15 @@ func document(c *corpus.Corpus, id string) (*assemble.Document, error) {
 		// two margins collapses in Markdown the same way however it was
 		// read, and the repair is in the assembly rather than in the reading
 		// so that fixing it does not mean reading a hundred papers again.
-		pages = append(pages, assemble.Page{Number: page, Text: extract.Unalign(text[page])})
+		pages = append(pages, assemble.Page{
+			Number: page,
+			Text:   extract.Unalign(text[page]),
+			// The same answer that decides whether the furniture is still
+			// on the page decides whether the blank lines in it are a
+			// guess, because both follow from having read the page without
+			// the coordinates of its lines.
+			Model: undress,
+		})
 	}
 	doc := assemble.Join(pages)
 	// After the join, because a listing can carry over a page break and the
