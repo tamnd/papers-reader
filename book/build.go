@@ -72,9 +72,21 @@ const Keep = "continue-on-errors"
 // dir is where both the source and the PDF go, and it is the caller's to
 // clean up or to keep. Keeping it is the only way to debug a document that
 // will not set, so papers book keeps it whenever the build fails.
+//
+// A relative dir is made absolute before anything is done with it, because
+// the run happens inside it. tectonic resolves --outdir against its own
+// working directory, so "books/.paper.build-1234" as the directory and as
+// the output directory means books/.paper.build-1234/books/.paper.build-1234,
+// which does not exist, and the run fails with a message about an output
+// directory that the caller can see is right there. That is what "papers
+// book -corpus ." did and "papers book -corpus /absolute/path" did not.
 func Build(ctx context.Context, dir, tex string) (*Report, error) {
 	if _, err := exec.LookPath(Tectonic); err != nil {
 		return nil, fmt.Errorf("%s is not installed, and it is what sets the PDF: brew install tectonic", Tectonic)
+	}
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
 	}
 	src := filepath.Join(dir, "paper.tex")
 	if err := os.WriteFile(src, []byte(tex), 0o644); err != nil {

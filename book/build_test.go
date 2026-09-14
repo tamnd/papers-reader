@@ -2,6 +2,7 @@ package book
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -43,6 +44,38 @@ func TestAWholeBookSets(t *testing.T) {
 	if !report.Clean() {
 		t.Errorf("the build is not clean: %v undefined, %v missing, %v errors",
 			report.Undefined, report.Missing, report.Errors)
+	}
+}
+
+// A relative build directory. tectonic resolves --outdir against its own
+// working directory, which is the build directory, so a relative one used to
+// send the output to a path inside itself and fail. "papers book -corpus ."
+// is how anybody runs it.
+func TestARelativeBuildDirectoryWorks(t *testing.T) {
+	needTectonic(t)
+	b := testBook(t)
+	tex, _, err := Document(b, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	here, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(here) })
+	if err := os.Mkdir("build", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Build(context.Background(), "build", tex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Pages == 0 {
+		t.Error("the typesetter wrote no pages")
 	}
 }
 
