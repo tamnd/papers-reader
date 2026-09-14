@@ -239,6 +239,29 @@ func Accept(dir string) ([]string, error) {
 	return out, nil
 }
 
+// Prune deletes the files a split reported as stale.
+//
+// Write reports them and leaves them, which is right for the run that finds
+// them: a section boundary that moved renames files, and a person should see
+// that happen rather than read it out of a four hundred line diff. But
+// leaving them for ever is not right either. Two files for one section is
+// two files with the same section number in their front matter, which is an
+// audit rule T04 failure, and it stays failing until somebody deletes one by
+// hand. The BERT paper had three of those, from a split whose appendix
+// headings kept their A.1 and A.2 prefixes and a later one whose did not.
+//
+// So this is the deliberate second step, and it deletes only what the report
+// names, which is only the .md files in the paper's own directory that the
+// split that produced the report did not write.
+func Prune(dir string, stale []string) error {
+	for _, name := range stale {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
 // write replaces a file in one step, so that an interrupted run leaves the
 // old file rather than half of the new one.
 func write(path string, b []byte) error {
@@ -387,11 +410,26 @@ const AbstractParagraph = 40
 // appended. The cap is applied last and to the result, so a paper whose front
 // block already runs long publishes no more than one whose abstract had to be
 // fetched from the next page.
+//
+// What comes out is the front file whatever the split called it. Usually it
+// already is one, because a paper prints its title above its first heading
+// and the splitter opens a front section for the text above the first cut.
+// But a scan whose first page begins with a running head the reader took for
+// a heading has no text above the cut, so there is no front section and the
+// first file is section 1. That is what happened to the AlphaGo paper: its
+// one published file came out as 01_article.md with kind section, and audit
+// rules S02 and T06 both refused it, S02 because a restricted paper gets
+// 00_front.md and nothing else and T06 because the paper then has no title
+// block at all. The heading is not lost, it is in the body underneath.
 func Restrict(files []File, words int) []File {
 	if len(files) == 0 {
 		return nil
 	}
 	front := files[0]
+	front.Front.Section = ""
+	front.Front.SectionTitle = "Front Matter"
+	front.Front.Kind = KindFront
+	front.Name = Section{Kind: KindFront}.Filename()
 	body := fromTitle(string(front.Body), front.Front.Title)
 	if longestParagraph(body) < AbstractParagraph {
 		if p, from := firstParagraph(files[1:]); p != "" {

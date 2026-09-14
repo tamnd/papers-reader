@@ -670,3 +670,72 @@ func TestAFileWithNoTagOnDiskGetsNone(t *testing.T) {
 		t.Errorf("a tag turned up from nowhere: %q", got)
 	}
 }
+
+// A scan whose first page opens with what the reader took for a heading has
+// no text above the first cut, so the split has no front section and its
+// first file is section 1. A restricted paper publishes one file and that
+// file is the front file, so this is the one it publishes.
+func TestARestrictedPaperPublishesAFrontFileWhateverTheSplitCalledIt(t *testing.T) {
+	f := File{
+		Name:  "01_article.md",
+		Front: base(),
+		Body:  []byte("Notes on the Analytical Engine\n\nAda Lovelace\n\n" + prose + "\n"),
+	}
+	f.Front.Section = "1"
+	f.Front.SectionTitle = "Article"
+	f.Front.Kind = "section"
+
+	fs := Restrict([]File{f}, AbstractWords)
+	if len(fs) != 1 {
+		t.Fatalf("a restricted paper published %d files, want 1", len(fs))
+	}
+	got := fs[0]
+	if got.Name != "00_front.md" {
+		t.Errorf("the published file is %s, want 00_front.md", got.Name)
+	}
+	if got.Front.Kind != KindFront {
+		t.Errorf("the published file is kind %q, want %q", got.Front.Kind, KindFront)
+	}
+	if got.Front.Section != "" {
+		t.Errorf("the front file is numbered section %q", got.Front.Section)
+	}
+	if got.Front.SectionTitle != "Front Matter" {
+		t.Errorf("the front file is titled %q", got.Front.SectionTitle)
+	}
+	if !strings.Contains(string(got.Body), "Ada Lovelace") {
+		t.Errorf("the title block did not survive:\n%s", got.Body)
+	}
+}
+
+func TestPruneDeletesOnlyWhatTheReportNames(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	left := filepath.Join(dir, "02_a_method.md")
+	if err := os.WriteFile(left, []byte("from a split that named its sections differently\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Write(dir, files(t), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Stale) != 1 || r.Stale[0] != "02_a_method.md" {
+		t.Fatalf("the report named %v as stale", r.Stale)
+	}
+	if err := Prune(dir, r.Stale); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(left); !os.IsNotExist(err) {
+		t.Error("the stale file is still there")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "02_method.md")); err != nil {
+		t.Errorf("prune took a file the split had written: %v", err)
+	}
+}
+
+func TestPruneIsHappyWithAFileThatHasAlreadyGone(t *testing.T) {
+	if err := Prune(t.TempDir(), []string{"03_results.md"}); err != nil {
+		t.Errorf("prune wanted the file to still be there: %v", err)
+	}
+}

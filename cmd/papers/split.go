@@ -98,6 +98,7 @@ func runSplit(args []string) error {
 	all := fs.Bool("all", false, "split every paper that has extracted pages")
 	force := fs.Bool("force", false, "overwrite files somebody has edited by hand")
 	accept := fs.Bool("accept", false, "restamp files somebody has edited by hand and mark them edited")
+	prune := fs.Bool("prune", false, "delete the files an earlier split left behind")
 	dry := fs.Bool("dry-run", false, "print what would be written and write nothing")
 	long := fs.Bool("v", false, "print every section")
 	fs.Usage = func() {
@@ -117,6 +118,13 @@ nothing.
 A file whose content_sha256 does not match the body next to it has been
 edited by somebody and is left alone. That is how a hand correction survives
 the next extraction run, and --force is how you throw it away on purpose.
+
+A file the last split wrote and this one did not is reported and left where
+it is, because the usual reason for one is that a section boundary moved and
+that is worth seeing rather than reading out of a diff. --prune is how you
+delete them once you have looked. Two files for one section is two files
+carrying the same section number, which fails audit rule T04 until one of
+them goes.
 
 A correction is protected the moment it is made and it fails audit rule T03
 until somebody says they meant it, which is the right way round: the audit
@@ -161,7 +169,7 @@ words. Nothing else about it may be published, so nothing else is written.
 	var papers, written, kept int
 	for _, p := range todo {
 		rec, _ := recorded.ByID(p.ID)
-		n, err := splitOne(c, p, rec, *force, *dry, *long)
+		n, err := splitOne(c, p, rec, *force, *prune, *dry, *long)
 		switch {
 		case err != nil:
 			fmt.Printf("  %-34s %v\n", p.ID, err)
@@ -249,7 +257,7 @@ func (n cut) String() string {
 	return s
 }
 
-func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, dry, long bool) (cut, error) {
+func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, prune, dry, long bool) (cut, error) {
 	var n cut
 	if rec == nil || rec.Access == corpus.AccessUnknown || rec.Access == "" {
 		return n, fmt.Errorf("nothing is known about what may be published from it, so nothing is written")
@@ -316,7 +324,16 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, dry, 
 		n.notes = append(n.notes, fmt.Sprintf("%s was edited by hand and is left alone", name))
 	}
 	for _, name := range report.Stale {
-		n.notes = append(n.notes, fmt.Sprintf("%s is from an earlier split and this one did not produce it", name))
+		what := "is from an earlier split and this one did not produce it"
+		if prune {
+			what = "is from an earlier split and has been deleted"
+		}
+		n.notes = append(n.notes, fmt.Sprintf("%s %s", name, what))
+	}
+	if prune {
+		if err := split.Prune(c.Content(corpus.EN, p.ID), report.Stale); err != nil {
+			return n, err
+		}
 	}
 	return n, nil
 }
