@@ -55,6 +55,13 @@ nothing. With -deep it is also asked a one word question, which costs a
 call and is the only way to find out that an account has been quietly moved
 down to a smaller model than the route file names.
 
+A route reached over an ssh tunnel wants ServerAliveInterval and
+ExitOnForwardFailure on the tunnel. Without them a forward that has gone
+quiet stays open and a POST through it comes back as a bare EOF, which on
+a rationed subscription is a turn spent for nothing, because the request
+may well have been served. Over a thousand asks, twenty seven of the
+twenty nine EOFs were on one tunnel that had neither.
+
 `, llm.EnvName("ROUTES"), route.DefaultPath())
 		fs.PrintDefaults()
 	}
