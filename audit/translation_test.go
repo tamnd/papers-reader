@@ -694,6 +694,30 @@ func TestL10FindsAnEnglishTermLeftStanding(t *testing.T) {
 	}
 }
 
+// A word that is a column heading in a table the run never translated is a
+// word the caption under it has to keep. The TPU paper's Table 1 is a fenced
+// block with a column headed "Vector" and a caption that reads "Vector is
+// self-explanatory", and a caption that renamed the column would be
+// describing a table that is not there.
+func TestL10LeavesALabelFromAListingAlone(t *testing.T) {
+	en := "```\nName  Layers  Encoder  Total\n```\n\nTable 1. The columns are the name, the layer count and the Encoder column, which is self-explanatory.\n"
+	tr := "```\nName  Layers  Encoder  Total\n```\n\nBảng 1. Các cột là tên, số lớp và cột Encoder, vốn đã tự giải thích rõ ràng.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L10"); res.Failed() {
+		t.Errorf("L10 asked for a column heading to be translated: %v", res.Findings)
+	}
+}
+
+// And it is the listing that earns the exception, not the word. The same
+// caption on a page with no such table is the finding it always was.
+func TestL10StillReadsATermThatIsNotALabel(t *testing.T) {
+	en := "Table 1. The columns are the name, the layer count and the Encoder column, which is self-explanatory.\n"
+	tr := "Bảng 1. Các cột là tên, số lớp và cột Encoder, vốn đã tự giải thích rõ ràng.\n"
+	res := result(t, glossaryPair(t, en, tr), "L10")
+	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "encoder") {
+		t.Errorf("L10 said %v about a page that left a term in English", res.Findings)
+	}
+}
+
 // A gloss is good practice on a term's first appearance, and the rendering
 // is right there in the file.
 // Twenty of the twenty-three L06 and L10 findings on the first translated
@@ -784,6 +808,42 @@ func TestL12LeavesAnOperatorNameAlone(t *testing.T) {
 	tr := `Giá trị là $\text{argmax}_x f(x)$ và nhãn là $y_{\text{i}}$ trong đoạn văn này ở đây.` + "\n"
 	if res := result(t, pairOf(t, corpus.VI, source, tr), "L12"); res.Failed() {
 		t.Errorf("L12 asked for an operator name to be translated: %v", res.Findings)
+	}
+}
+
+// The journal's own line at the foot of a first page stands as printed, the
+// same way a venue name in a bibliography does. It sits below the abstract,
+// so the masthead rule does not reach it, and it runs past L07's eight word
+// threshold. The Dennard paper was asked again and gave the same answer,
+// which is the right answer.
+func TestL07LeavesTheRunningHeadAlone(t *testing.T) {
+	const head = "\nA JOURNAL OF INVENTED RESULTS, VOL. SC-9, NO. 5, OCTOBER 1974\n"
+	const venued = `papers:
+  - id: vaswani-2017-attention
+    title: Attention Is All You Need
+    authors: [Ashish Vaswani]
+    year: 2017
+    venue: A Journal of Invented Results
+    field: ai-ml
+    status: listed
+`
+	page := func(t *testing.T, en, tr string) *Report {
+		t.Helper()
+		return Run(build(t, map[string]string{
+			"manifests/papers.yaml":                         venued,
+			"manifests/sources.yaml":                        openSources,
+			"content/en/vaswani-2017-attention/00_front.md": file(section("front"), en),
+			"content/vi/vaswani-2017-attention/00_front.md": file(
+				strings.Replace(answer(corpus.VI, "front", en), "01_section.md", "00_front.md", 1), tr),
+		}), false)
+	}
+	if res := result(t, page(t, enFront+head, viFront+head), "L07"); res.Failed() {
+		t.Errorf("L07 asked for the journal's own line to be translated: %v", res.Findings)
+	}
+	// And it is not a blanket pass on the page. The same page with the
+	// abstract left in English is still a finding.
+	if res := result(t, page(t, enFront+head, enFront+head), "L07"); !res.Failed() {
+		t.Error("L07 passed a front page whose abstract came back in English")
 	}
 }
 

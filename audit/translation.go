@@ -39,6 +39,10 @@ import (
 type pair struct {
 	en *File
 	tr *File
+	// venue is where the paper was published, from the manifest. A front
+	// page prints it as a running head and a translation is right to leave
+	// it as printed. See runningHead.
+	venue string
 }
 
 // pairs matches every translated file with its English.
@@ -52,6 +56,12 @@ type pair struct {
 // that failed for every language of every paper not yet reached would be a
 // group nobody reads.
 func pairs(in *Input) []pair {
+	venue := map[string]string{}
+	if in.Papers != nil {
+		for _, p := range in.Papers.Papers {
+			venue[p.ID] = p.Venue
+		}
+	}
 	english := map[string]*File{}
 	for _, f := range in.Content {
 		if f.Lang == corpus.EN && !f.Broken() {
@@ -69,7 +79,7 @@ func pairs(in *Input) []pair {
 				en = named
 			}
 		}
-		out = append(out, pair{en: en, tr: f})
+		out = append(out, pair{en: en, tr: f, venue: venue[f.Paper]})
 	}
 	return out
 }
@@ -757,11 +767,48 @@ func untranslated(p pair) []int {
 		if a == "" || proseWords(a) < prosePerParagraph {
 			continue
 		}
-		if a == b {
+		if a == b && !runningHead(p, a) {
 			out = append(out, i)
 		}
 	}
 	return out
+}
+
+// runningHead says whether a paragraph is the line the journal prints at the
+// top of the page, which stands as printed in every language.
+//
+// The test is the paper's own venue, from the manifest, folded and looked
+// for in the paragraph. Nothing else on a page says the name of the journal
+// it is printed in, and a paragraph that does is the running head or the
+// footer, whichever end of the page it came off.
+//
+// It is below the masthead and so the masthead rule does not reach it. An
+// IEEE first page prints the abstract and then, at the foot of the column,
+// the manuscript-received footnote, the authors' affiliation and the
+// journal's own line: "IEEE JOURNAL OF SOLID-STATE CIRCUITS, VOL. SC-9, NO.
+// 5, OCTOBER 1974". The reader lays those out as paragraphs after the
+// abstract because that is where they are on the page, and masthead stops at
+// the abstract because that is where a masthead stops.
+//
+// Eleven words is over L07's threshold, so the rule read it as prose and
+// asked for a Vietnamese translation of the name of a journal. Rule L14 says
+// venue names stand as printed in a bibliography, and a running head is the
+// same name for the same reason. The Dennard paper was asked again and gave
+// the same answer, which is the right answer.
+//
+// A page whose paper has no venue in the manifest has no running head to
+// find, and nothing is skipped on it.
+func runningHead(p pair, paragraph string) bool {
+	if p.venue == "" {
+		return false
+	}
+	return strings.Contains(fold(paragraph), fold(p.venue))
+}
+
+// fold lowers a string and squeezes its whitespace, so that a venue set in
+// capitals across a line break matches the manifest's title case.
+func fold(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
 // start is the first paragraph a translation of this page was meant to
@@ -997,9 +1044,10 @@ func ruleL10(in *Input) ([]Finding, error) {
 		// term only in the part of it that was there to be translated.
 		whole := strings.ToLower(translate.Prose(p.tr.Body))
 		tr := strings.ToLower(translate.Prose(translatable(p)))
+		labels := listed(p.en.Body)
 		var left []string
 		for _, t := range renderings(in.Glossary, p.en.Front.Field, p.tr.Lang) {
-			if t.as == t.en || !alone(tr, en, t.en) || t.rendered(whole) {
+			if t.as == t.en || !alone(tr, en, t.en) || t.rendered(whole) || labels[t.en] {
 				continue
 			}
 			left = append(left, fmt.Sprintf("%q, which is %q", t.en, t.as))
@@ -1012,6 +1060,42 @@ func ruleL10(in *Input) ([]Finding, error) {
 			Message: "these terms stand in English with their rendering nowhere in the file: " + strings.Join(cap5(left), ", "),
 		}}
 	})
+}
+
+// listed is every word set inside a listing or a table on the page, folded.
+//
+// A word that is a label in a block nobody translated is not a word to ask
+// for in the prose. The TPU paper is the case: its Table 1 is a fenced block
+// with a column headed "Vector", and the caption under the table reads "FC
+// is fully connected, Conv is convolution, Vector is self-explanatory, Pool
+// is pooling". The Vietnamese caption keeps those four words, because the
+// table above it still says them and a caption that renamed the columns
+// would be describing a table that is not there.
+//
+// L10 read the caption as prose, found "vector" in it, found "vectơ" nowhere
+// in the file, and was right about both. What it could not see is that the
+// word in the caption is a reference to the label rather than a use of the
+// term. This is what makes the difference visible: the label is in the file,
+// in a block the run was never going to translate.
+//
+// Fenced and inline code only, and not mathematics. A word inside \text is
+// rule L12's, which asks the opposite question and would be undone by this.
+//
+// Word by word rather than by substring, so that a listing mentioning
+// "vectorise" does not excuse "vector" in the prose.
+func listed(body string) map[string]bool {
+	out := map[string]bool{}
+	for _, s := range translate.Protect(body) {
+		if s.Kind != translate.Code && s.Kind != translate.Inline {
+			continue
+		}
+		for _, f := range strings.FieldsFunc(strings.ToLower(s.Text), func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		}) {
+			out[f] = true
+		}
+	}
+	return out
 }
 
 // translatable is the body of a translation with the blocks that were never
