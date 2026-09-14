@@ -162,7 +162,7 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 		}
 		out.Usage = add(out.Usage, reply.Usage)
 
-		answer := Unlink(c.Text, Clean(c.Text, reply.Text))
+		answer := Unescape(c.Text, Unlink(c.Text, Clean(c.Text, reply.Text)))
 		bad := Verify(c.Text, answer)
 		if len(bad) == 0 {
 			out.Models = keep(out.Models, reply.Model)

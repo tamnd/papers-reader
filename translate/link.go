@@ -3,6 +3,7 @@ package translate
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // link is an inline Markdown link or image.
@@ -71,6 +72,76 @@ func Unlink(source, answer string) string {
 	}
 	b.WriteString(answer[at:])
 	return b.String()
+}
+
+// Unescape takes the Markdown escapes out of a web address a model wrote
+// back with them in.
+//
+// The other half of the same tic Unlink undoes. A translator that has been
+// told the answer is Markdown sees punctuation in an address and escapes it,
+// so "http://www.cse.wustl.edu/~jain" comes back as
+// "http://www.cse.wustl.edu/\~jain" and
+// "https://doi.org/10.1016/0022-0000(78)90014-4" comes back with the
+// parentheses escaped. Neither escape is needed and neither renders: a
+// tilde is not Markdown and a parenthesis outside a link is not either. The
+// address a reader ends up with is the same one, which is exactly why this
+// is a repair rather than a refusal.
+//
+// It is here because refusing does not work on it. Both papers above were
+// asked three times and escaped the same address every time, and the run
+// gave up on each of them with every other paragraph already translated.
+// The refusal that stopped them is also confusing to read, because the URL
+// pattern stops at a parenthesis: the answer's span is reported as
+// "https://doi.org/10.1016/0022-0000\" and the source's as
+// "https://doi.org/10.1016/0022-0000", which are two addresses that differ
+// by one character neither of them ends with.
+//
+// The address is taken to the end of its whitespace delimited token rather
+// than to the end of the match, because the match is what stops short. What
+// is put back is the token with a backslash dropped from in front of each
+// piece of ASCII punctuation, and it is only put back when that string is
+// in the source and the escaped one is not. So an address the paper itself
+// wrote with a backslash in it is left alone, and so is an answer that has
+// invented an address, which Verify still refuses.
+func Unescape(source, answer string) string {
+	if !strings.Contains(answer, `\`) {
+		return answer
+	}
+	rs := []rune(answer)
+	var b strings.Builder
+	at := 0
+	for _, s := range Protect(answer) {
+		if s.Kind != URL || s.Start < at {
+			continue
+		}
+		end := token(rs, s.End)
+		whole := string(rs[s.Start:end])
+		plain := escape.ReplaceAllString(whole, "$1")
+		if plain == whole || strings.Contains(source, whole) || !strings.Contains(source, plain) {
+			continue
+		}
+		b.WriteString(string(rs[at:s.Start]))
+		b.WriteString(plain)
+		at = end
+	}
+	if at == 0 {
+		return answer
+	}
+	b.WriteString(string(rs[at:]))
+	return b.String()
+}
+
+// escape is a backslash in front of a piece of ASCII punctuation, which is
+// everything CommonMark lets a backslash escape and nothing else. A
+// backslash in front of a letter is a TeX command and is not touched.
+var escape = regexp.MustCompile(`\\([[:punct:]])`)
+
+// token is the end of the whitespace delimited word that starts at from.
+func token(rs []rune, from int) int {
+	for from < len(rs) && !unicode.IsSpace(rs[from]) {
+		from++
+	}
+	return from
 }
 
 // halves cuts a link into what it shows and where it points.

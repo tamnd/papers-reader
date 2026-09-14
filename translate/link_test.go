@@ -71,3 +71,70 @@ func TestAWrappedAddressIsAcceptedOnceItIsPutBack(t *testing.T) {
 		t.Errorf("a repaired answer was still refused: %s", bad[0])
 	}
 }
+
+// The two addresses that stopped a run, both of them three times.
+func TestAnEscapedAddressIsPutBack(t *testing.T) {
+	for _, c := range []struct{ why, source, answer, want string }{
+		{
+			"the AIMD paper's tilde, which is not Markdown in the first place",
+			"A fuller account is at http://www.cse.wustl.edu/~jain and elsewhere.\n",
+			"Trình bày đầy đủ hơn ở http://www.cse.wustl.edu/\\~jain và nơi khác.\n",
+			"Trình bày đầy đủ hơn ở http://www.cse.wustl.edu/~jain và nơi khác.\n",
+		},
+		{
+			"Milner's doi, whose parentheses the address pattern stops at",
+			"See https://doi.org/10.1016/0022-0000(78)90014-4 for the proof.\n",
+			"Xem https://doi.org/10.1016/0022-0000\\(78\\)90014-4 để biết chứng minh.\n",
+			"Xem https://doi.org/10.1016/0022-0000(78)90014-4 để biết chứng minh.\n",
+		},
+	} {
+		if got := Unescape(c.source, c.answer); got != c.want {
+			t.Errorf("%s:\nUnescape gave %q\nand the address is written %q", c.why, got, c.want)
+		}
+	}
+}
+
+func TestARepairedAddressIsAccepted(t *testing.T) {
+	source := "See https://doi.org/10.1016/0022-0000(78)90014-4 for the proof.\n"
+	answer := "Xem https://doi.org/10.1016/0022-0000\\(78\\)90014-4 để biết chứng minh.\n"
+	if bad := Verify(source, Unescape(source, answer)); bad != nil {
+		t.Errorf("a repaired answer was still refused: %s", bad[0])
+	}
+}
+
+func TestAnAddressTheSourceEscapedIsLeftAlone(t *testing.T) {
+	// A paper that prints the backslash is a paper whose address has one in
+	// it, and the answer is right to carry it.
+	source := "The file is at http://x.test/a\\~b on the mirror.\n"
+	answer := "Tệp nằm ở http://x.test/a\\~b trên bản sao.\n"
+	if got := Unescape(source, answer); got != answer {
+		t.Errorf("Unescape gave %q and the source is written that way too", got)
+	}
+}
+
+func TestAnInventedAddressIsNotRepairedIntoAGoodOne(t *testing.T) {
+	// Nothing unescapes to anything the source has, so there is nothing to
+	// put back and Verify still gets to refuse it.
+	source := "Code at http://x.test/a is provided.\n"
+	answer := "Mã tại http://x.test/\\_elsewhere được cung cấp.\n"
+	if got := Unescape(source, answer); got != answer {
+		t.Errorf("Unescape gave %q and invented the repair", got)
+	}
+	if Verify(source, answer) == nil {
+		t.Error("Verify accepted an address the passage did not have")
+	}
+}
+
+func TestAnEscapeOutsideAnAddressIsNotTouched(t *testing.T) {
+	// A backslash in prose or in a formula is the author's, and a paper with
+	// no address in it is not this repair's business at all.
+	for _, s := range []string{
+		"The cost is \\$5 per run.\n",
+		"The set is $\\{x : x > 0\\}$ throughout.\n",
+		"```\ncurl http://x.test/a\\?q=1\n```\n",
+	} {
+		if got := Unescape(s, s); got != s {
+			t.Errorf("Unescape changed %q into %q and had no reason to", s, got)
+		}
+	}
+}
