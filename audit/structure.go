@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/extract"
 	"github.com/tamnd/papers-reader/split"
 )
 
@@ -501,28 +502,6 @@ func ruleT10(in *Input) ([]Finding, error) {
 	return out, nil
 }
 
-// htmlTags is the markup a reader actually writes. It is a closed list rather
-// than "anything in angle brackets" because angle brackets are also an email
-// address in an author block, a comparison in a sentence the extractor failed
-// to wrap in dollars, and a placeholder in a grammar, and a rule that reported
-// all three would be turned off within a week.
-//
-// Everything on the list has either a Markdown spelling or no business in the
-// corpus at all. Nothing here is a judgement call about presentation: the
-// corpus is Markdown, and a file with markup in it is a file one of the three
-// extraction paths did not finish converting.
-var htmlTags = map[string]bool{
-	"a": true, "b": true, "big": true, "blockquote": true, "body": true,
-	"br": true, "caption": true, "center": true, "code": true, "col": true,
-	"colgroup": true, "dd": true, "div": true, "dl": true, "dt": true,
-	"em": true, "figcaption": true, "figure": true, "font": true,
-	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
-	"hr": true, "i": true, "img": true, "li": true, "ol": true, "p": true,
-	"pre": true, "small": true, "span": true, "strong": true, "sub": true,
-	"sup": true, "table": true, "tbody": true, "td": true, "tfoot": true,
-	"th": true, "thead": true, "tr": true, "u": true, "ul": true,
-}
-
 var (
 	// htmlTag is an opening, closing or self closing tag. The name has to be
 	// letters and digits, which is what keeps `<satoshin@gmx.com>` and
@@ -548,6 +527,13 @@ var (
 // It is hard because there is no version of a body with markup left in it that
 // is correct.
 //
+// Acceptance rule A10 asks the same question of a page before the page is
+// written, off the same list of tags, so a reading that comes back as HTML is
+// now asked again rather than landing here. This rule stays because the two
+// catch different things: A10 covers what the vision path reads today, and
+// this covers the pages that were read before A10 existed, the ones a person
+// corrected by hand, and the translations.
+//
 // Math and code are skipped, and so is inline code, because all three are
 // places where a tag is content. Only the first tag in a file is reported,
 // with a count, because one table is forty findings and a rule that produces
@@ -569,7 +555,7 @@ func ruleT11(in *Input) ([]Finding, error) {
 				continue
 			}
 			for _, m := range htmlTag.FindAllStringSubmatch(inlineCode.ReplaceAllString(line, " "), -1) {
-				if !htmlTags[strings.ToLower(m[1])] {
+				if !extract.HTMLTags[strings.ToLower(m[1])] {
 					continue
 				}
 				count++

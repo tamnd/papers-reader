@@ -376,3 +376,52 @@ func TestFaultsAppliesTheRulesWithoutCountingThePage(t *testing.T) {
 		t.Errorf("Faults changed the page count from %d to %d", before, c.Pages())
 	}
 }
+
+func TestAPageOfHTMLTheTidierCouldNotConvertIsRefused(t *testing.T) {
+	// The TPU paper's first table, whose header spans four columns over five
+	// sub-columns. Untable will not guess at it, so it arrives here as
+	// markup and the page goes back to be asked again.
+	var c Checker
+	text := "Table 1 shows the benchmarks.\n\n<table>\n  <tr>\n    <th colspan=\"4\">Layers</th>\n  </tr>\n</table>\n"
+	faults := c.Check(1, text)
+	if !has(faults, A10) {
+		t.Fatalf("a page of HTML was accepted: %v", rules(faults))
+	}
+	if !strings.Contains(faults[0].Detail, "<table>") {
+		t.Errorf("the fault does not name the tag: %v", faults[0].Detail)
+	}
+}
+
+func TestAPageWithNoMarkupOnItIsNotRefusedForMarkup(t *testing.T) {
+	var c Checker
+	text := "The bound is $2^n$ and the table follows.\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n"
+	if faults := c.Check(1, text); has(faults, A10) {
+		t.Errorf("a clean page was refused for markup: %v", faults)
+	}
+}
+
+func TestATokenInAngleBracketsIsNotMarkup(t *testing.T) {
+	// The Transformer paper prints these and means the tokens, and an author
+	// block prints an address the same way.
+	var c Checker
+	text := "The sequence ends with <EOS> and is filled with <pad>.\n\nWrite to <ada@example.org> for the data.\n"
+	if faults := c.Check(1, text); has(faults, A10) {
+		t.Errorf("a page of content in angle brackets was refused: %v", faults)
+	}
+}
+
+func TestMarkupInAListingIsPartOfTheListing(t *testing.T) {
+	var c Checker
+	text := "The template is:\n\n```html\n<table><tr><td>1</td></tr></table>\n```\n"
+	if faults := c.Check(1, text); has(faults, A10) {
+		t.Errorf("a listing about HTML was refused: %v", faults)
+	}
+}
+
+func TestMarkupInInlineCodeIsPartOfTheProse(t *testing.T) {
+	var c Checker
+	text := "A paper about the web writes `<table>` in prose and means the word.\n"
+	if faults := c.Check(1, text); has(faults, A10) {
+		t.Errorf("a page that names a tag was refused: %v", faults)
+	}
+}

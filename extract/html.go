@@ -254,3 +254,186 @@ func cellText(s string) (string, bool) {
 	}
 	return s, true
 }
+
+// HTMLTags is the markup a reader actually writes. It is a closed list rather
+// than "anything in angle brackets" because angle brackets are also an email
+// address in an author block, a comparison in a sentence the extractor failed
+// to wrap in dollars, and a placeholder in a grammar, and a rule that reported
+// all three would be turned off within a week. The Transformer paper prints
+// `<pad>` and `<EOS>` and means the tokens.
+//
+// Everything on the list has either a Markdown spelling or no business in the
+// corpus at all. Nothing here is a judgement call about presentation: the
+// corpus is Markdown, and a file with markup in it is a file one of the three
+// extraction paths did not finish converting.
+//
+// Acceptance rule A10 and audit rule T11 read the same list, because the two
+// are the same question asked at two moments. A10 asks it of a page before
+// the page is written and T11 asks it of the corpus afterwards, and two
+// opinions about what counts as markup would mean the reader writing pages
+// the audit then refuses with nobody able to say which of them was wrong.
+var HTMLTags = map[string]bool{
+	"a": true, "b": true, "big": true, "blockquote": true, "body": true,
+	"br": true, "caption": true, "center": true, "code": true, "col": true,
+	"colgroup": true, "dd": true, "div": true, "dl": true, "dt": true,
+	"em": true, "figcaption": true, "figure": true, "font": true,
+	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+	"hr": true, "i": true, "img": true, "li": true, "ol": true, "p": true,
+	"pre": true, "small": true, "span": true, "strong": true, "sub": true,
+	"sup": true, "table": true, "tbody": true, "td": true, "tfoot": true,
+	"th": true, "thead": true, "tr": true, "u": true, "ul": true,
+}
+
+var (
+	// anyTag is an opening, closing or self closing tag. The name has to be
+	// letters and digits, which is what keeps `<satoshin@gmx.com>` and
+	// `<n, k>` out of it before the list above is even consulted.
+	anyTag = regexp.MustCompile(`<\s*/?\s*([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>`)
+	// backticks is an inline code span. A paper about the web writes
+	// `<table>` in prose and means the word, not the markup.
+	backticks = regexp.MustCompile("`[^`]*`")
+)
+
+// markup is the first HTML tag left on a page and how many there are.
+//
+// This runs after the tidier, which is the whole point of where it sits. The
+// prompt says in as many words that there is no HTML in the answer, not a
+// table, not a br, not a sub or a sup. A model trained on web pages writes
+// one anyway, and Untable and Unscript turn most of what it writes into the
+// spelling this corpus uses. What is left is what they would have had to
+// guess at, and the two of them refuse to guess for a reason: the TPU paper's
+// first table came back with a header spanning four columns over five, and
+// expanded as written the numbers land under the wrong headings, which is
+// worse than no table at all because it reads like a table.
+//
+// So the page goes back and is asked again. That is cheaper than it sounds
+// and better than the alternatives, which are a corpus with unreadable tables
+// in it or a person editing HTML by hand. A second ask at a higher resolution
+// is a different sample from the model and usually comes back as a fence.
+//
+// Fenced blocks and inline code are skipped, because a listing about HTML is
+// full of tags and every one of them is content.
+func markup(s string) (string, int) {
+	lines := strings.Split(s, "\n")
+	fenced := code.Inside(s)
+	first, count := "", 0
+	for i, line := range lines {
+		if fenced[i+1] {
+			continue
+		}
+		for _, m := range anyTag.FindAllStringSubmatch(backticks.ReplaceAllString(line, " "), -1) {
+			if !HTMLTags[strings.ToLower(m[1])] {
+				continue
+			}
+			count++
+			if first == "" {
+				first = strings.TrimSpace(m[0])
+			}
+		}
+	}
+	return first, count
+}
+
+// Unscript rewrites the subscripts and superscripts a reader wrote in HTML
+// as the mathematics they are.
+//
+// Untable does this inside a table cell and has since the Transformer paper.
+// It happens in running prose too, and there it is if anything more common,
+// because a paper that names its quantities in the text names them the way it
+// sets them: the GPT-3 paper writes "n<sub>params</sub> is the total number of
+// trainable parameters, n<sub>layers</sub> is the total number of layers", and
+// that is one paragraph with fourteen tags in it.
+//
+// A subscript on a name is mathematics and is written as mathematics. The
+// prompt says so and says what to write, `$x_i$` and `$2^n$`, and this is the
+// same conversion applied to a reader that answered in the other spelling.
+// Both the name and the script go inside the dollars, because `$n$_params_ is
+// not what the page prints and `n$_{params}$` is not mathematics anybody
+// writes.
+//
+// A script with nothing in front of it is a table note rather than a script
+// on a symbol, and it comes out as a superscript over nothing, `$^{a}$`.
+// That is what the page prints and KaTeX reads it, and it is the same
+// spelling the cells of the table above already use: the GPT-3 translation
+// table has `45.6<sup>a</sup>` in a cell and `<sup>a</sup>[Tur20]` in the
+// caption under it, the first meaning the score and the second saying whose
+// score it is, and the two have to come out as the same mark or the caption
+// stops explaining the table.
+//
+// The two it will not touch are the two where the guess would be wrong. A
+// script inside a fence is a listing and its angle brackets are content. A
+// script inside a math span is already inside dollars and nesting them would
+// close the span early.
+func Unscript(s string) string {
+	lines := strings.Split(s, "\n")
+	fenced := code.Inside(s)
+	for i, line := range lines {
+		if fenced[i+1] || !hasScript(line) {
+			continue
+		}
+		lines[i] = joinScripts(line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+var (
+	hasScriptTag = regexp.MustCompile(`(?i)<(sub|sup)\b`)
+	// bareScript is a script with no token in front of it, which is a table
+	// note. script above will not match one, because it needs something to
+	// attach to.
+	bareScript = regexp.MustCompile(`(?is)<(sub|sup)\b[^>]*>(.*?)</(?:sub|sup)\s*>`)
+)
+
+func hasScript(line string) bool { return hasScriptTag.MatchString(line) }
+
+// joinScripts converts every script on one line that is outside the line's
+// mathematics.
+//
+// The offsets come from marksIn, which is the same delimiter scan Money uses,
+// so a line where the reader mixed its own dollars with its HTML keeps them
+// apart. An odd delimiter on the line means the line's mathematics is not
+// paired and nothing here can tell inside from outside, so the line is left
+// as it is and the page is refused.
+func joinScripts(line string) string {
+	at := marksIn(line)
+	if len(at)%2 == 1 {
+		return line
+	}
+	var b strings.Builder
+	from := 0
+	for i := 0; i+1 < len(at); i += 2 {
+		b.WriteString(scripts(line[from:at[i].at]))
+		b.WriteString(line[at[i].at : at[i+1].at+1])
+		from = at[i+1].at + 1
+	}
+	b.WriteString(scripts(line[from:]))
+	return b.String()
+}
+
+// scripts converts the scripts in one stretch of a line that is outside the
+// line's mathematics. The attached ones first, so that a bare one is what is
+// left over rather than the tail of one that had a token.
+func scripts(s string) string {
+	s = script.ReplaceAllStringFunc(s, scriptTeX)
+	return bareScript.ReplaceAllStringFunc(s, bareTeX)
+}
+
+// bareTeX is a table note, as a superscript over nothing.
+func bareTeX(m string) string {
+	p := bareScript.FindStringSubmatch(m)
+	mark := "_"
+	if strings.EqualFold(p[1], "sup") {
+		mark = "^"
+	}
+	return "$" + mark + "{" + strings.TrimSpace(p[2]) + "}$"
+}
+
+// scriptTeX is one matched token and script, as mathematics.
+func scriptTeX(m string) string {
+	p := script.FindStringSubmatch(m)
+	mark := "_"
+	if strings.EqualFold(p[2], "sup") {
+		mark = "^"
+	}
+	return "$" + p[1] + mark + "{" + strings.TrimSpace(p[3]) + "}$"
+}

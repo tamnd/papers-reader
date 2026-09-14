@@ -276,3 +276,68 @@ func TestATableWithASpanPastItsLastRowIsLeftAlone(t *testing.T) {
 		t.Errorf("got:\n%s\nwant it left alone", got)
 	}
 }
+
+func TestAScriptInProseIsMathematics(t *testing.T) {
+	in := "Here n<sub>params</sub> is the count and d<sub>ff</sub> = 4 * d<sub>model</sub> throughout.\n"
+	want := "Here $n_{params}$ is the count and $d_{ff}$ = 4 * $d_{model}$ throughout.\n"
+	if got := Unscript(in); got != want {
+		t.Errorf("Unscript gave\n%q\nand wanted\n%q", got, want)
+	}
+}
+
+func TestASuperscriptInProseIsMathematics(t *testing.T) {
+	in := "The bound is 2<sup>n</sup> in the worst case.\n"
+	want := "The bound is $2^{n}$ in the worst case.\n"
+	if got := Unscript(in); got != want {
+		t.Errorf("Unscript gave %q and wanted %q", got, want)
+	}
+}
+
+func TestAScriptInsideMathematicsIsLeftAlone(t *testing.T) {
+	// Already inside dollars, so nesting would close the span early.
+	in := "The value $x<sub>i</sub>$ and the count n<sub>k</sub>.\n"
+	want := "The value $x<sub>i</sub>$ and the count $n_{k}$.\n"
+	if got := Unscript(in); got != want {
+		t.Errorf("Unscript gave %q and wanted %q", got, want)
+	}
+}
+
+func TestAScriptInAListingIsPartOfTheListing(t *testing.T) {
+	in := "```html\n<p>x<sub>1</sub></p>\n```\n"
+	if got := Unscript(in); got != in {
+		t.Errorf("Unscript reached into a fence: %q", got)
+	}
+}
+
+func TestAScriptWithNothingInFrontOfItIsATableNote(t *testing.T) {
+	// The GPT-3 caption. The cell above it reads 45.6<sup>a</sup> and comes
+	// out as $45.6^{a}$, so this has to come out as the same mark or the
+	// caption stops explaining the table.
+	in := "Table 3.2: Performance on cloze tasks. <sup>a</sup>[Tur20] <sup>b</sup>[RWC+19]\n"
+	want := "Table 3.2: Performance on cloze tasks. $^{a}$[Tur20] $^{b}$[RWC+19]\n"
+	if got := Unscript(in); got != want {
+		t.Errorf("Unscript gave\n%q\nand wanted\n%q", got, want)
+	}
+}
+
+func TestATableNoteAndAScriptOnASymbolOnOneLine(t *testing.T) {
+	in := "The score 45.6<sup>a</sup> is the best. <sup>a</sup>[Tur20]\n"
+	want := "The score $45.6^{a}$ is the best. $^{a}$[Tur20]\n"
+	if got := Unscript(in); got != want {
+		t.Errorf("Unscript gave\n%q\nand wanted\n%q", got, want)
+	}
+}
+
+func TestALineWithAnOddDelimiterIsLeftForTheAcceptanceRules(t *testing.T) {
+	in := "The value of $x is unclear and n<sub>k</sub> too.\n"
+	if got := Unscript(in); got != in {
+		t.Errorf("Unscript guessed at an unpaired line: %q", got)
+	}
+}
+
+func TestAPageWithNoScriptsIsUntouched(t *testing.T) {
+	in := "Plain prose with $x_i$ and a table.\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n"
+	if got := Unscript(in); got != in {
+		t.Errorf("Unscript changed a page with nothing to do: %q", got)
+	}
+}

@@ -11,7 +11,7 @@ import (
 	"github.com/tamnd/papers-reader/mathtex"
 )
 
-// The nine acceptance rules. A page is checked before it is written, and a
+// The ten acceptance rules. A page is checked before it is written, and a
 // page that fails goes back on the queue rather than into the corpus.
 //
 // They are numbered because the numbers end up in the queue, in the reports
@@ -30,6 +30,9 @@ const (
 	A7 = "A7 a code fence was left open"
 	A8 = "A8 the page is marked illegible and is not recorded as damaged"
 	A9 = "A9 the page skips a stretch of the file's own text layer"
+	// A10 is the one that catches a model writing the web instead of the
+	// page. See markup.
+	A10 = "A10 the page came back with markup the corpus has no spelling for"
 )
 
 // A Fault is one rule one page broke.
@@ -50,7 +53,7 @@ func (f Fault) Error() string {
 	return fmt.Sprintf("%s: %s", f.Rule, f.Detail)
 }
 
-// A Checker applies the eight rules to the pages of one paper.
+// A Checker applies the ten rules to the pages of one paper.
 //
 // One per paper and not one per page, because rule A5 is about the paper: a
 // page is too short relative to the other pages of the same paper, and there
@@ -340,6 +343,10 @@ func (c *Checker) faults(page int, text string) []Fault {
 					Window, share*100, quoteFew(missing)), 0)
 			}
 		}
+	}
+
+	if tag, n := markup(text); n > 0 {
+		add(A10, fmt.Sprintf("%q is HTML, and there are %d tags on this page the tidier could not convert", tag, n), 0)
 	}
 
 	if markers := Illegible.FindAllString(text, -1); len(markers) > 0 {

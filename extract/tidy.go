@@ -39,6 +39,14 @@ import (
 // Money runs after Dollars because it counts delimiters, and a page in the
 // other dialect has not got any until Dollars has run.
 //
+// Unscript runs after Untable, not before, because the two would otherwise
+// both claim the scripts inside a table cell. Untable reads a cell whole and
+// refuses the whole table if anything in it is left over, so it has to see
+// the cell as the reader wrote it. What Unscript then finds is the scripts in
+// running prose and the scripts in a table Untable turned down, and putting
+// dollars round the second kind is no loss: A10 refuses the page for the
+// table either way.
+//
 // Dollars runs before Untable so that a cell already written in TeX's own
 // delimiters is in this corpus's delimiters by the time the table is read.
 // Untable puts dollars round a cell that is bare TeX, and a cell it had
@@ -53,6 +61,7 @@ func Tidy(s string) string {
 	s = Dollars(s)
 	s = Money(s)
 	s = Untable(s)
+	s = Unscript(s)
 	s = Unlink(s)
 	s = Delink(s)
 	return strings.TrimSpace(s)
