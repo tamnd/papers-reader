@@ -97,13 +97,13 @@ func Write(dir string, files []File, force bool) (*Report, error) {
 	for _, f := range files {
 		want[f.Name] = true
 		path := filepath.Join(dir, f.Name)
-		b, err := f.Bytes()
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", f.Name, err)
-		}
 		old, err := os.ReadFile(path)
 		switch {
 		case os.IsNotExist(err):
+			b, err := f.Bytes()
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", f.Name, err)
+			}
 			if err := write(path, b); err != nil {
 				return nil, err
 			}
@@ -111,6 +111,11 @@ func Write(dir string, files []File, force bool) (*Report, error) {
 			continue
 		case err != nil:
 			return nil, err
+		}
+		f.Front.Tag = keepTag(f.Front.Tag, old)
+		b, err := f.Bytes()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", f.Name, err)
 		}
 		if bytes.Equal(old, b) {
 			r.Unchanged = append(r.Unchanged, f.Name)
@@ -136,6 +141,36 @@ func Write(dir string, files []File, force bool) (*Report, error) {
 	}
 	sort.Strings(r.Stale)
 	return r, nil
+}
+
+// keepTag carries a section's own tag across a rewrite.
+//
+// A tag is append only and means one thing for ever, and the one thing this
+// one means is the section this file is. The section is still the same
+// section after a re-extraction: same paper, same file name, same place in
+// the reading order. What changed is the words in it.
+//
+// Everything else anchored in the corpus carries its tag in an attribute
+// block on its own line, so it travels with the body and needs nothing here.
+// A section's tag has no line to sit on, which is why it is in the front
+// matter, and the front matter is rebuilt from the manifest on every split.
+// So without this the tag went out of every file the splitter touched, and
+// papers split over the whole corpus quietly dropped 192 of them at once.
+// Putting them back means running papers tags assign again, and links written
+// against them are dangling in the meantime.
+//
+// A tag the caller already has wins, because that is papers tags assign
+// handing out a new one or repairing a wrong one, and this is only here for
+// the callers that know nothing about tags at all.
+func keepTag(tag string, old []byte) string {
+	if tag != "" {
+		return tag
+	}
+	f, _, err := corpus.ParseFront(old)
+	if err != nil {
+		return tag
+	}
+	return f.Tag
 }
 
 // edited says whether a file on disk holds somebody's work.

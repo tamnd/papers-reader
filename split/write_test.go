@@ -575,3 +575,98 @@ func TestAPaperWithNoTitleRecordedLeavesTheBlockAlone(t *testing.T) {
 		t.Errorf("a paper with no title was cut down to:\n%s", got)
 	}
 }
+
+// stamp writes a tag into the front matter of a file already on disk, the way
+// papers tags assign does.
+func stamp(t *testing.T, path, tag string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, body, err := corpus.ParseFront(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Tag = tag
+	next, err := corpus.Render(f, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, next, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func tagOf(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, _, err := corpus.ParseFront(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f.Tag
+}
+
+func TestASectionKeepsItsTagAcrossAReExtraction(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "02_method.md")
+	stamp(t, path, "0043")
+
+	fs := files(t)
+	fs[2].Body = []byte("the same section read again by a better model\n")
+	fs[2].Front.ContentSHA256 = corpus.ContentSHA(fs[2].Body)
+	if _, err := Write(dir, fs, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagOf(t, path); got != "0043" {
+		t.Errorf("the section came back with tag %q, want the one it has had all along", got)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "better model") {
+		t.Error("keeping the tag kept the old body with it")
+	}
+}
+
+func TestANewTagWinsOverTheOneOnDisk(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "02_method.md")
+	stamp(t, path, "0043")
+
+	fs := files(t)
+	fs[2].Front.Tag = "00A7"
+	if _, err := Write(dir, fs, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagOf(t, path); got != "00A7" {
+		t.Errorf("the caller's tag gave way to the one on disk: %q", got)
+	}
+}
+
+func TestAFileWithNoTagOnDiskGetsNone(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, files(t), false); err != nil {
+		t.Fatal(err)
+	}
+	fs := files(t)
+	fs[2].Body = []byte("read again\n")
+	fs[2].Front.ContentSHA256 = corpus.ContentSHA(fs[2].Body)
+	if _, err := Write(dir, fs, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagOf(t, filepath.Join(dir, "02_method.md")); got != "" {
+		t.Errorf("a tag turned up from nowhere: %q", got)
+	}
+}
