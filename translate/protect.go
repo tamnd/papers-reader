@@ -33,6 +33,16 @@ const (
 	// Attribute is the block papers tags writes on an anchored line, which
 	// holds the anchor, the class and the permanent tag.
 	Attribute Kind = "attribute"
+	// URL is a bare web address in the prose.
+	//
+	// It is protected because it is the one piece of a paper that has to be
+	// typed in, and because a translator that touches it does not mistype it,
+	// it decorates it. All three translations of the GAN paper turned the
+	// footnote "available at http://www.github.com/goodfeli/adversarial" into
+	// a Markdown link with the address as both the text and the target, which
+	// is markup the English does not have, in a corpus whose vocabulary has
+	// no links in it.
+	URL Kind = "url"
 )
 
 // A Span is one stretch of a body that a translation has to reproduce byte
@@ -100,6 +110,9 @@ func Protect(body string) []Span {
 	for _, m := range citation.FindAllStringIndex(body, -1) {
 		add(Citation, runeIndex(body, m[0]), runeIndex(body, m[1]))
 	}
+	for _, m := range address.FindAllStringIndex(body, -1) {
+		add(URL, runeIndex(body, m[0]), runeIndex(body, m[1]))
+	}
 	sortByStart(out)
 	return out
 }
@@ -158,6 +171,12 @@ var (
 	citation = regexp.MustCompile(`\[\[[a-z0-9][-a-z0-9]*\]\]` +
 		`|\[\^[A-Za-z0-9][-A-Za-z0-9_]*\]` +
 		`|\[` + number + `(?:[,;][ \t]*` + number + `)*(?:,[ \t]*[A-Za-z][^]\n]*)?\]`)
+
+	// address is a bare web address. It stops at whitespace and then gives
+	// back the punctuation a sentence put after it, because a paper writes
+	// "available at http://example.org/x." and the full stop is the
+	// sentence's rather than the address's.
+	address = regexp.MustCompile(`\b(?:https?://|www\.)[^\s<>()\[\]"]*[^\s<>()\[\]".,;:!?]`)
 )
 
 // A Difference is one way a translation's protected spans are not the

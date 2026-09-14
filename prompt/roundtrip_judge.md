@@ -7,6 +7,13 @@ Your job is to say whether the second passage claims what the first passage
 claims. You are not reviewing the prose. The second passage is a literal
 back-translation and it is supposed to read badly.
 
+It has also been through two models, and small drift in wording is what a
+round trip does rather than evidence about the translation. "Dramatically"
+coming back as "significantly", "several" as "many", "may" as "can": a
+translator that wrote the right {{LANGUAGE}} word produces all three, because
+the word it wrote has both English words as renderings. None of that is a
+finding.
+
 ## What counts and what does not
 
 Ignore, every time:
@@ -50,6 +57,19 @@ it does. A dropped sentence is material. A flipped comparison is material.
 After the verdict line, one line per difference, each starting with a dash.
 Say what the original claims and what the back-translation claims, in that
 order, in one sentence. Write no differences at all if the verdict is `same`.
+
+Two things about the list, and they are the whole of the job.
+
+A difference you would end by saying it is equivalent, that it preserves the
+claim, or that it does not materially change anything, is not a difference.
+Leave it out. It is a wording difference and the verdict line is where
+wording differences are reported.
+
+The verdict has to follow the list. If every line under it is a word that
+came back as a synonym of itself, the verdict is `differs-in-wording`,
+however many lines there are. Ten of those are still ten wording
+differences. `differs-materially` means at least one line is a claim of the
+paper that changed, and that line should be first.
 
 Do not explain your reasoning, do not summarise either passage, and do not
 add a closing remark.

@@ -404,3 +404,50 @@ func TestOffsetsPointAtTheSpan(t *testing.T) {
 		t.Errorf("the offsets cut out %q and the span is %q, so they are counted in bytes and not runes", cut, got[0].Text)
 	}
 }
+
+// A bare web address is protected, because a translator that touches one
+// does not mistype it, it decorates it. All three translations of the GAN
+// paper turned the footnote's address into a Markdown link with the address
+// as both the text and the target.
+func TestABareAddressIsProtected(t *testing.T) {
+	for _, c := range []struct {
+		what, body, want string
+	}{
+		{
+			"an address at the end of a sentence",
+			"All code is available at http://www.github.com/goodfeli/adversarial\n",
+			"http://www.github.com/goodfeli/adversarial",
+		},
+		{
+			"an address with the sentence's full stop after it",
+			"See https://example.org/a/b.html. The rest follows.\n",
+			"https://example.org/a/b.html",
+		},
+		{
+			"an address written without a scheme",
+			"Mirrored at www.example.org/papers, updated weekly.\n",
+			"www.example.org/papers",
+		},
+	} {
+		var got []string
+		for _, s := range Protect(c.body) {
+			if s.Kind == URL {
+				got = append(got, s.Text)
+			}
+		}
+		if len(got) != 1 || got[0] != c.want {
+			t.Errorf("%s: protected %q, want one URL %q", c.what, got, c.want)
+		}
+	}
+}
+
+// An address inside a fence or a backticked span belongs to that span and is
+// not reported twice.
+func TestAnAddressInsideAListingIsNotProtectedAgain(t *testing.T) {
+	body := "```sh\ncurl http://example.org/x\n```\n\nAnd `http://example.org/y` in a sentence.\n"
+	for _, s := range Protect(body) {
+		if s.Kind == URL {
+			t.Errorf("an address inside a %s was protected again: %q", s.Kind, s.Text)
+		}
+	}
+}
