@@ -25,14 +25,19 @@ import (
 // a fence costs another minute and a half of a rationed reader to be told the
 // same thing without it.
 //
-// Dollars, Untable and Unlink are the three habits that are not wrapping.
-// They are here rather than beside the acceptance rules because all three are
-// things a reader does after it has read the page correctly, and a page
+// Dollars, Money, Untable and Unlink are the habits that are not wrapping.
+// They are here rather than beside the acceptance rules because all of them
+// are things a reader does after it has read the page correctly, and a page
 // refused for any of them would be asked again and come back the same way.
+// The price on page 1 of the Unix paper was asked for three times, at three
+// resolutions, and read correctly all three times.
 //
 // Delink runs after Unlink so that an image link is still an image link
 // when Unlink looks at it. Unlink matches a whole line and Delink would
 // leave it half a line, with the caption in the prose and the picture gone.
+//
+// Money runs after Dollars because it counts delimiters, and a page in the
+// other dialect has not got any until Dollars has run.
 //
 // Dollars runs before Untable so that a cell already written in TeX's own
 // delimiters is in this corpus's delimiters by the time the table is read.
@@ -46,6 +51,7 @@ func Tidy(s string) string {
 	s = dropTrailer(s)
 	s = unwrap(s)
 	s = Dollars(s)
+	s = Money(s)
 	s = Untable(s)
 	s = Unlink(s)
 	s = Delink(s)
