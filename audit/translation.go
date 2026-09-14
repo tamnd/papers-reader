@@ -1170,8 +1170,21 @@ func shorten(s string) string {
 //
 // Operator names are not prose and do not move, and the list of them is
 // translate.Upright, which is the same list the comparison uses.
+//
+// A bibliography is skipped, which is the same exception L06, L07, L10 and
+// L11 make and the one this rule was written without. Rule L14 says a
+// bibliography is the English file character for character, and the run
+// copies it rather than asking for it, so every word in it is in English by
+// the design of the thing. Asking for the words inside its formulas to have
+// moved is asking for the one file that is meant not to have changed to have
+// changed. It is not a hypothetical: the Spanner bibliography cites a paper
+// whose title sets "(by definition)", "(min)" and "(causality)" in \text, and
+// this rule refused the corpus over it.
 func ruleL12(in *Input) ([]Finding, error) {
 	return eachTranslation(in, func(p pair) []Finding {
+		if p.tr.Front.Kind == "references" {
+			return nil
+		}
 		want, got := textWords(p.en.Body), textWords(p.tr.Body)
 		if len(want) == 0 || len(want) != len(got) {
 			return nil

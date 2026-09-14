@@ -787,6 +787,27 @@ func TestL12LeavesAnOperatorNameAlone(t *testing.T) {
 	}
 }
 
+// A bibliography is the English file character for character, which is what
+// rule L14 asks for, so every word inside every formula in it is in English
+// and none of them is a finding. The Spanner bibliography cites a paper
+// whose title sets "(by definition)" in \text, and this rule used to refuse
+// the corpus over it.
+func TestL12LeavesTheBibliographyAlone(t *testing.T) {
+	body := "1. A. Author. A paper about $\\text{(by definition)}$ ordering. In Proc. 1978.\n"
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/09_references.md": file(
+			section("references"), body),
+		"content/vi/vaswani-2017-attention/09_references.md": file(
+			strings.Replace(answer(corpus.VI, "references", body),
+				"01_section.md", "09_references.md", 1), body),
+	}), false)
+	if res := result(t, rep, "L12"); res.Failed() {
+		t.Errorf("L12 asked for the bibliography to be translated: %v", res.Findings)
+	}
+}
+
 // The rule that needed most care. Han characters in a Vietnamese page are
 // wrong and in a Japanese one are right, and kana in a Chinese page are
 // wrong. The allowed set is a table per language, not a constant.
