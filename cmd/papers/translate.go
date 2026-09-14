@@ -163,6 +163,7 @@ owed the one section it is missing.
 	var failed []string
 	inARow, stopping, batch := 0, false, 0
 	ship := newShipment(c, want, jobs)
+	ship.findings = hardFindings(c)
 	for o := range spread(ctx, lanes, jobs, func(j job) (translate.Result, error) {
 		return translated(ctx, c, t, g, j, run, free)
 	}) {
@@ -202,9 +203,9 @@ owed the one section it is missing.
 		pushed(c, run, batch+1, true, ship.take())
 	}
 	if len(ship.held) > 0 {
-		fmt.Printf("%d papers are not whole and were left in the working tree rather than published:\n", len(ship.held))
+		fmt.Printf("%d papers were left in the working tree rather than published:\n", len(ship.held))
 		for _, id := range ship.held {
-			fmt.Printf("  %s\n", id)
+			fmt.Printf("  %s: %s\n", id, ship.why[id])
 		}
 	}
 	fmt.Printf("%d files written, %d asks of which %d were refused, %d input and %d output tokens\n",
@@ -248,7 +249,7 @@ func pushed(c *corpus.Corpus, run string, batch int, last bool, paths []string) 
 	} else {
 		opening += "The run is still going and the next batch will look like this one.\n"
 	}
-	opening += "Nothing here has been through the audit yet, because the raw translations go in first and the rules are written against what the models actually write rather than against what they were asked for.\n"
+	opening += "Every paper here has been through the hard audit rules and passed them. A paper one of them refuses is held back in the working tree and named in the run log, so what is in this batch is what is ready rather than what happens to be finished.\n"
 	res, err := push(context.Background(), c, "main", publish.Branch(run, batch), opening, paths, true, false)
 	switch {
 	case errors.Is(err, publish.Nothing):

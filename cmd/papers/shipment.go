@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/tamnd/papers-reader/audit"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/publish"
 )
@@ -27,6 +29,8 @@ import (
 // tree, the next run is owed the one file it is missing, and it goes out
 // then.
 //
+// A batch also carries nothing a hard audit rule refuses. See audited.
+//
 // The count that decides when to push is still a count of files, because
 // that is what the flag has always meant and because a batch measured in
 // papers would be forty files for the GPT-3 paper and one for a stub.
@@ -44,15 +48,24 @@ type shipment struct {
 	// is how many files stand behind them.
 	ready []string
 	files int
-	// held is the papers finished and not whole, for the end of the run to
-	// report. A person reading the log wants to know that a paper was
-	// deliberately left in the working tree rather than lost.
+	// held is the papers finished and not published, in the order they were
+	// held, and why is what to say about each. A person reading the log wants
+	// to know that a paper was deliberately left in the working tree rather
+	// than lost, and which of the two reasons it was.
 	held []string
+	why  map[string]string
+
+	// findings is the hard audit of the corpus as it stands, and is what
+	// decides whether a finished paper is one to publish. It is a field and
+	// not a call because a shipment is worth testing on its own and the audit
+	// wants a hundred papers to have anything to say. The run sets it to
+	// hardFindings. Nothing set is nothing checked.
+	findings func() ([]audit.Finding, error)
 }
 
 // newShipment counts what the run owes each paper.
 func newShipment(c *corpus.Corpus, langs []corpus.Lang, jobs []job) *shipment {
-	s := &shipment{c: c, langs: langs, owed: map[string]int{}, broken: map[string]bool{}}
+	s := &shipment{c: c, langs: langs, owed: map[string]int{}, broken: map[string]bool{}, why: map[string]string{}}
 	for _, j := range jobs {
 		s.owed[j.front.Paper]++
 	}
@@ -70,12 +83,22 @@ func (s *shipment) done(paper string, ok bool) {
 	}
 	delete(s.owed, paper)
 	switch {
-	case s.broken[paper], !s.whole(paper):
-		s.held = append(s.held, paper)
+	case s.broken[paper]:
+		s.hold(paper, "a file of it could not be written")
+	case !s.whole(paper):
+		s.hold(paper, "it is not whole in every language the run is writing")
 	default:
 		s.ready = append(s.ready, paper)
 		s.files += s.count(paper)
 	}
+}
+
+// hold keeps a paper in the working tree and says why.
+func (s *shipment) hold(paper, why string) {
+	if _, was := s.why[paper]; !was {
+		s.held = append(s.held, paper)
+	}
+	s.why[paper] = why
 }
 
 // pending is how many files are waiting to go out.
@@ -93,6 +116,7 @@ func (s *shipment) pending() int { return s.files }
 // language a paper has no directory for.
 func (s *shipment) take() []string {
 	var paths []string
+	s.audited()
 	sort.Strings(s.ready)
 	for _, id := range s.ready {
 		for _, l := range s.langs {
@@ -118,6 +142,113 @@ func (s *shipment) take() []string {
 	}
 	s.ready, s.files = nil, 0
 	return paths
+}
+
+// audited holds back the papers a hard audit rule refuses.
+//
+// The run used to push whatever it had finished and merge it without waiting
+// for anything, because the raw translations were going in first and the
+// rules were still being written against what the models actually write. The
+// corpus passed no rules then and there was nothing to gate on. It passes all
+// seventy four of them now, CI runs them on every pull request, and a run
+// that merges past a red check puts the corpus in a state a person has to go
+// and fix by hand. Two batches did exactly that, in tamnd/papers#38 and #39:
+// both merged with the audit failing, and main was red until somebody
+// noticed.
+//
+// The whole hard audit runs, and the papers it names are held. Not the batch,
+// because a rule that fires on one translation is no reason to keep the other
+// four in the working tree, and not just this run's files either: a paper
+// whose English has gone stale under a translation is the same broken paper
+// whoever wrote it.
+//
+// A finding that names no file is printed and holds nothing. Those are the
+// rules about the repository rather than about a paper, and there is no
+// honest paper to blame one on. If one of them is failing then CI will say
+// so on the pull request, which is the right place for a thing that is true
+// of the whole corpus.
+//
+// It costs a few seconds a batch over a hundred papers, which against the
+// minutes a chunk takes is nothing.
+func (s *shipment) audited() {
+	if s.findings == nil || len(s.ready) == 0 {
+		return
+	}
+	found, err := s.findings()
+	if err != nil {
+		fmt.Printf("the batch could not be audited and is held back entire: %v\n", err)
+		for _, id := range s.ready {
+			s.hold(id, "the corpus could not be loaded to audit it")
+		}
+		s.ready, s.files = nil, 0
+		return
+	}
+	bad := map[string]string{}
+	for _, f := range found {
+		id := blamed(f.File, s.ready)
+		if id == "" {
+			fmt.Printf("%s\n", f)
+			continue
+		}
+		if _, was := bad[id]; !was {
+			bad[id] = f.String()
+		}
+	}
+	if len(bad) == 0 {
+		return
+	}
+	keep := s.ready[:0]
+	for _, id := range s.ready {
+		if found, no := bad[id]; no {
+			s.files -= s.count(id)
+			s.hold(id, "a hard audit rule refuses it: "+found)
+			continue
+		}
+		keep = append(keep, id)
+	}
+	s.ready = keep
+}
+
+// hardFindings runs the hard audit rules over the corpus and returns
+// everything they found. It reloads each time, because the point of it is to
+// read the files the run has just written.
+func hardFindings(c *corpus.Corpus) func() ([]audit.Finding, error) {
+	return func() ([]audit.Finding, error) {
+		in, err := audit.Load(c)
+		if err != nil {
+			return nil, err
+		}
+		var out []audit.Finding
+		for _, res := range audit.Run(in, true).Results {
+			if res.Err != nil {
+				return nil, fmt.Errorf("rule %s: %w", res.Rule.ID, res.Err)
+			}
+			out = append(out, res.Findings...)
+		}
+		return out, nil
+	}
+}
+
+// blamed is the paper of the batch a finding is about, or the empty string
+// for a finding about something else.
+//
+// By path segment rather than by prefix, because a finding names a file
+// under content, under figures or under manifests and the identifier sits in
+// a different place in each. The identifiers are long and hyphenated and
+// nothing else in a path looks like one.
+func blamed(file string, ready []string) string {
+	if file == "" {
+		return ""
+	}
+	parts := strings.Split(filepath.ToSlash(file), "/")
+	for _, id := range ready {
+		for _, p := range parts {
+			if p == id {
+				return id
+			}
+		}
+	}
+	return ""
 }
 
 // whole says whether every English file of a paper has a counterpart in
