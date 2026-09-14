@@ -176,7 +176,16 @@ var (
 	// back the punctuation a sentence put after it, because a paper writes
 	// "available at http://example.org/x." and the full stop is the
 	// sentence's rather than the address's.
-	address = regexp.MustCompile(`\b(?:https?://|www\.)[^\s<>()\[\]"]*[^\s<>()\[\]".,;:!?]`)
+	//
+	// Whitespace is \s and \p{Z} and \p{Cf}, and not \s on its own, because
+	// \s in this package's regexps is the ASCII five and a model writing CJK
+	// does not type the ASCII five. The Vietnamese translation of the GAN
+	// introduction came back with a non-breaking space after the address in
+	// the code footnote, three times running. The span it made was
+	// "http://www.github.com/goodfeli/adversarial ", the English has no
+	// such address, and the answer was refused for adding a URL that is the
+	// paper's own with one invisible character on the end of it.
+	address = regexp.MustCompile(`\b(?:https?://|www\.)[^\s\p{Z}\p{Cf}<>()\[\]"]*[^\s\p{Z}\p{Cf}<>()\[\]".,;:!?]`)
 )
 
 // A Difference is one way a translation's protected spans are not the

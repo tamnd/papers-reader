@@ -428,6 +428,16 @@ func TestABareAddressIsProtected(t *testing.T) {
 			"Mirrored at www.example.org/papers, updated weekly.\n",
 			"www.example.org/papers",
 		},
+		{
+			"an address with a non-breaking space after it",
+			"T\u1ea5t c\u1ea3 m\u00e3 ngu\u1ed3n c\u00f3 t\u1ea1i http://www.github.com/goodfeli/adversarial\u00a0\n",
+			"http://www.github.com/goodfeli/adversarial",
+		},
+		{
+			"an address with an ideographic space after it",
+			"\u30b3\u30fc\u30c9\u306f http://www.github.com/goodfeli/adversarial\u3000\u3067\u3059\u3002\n",
+			"http://www.github.com/goodfeli/adversarial",
+		},
 	} {
 		var got []string
 		for _, s := range Protect(c.body) {
