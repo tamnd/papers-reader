@@ -394,7 +394,7 @@ func ruleL06(in *Input) ([]Finding, error) {
 		whole := handled(terms, rs, tr)
 		var missed []string
 		for _, t := range terms {
-			if t.as == t.en || t.rendered(tr) || kept(tr, t.en) {
+			if t.common || t.as == t.en || t.rendered(tr) || kept(tr, t.en) {
 				continue
 			}
 			if !missing(rs, tr, t.en, whole) {
@@ -426,6 +426,10 @@ func ruleL06(in *Input) ([]Finding, error) {
 type rendering struct {
 	en, as string
 	senses []string
+	// common is the term's Common flag, and a term carrying it is offered
+	// to the translator and not asked after here. The reasoning is on the
+	// field in the glossary package.
+	common bool
 }
 
 // rendered says whether a translation wrote this term, in the sense its
@@ -460,7 +464,7 @@ func renderings(g *glossary.Glossary, f corpus.Field, l corpus.Lang) []rendering
 			continue
 		}
 		en := strings.ToLower(strings.TrimSpace(t.En))
-		out = append(out, rendering{en: en, as: strings.TrimSpace(as), senses: senses[en]})
+		out = append(out, rendering{en: en, as: strings.TrimSpace(as), senses: senses[en], common: t.Common})
 	}
 	return out
 }

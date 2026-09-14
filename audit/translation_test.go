@@ -211,6 +211,9 @@ terms:
     vi: chuỗi
   - en: Markov chain
     vi: xích Markov
+  - en: library
+    vi: thư viện
+    common: true
 `
 
 // glossaryPair is pairOf with a glossary on disk, for L06 and L10.
@@ -245,6 +248,28 @@ func TestL06LeavesATermTheTranslationKeptInEnglishToL10(t *testing.T) {
 	}
 	if res := result(t, glossaryPair(t, en, tr), "L10"); !res.Failed() {
 		t.Error("L10 did not pick up the term L06 handed to it")
+	}
+}
+
+// A term marked common is one the English uses in its ordinary sense as
+// often as its technical one, and the rule cannot tell the two apart. Aho
+// and Corasick sped up "a library bibliographic search program", which is a
+// building with books in it.
+func TestL06DoesNotAskForATermMarkedCommon(t *testing.T) {
+	en := "The algorithm sped up a library bibliographic search program by a factor of five to ten.\n"
+	tr := "Thuật toán đã tăng tốc một chương trình tra cứu thư mục thư tịch lên gấp năm đến mười lần.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L06"); res.Failed() {
+		t.Errorf("L06 asked for the rendering of a common word: %v", res.Findings)
+	}
+}
+
+// Marking a term common says nothing about whether its English may be left
+// standing in the translation. It may not, and L10 is the rule that says so.
+func TestACommonTermIsStillL10sBusiness(t *testing.T) {
+	en := "The algorithm sped up a library bibliographic search program by a factor of five to ten.\n"
+	tr := "Thuật toán đã tăng tốc một chương trình tra cứu thư mục của library lên gấp năm đến mười lần.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L10"); !res.Failed() {
+		t.Error("L10 passed a common term the translation left in English")
 	}
 }
 

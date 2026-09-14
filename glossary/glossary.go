@@ -43,7 +43,41 @@ type Term struct {
 	// The candidate list the extractor writes has counted fields per term
 	// since it was written, so this is the shape the data already had.
 	Fields []corpus.Field `yaml:"fields,omitempty"`
-	Note   string         `yaml:"note,omitempty"`
+	// Common says the English word is not on its own evidence that the
+	// rendering was owed, and tells audit rule L06 to stop asking for it.
+	//
+	// The rule looks for the English term in a page and then for the
+	// rendering in the translation of it, and it was wrong seventeen times
+	// out of eighteen over the first three languages. Every one of the
+	// seventeen was a word this corpus pins that English also uses
+	// ordinarily. Aho and Corasick improved "a library bibliographic search
+	// program", which is a building with books in it and not ライブラリ.
+	// Karp thanks somebody for "a few key discussions", which is not キー.
+	// Sussman and Steele present "a sequence of programming examples",
+	// Cytron writes "a useful class of program optimizations", Ford and
+	// Fulkerson assume "a steady state condition", and Goodfellow uses
+	// "sample" as a verb and thanks Bastien for "a Theano feature".
+	//
+	// A term also earns this when the technical sense is meant and has more
+	// than one right rendering. "bound" is pinned to 上界・下界, which is two
+	// answers with a separator between them, and Lamport's bound on clock
+	// drift is correctly 上界 alone. Until a rendering can hold
+	// alternatives, asking for the pair as written is asking for the wrong
+	// thing.
+	//
+	// The term is still offered to the translator, because the rendering is
+	// right where the technical sense is meant and that is most of the time.
+	// What stops is the audit reporting its absence, which it cannot read a
+	// sentence well enough to be right about. Rule L10, which asks the
+	// opposite question and finds the English word left standing in the
+	// translation, is unaffected: an English word sitting in Vietnamese
+	// prose is wrong whichever sense it was meant in.
+	//
+	// It is not part of TermsSHA and does not move the glossary version,
+	// because it changes no rendering. Nothing already translated is stale
+	// for it.
+	Common bool   `yaml:"common,omitempty"`
+	Note   string `yaml:"note,omitempty"`
 }
 
 // Offered says whether a paper in this field is shown this term.

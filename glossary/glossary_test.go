@@ -122,6 +122,9 @@ terms:
     note: the mechanism, not the ordinary word
   - en: MapReduce
     keep: true
+  - en: library
+    vi: thư viện
+    common: true
 `
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
@@ -130,7 +133,7 @@ terms:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Version != 3 || len(g.Terms) != 2 {
+	if g.Version != 3 || len(g.Terms) != 3 {
 		t.Fatalf("read version %d and %d terms", g.Version, len(g.Terms))
 	}
 	if !g.Terms[0].Offered(corpus.AIML) || g.Terms[0].Offered(corpus.Theory) || g.Terms[0].Vi != "cơ chế chú ý" {
@@ -138,6 +141,9 @@ terms:
 	}
 	if !g.Terms[1].Keep {
 		t.Errorf("keep did not survive the file")
+	}
+	if !g.Terms[2].Common || g.Terms[0].Common {
+		t.Errorf("common did not survive the file")
 	}
 	if !g.Has("ATTENTION") || g.Has("cache") {
 		t.Errorf("Has does not match the way the extractor counts")
@@ -169,6 +175,12 @@ func TestTheTermsHashTracksWhatAPaperWasTranslatedAgainst(t *testing.T) {
 	g.Terms[1].Vi = "phép quy giản"
 	if TermsSHA(g, corpus.AIML, corpus.VI) != ml {
 		t.Error("a rendering in another field moved this field's hash")
+	}
+	g.Terms[2].Common = true
+	if TermsSHA(g, corpus.AIML, corpus.VI) != ml {
+		// Marking a term common changes no rendering, so nothing already
+		// translated is stale for it and the version does not have to move.
+		t.Error("marking a term common moved the hash")
 	}
 	g.Terms[2].Vi = "biểu đồ"
 	if TermsSHA(g, corpus.AIML, corpus.VI) == ml {
