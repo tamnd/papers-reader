@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/tamnd/papers-reader/corpus"
@@ -430,5 +433,96 @@ func put(t *testing.T, c *corpus.Corpus, name string, front corpus.Front, body s
 	}
 	if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A chunk takes the fleet about two minutes and the corpus is five hundred
+// of them, so the run has to use every lane the fleet has rather than one.
+func TestSpreadUsesEveryLane(t *testing.T) {
+	const lanes = 4
+	var mu sync.Mutex
+	at, most := 0, 0
+	start := make(chan struct{})
+	var once sync.Once
+	work := func(j job) (translate.Result, error) {
+		mu.Lock()
+		at++
+		if at > most {
+			most = at
+		}
+		full := at == lanes
+		mu.Unlock()
+		if full {
+			// The last of the four is what lets the other three go, so
+			// this only finishes if all four really are in the air.
+			once.Do(func() { close(start) })
+		}
+		<-start
+		mu.Lock()
+		at--
+		mu.Unlock()
+		return translate.Result{Chunks: 1}, nil
+	}
+	jobs := make([]job, 12)
+	for i := range jobs {
+		jobs[i] = job{lang: corpus.VI, name: fmt.Sprintf("%02d_section.md", i)}
+	}
+	done := 0
+	for o := range spread(context.Background(), lanes, jobs, work) {
+		if o.err != nil {
+			t.Errorf("%s: %v", o.job.name, o.err)
+		}
+		done++
+	}
+	if done != len(jobs) {
+		t.Errorf("%d files came back, want %d", done, len(jobs))
+	}
+	if most != lanes {
+		t.Errorf("%d files were in the air at once, want %d", most, lanes)
+	}
+}
+
+// The run stops on a fleet that is down, and stopping must not hang the
+// caller on a channel that never closes.
+func TestSpreadStopsOnACancelledRun(t *testing.T) {
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	var mu sync.Mutex
+	asked := 0
+	work := func(j job) (translate.Result, error) {
+		mu.Lock()
+		asked++
+		n := asked
+		mu.Unlock()
+		if n == 1 {
+			stop()
+		}
+		return translate.Result{}, ctx.Err()
+	}
+	jobs := make([]job, 200)
+	for i := range jobs {
+		jobs[i] = job{lang: corpus.VI, name: fmt.Sprintf("%03d_section.md", i)}
+	}
+	done := 0
+	for range spread(ctx, 2, jobs, work) {
+		done++
+	}
+	if done == len(jobs) {
+		t.Errorf("all %d files were handed out after the run was stopped", done)
+	}
+}
+
+// One lane is one lane, and a routing table with nothing live in it must not
+// ask for zero workers and hand out nothing at all.
+func TestSpreadAlwaysHasALane(t *testing.T) {
+	jobs := []job{{lang: corpus.VI, name: "00_front.md"}}
+	done := 0
+	for range spread(context.Background(), 0, jobs, func(job) (translate.Result, error) {
+		return translate.Result{}, nil
+	}) {
+		done++
+	}
+	if done != 1 {
+		t.Errorf("%d files came back, want 1", done)
 	}
 }

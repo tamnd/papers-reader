@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/tamnd/llm"
 	"github.com/tamnd/llm/route"
@@ -44,13 +45,19 @@ func runTranslate(args []string) error {
 	tries := fs.Int("tries", translate.Tries, "how many times one chunk is asked before the file is given up on")
 	floor := fs.Int("floor", Floor, "the glossary coverage a language needs, as a percentage")
 	force := fs.Bool("force", false, "translate again even where the English has not changed")
+	atOnce := fs.Int("jobs", 0, "how many files to translate at once, or 0 for one per lane in the fleet")
 	dry := fs.Bool("dry-run", false, "say what would be asked and ask nothing")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `usage: papers translate [flags]
 
-Writes the Vietnamese, Chinese and Japanese of every English file, one
-chunk at a time, and refuses an answer that did not come back as the same
-document.
+Writes the Vietnamese, Chinese and Japanese of every English file and
+refuses an answer that did not come back as the same document.
+
+Several files at once, one per lane the fleet has. A chunk takes the fleet
+about two minutes and the corpus is five hundred of them, so a run that
+asked one question at a time would take a day and leave eight of the nine
+lanes idle for all of it. The chunks of one file still go one at a time,
+because a chunk is given the paragraph before it for context.
 
 The mathematics, the listings, the citation markers and the tag attributes
 are pulled out of the answer and compared with the source paragraph by
@@ -134,11 +141,14 @@ and a references file has nothing else in it.
 	}
 
 	logf := func(format string, args ...any) { fmt.Printf("    "+format+"\n", args...) }
-	ask, from, err := fleet(*routes, *escalate, logf)
+	ask, from, lanes, err := fleet(*routes, *escalate, logf)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("the chunks go to the hosts in the %s routing table\n", from)
+	if *atOnce > 0 {
+		lanes = *atOnce
+	}
+	fmt.Printf("the chunks go to the hosts in the %s routing table, %d files at once\n", from, lanes)
 	free, err := gateways(*routes)
 	if err != nil {
 		return err
@@ -146,33 +156,47 @@ and a references file has nothing else in it.
 
 	t := &translate.Translator{Ask: ask, Tries: *tries, Logf: logf}
 	run := work.RunID()
-	ctx := context.Background()
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+
 	var total llm.Usage
-	written, asks, refused := 0, 0, 0
+	written, asks, refused, skipped := 0, 0, 0, 0
 	var failed []string
-	inARow := 0
-	for _, j := range jobs {
-		res, err := translated(ctx, c, t, g, j, run, free)
-		total = sum(total, res.Usage)
-		asks += res.Asks
-		refused += len(res.Refused)
-		if err != nil {
-			failed = append(failed, fmt.Sprintf("%s %s %s: %v", j.lang, j.front.Paper, j.name, err))
-			fmt.Printf("%s %s %s: given up on, %v\n", j.lang, j.front.Paper, j.name, err)
+	inARow, stopping := 0, false
+	for o := range spread(ctx, lanes, jobs, func(j job) (translate.Result, error) {
+		return translated(ctx, c, t, g, j, run, free)
+	}) {
+		total = sum(total, o.res.Usage)
+		asks += o.res.Asks
+		refused += len(o.res.Refused)
+		if o.err != nil {
+			// A file the cancellation killed is not a file that failed.
+			// Saying so would report nine failures for one bad fleet and
+			// hide the three that are the actual evidence.
+			if stopping {
+				skipped++
+				continue
+			}
+			failed = append(failed, fmt.Sprintf("%s %s %s: %v", o.job.lang, o.job.front.Paper, o.job.name, o.err))
+			fmt.Printf("%s %s %s: given up on, %v\n", o.job.lang, o.job.front.Paper, o.job.name, o.err)
 			inARow++
 			if inARow >= giveUp {
 				fmt.Printf("%d files in a row could not be written, so the rest of the run is skipped\n", inARow)
-				break
+				stopping = true
+				stop()
 			}
 			continue
 		}
 		inARow = 0
 		written++
 		fmt.Printf("%s %s %s: %d chunks, %d asks, %s\n",
-			j.lang, j.front.Paper, j.name, res.Chunks, res.Asks, strings.Join(res.Models, " and "))
+			o.job.lang, o.job.front.Paper, o.job.name, o.res.Chunks, o.res.Asks, strings.Join(o.res.Models, " and "))
 	}
 	fmt.Printf("%d files written, %d asks of which %d were refused, %d input and %d output tokens\n",
 		written, asks, refused, total.InputTokens, total.OutputTokens)
+	if skipped > 0 {
+		fmt.Printf("%d files were still in the air when the run stopped and were left unwritten\n", skipped)
+	}
 	if len(failed) > 0 {
 		fmt.Printf("%d files were not written:\n", len(failed))
 		for _, f := range failed {
@@ -181,6 +205,61 @@ and a references file has nothing else in it.
 		return fmt.Errorf("%d of %d files were not written", len(failed), len(jobs))
 	}
 	return nil
+}
+
+// An outcome is one finished file: what was asked for, what came back, and
+// whether it came back at all.
+type outcome struct {
+	job job
+	res translate.Result
+	err error
+}
+
+// spread runs write over the jobs, lanes of them at a time, and sends each
+// outcome on as it finishes.
+//
+// Order is completion order and not the order of the list, which is the one
+// thing a reader of the log has to know. A run of five hundred files prints
+// them interleaved across the three hosts, and the paper a line is about is
+// on the line.
+//
+// A cancelled context stops the run twice over: no further job is handed
+// out, and the jobs already in the air fail on the next thing they ask the
+// fleet. The channel still closes, because every worker returns and the
+// collector is what closes it, so the caller's range ends rather than
+// deadlocking on a run it just stopped.
+func spread(ctx context.Context, lanes int, jobs []job, write func(job) (translate.Result, error)) <-chan outcome {
+	if lanes < 1 {
+		lanes = 1
+	}
+	queue := make(chan job)
+	done := make(chan outcome)
+	var wg sync.WaitGroup
+	for range lanes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range queue {
+				res, err := write(j)
+				done <- outcome{job: j, res: res, err: err}
+			}
+		}()
+	}
+	go func() {
+		defer close(queue)
+		for _, j := range jobs {
+			select {
+			case queue <- j:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	return done
 }
 
 // giveUp is how many files in a row may fail before the run stops.
@@ -492,29 +571,34 @@ func terms(g *glossary.Glossary, f corpus.Field, l corpus.Lang) []translate.Term
 // asked again on the named routes only. Without -escalate the second attempt
 // is the same pool, which is still worth having: a refusal is often the host
 // having a bad minute rather than the model being unable to do the chunk.
-func fleet(routes, names string, logf func(string, ...any)) (func(context.Context, string, llm.Request, int) (translate.Reply, error), string, error) {
+func fleet(routes, names string, logf func(string, ...any)) (func(context.Context, string, llm.Request, int) (translate.Reply, error), string, int, error) {
 	first, from, err := work.Fleet(work.Translate, routes, false, logf)
 	if err != nil {
-		return nil, from, err
+		return nil, from, 0, err
 	}
 	second := first
 	if strings.TrimSpace(names) != "" {
 		registry, _, err := work.Routes(routes)
 		if err != nil {
-			return nil, from, err
+			return nil, from, 0, err
 		}
 		only, err := registry.Select(commas(names))
 		if err != nil {
-			return nil, from, err
+			return nil, from, 0, err
 		}
 		pool := work.Pool(only)
 		if pool.Empty() {
-			return nil, from, route.ErrNoRoutes()
+			return nil, from, 0, route.ErrNoRoutes()
 		}
 		up := *first
 		up.Waiter = &work.Waiter{Pool: pool, Logf: logf}
 		second = &up
 	}
+	// The first fleet and not the escalation, because the escalation is
+	// where a refused chunk goes and not where the run lives. A pool of one
+	// route named with -escalate would otherwise throttle the whole run to
+	// that route's lanes.
+	lanes := first.Waiter.Pool.Lanes()
 	return func(ctx context.Context, target string, req llm.Request, attempt int) (translate.Reply, error) {
 		asker := first
 		if attempt > 1 {
@@ -522,7 +606,7 @@ func fleet(routes, names string, logf func(string, ...any)) (func(context.Contex
 		}
 		answer, err := asker.Do(ctx, target, req)
 		return translate.Reply{Response: answer.Response, Model: answer.Model, Route: answer.Route}, err
-	}, from, nil
+	}, from, lanes, nil
 }
 
 // gateways is the names of the routes in a table that are free gateways.
