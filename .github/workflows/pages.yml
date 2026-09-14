@@ -1,0 +1,126 @@
+name: pages
+
+# Publishing the reading app.
+#
+# The site is a function of two repositories: the corpus in tamnd/papers is
+# the content and this one is the program that renders it. Either of them
+# changing means the published site is out of date, so both of them trigger
+# a build.
+#
+# A corpus push arrives as a repository_dispatch, sent by the publish
+# workflow in tamnd/papers, because that repository cannot start a workflow
+# here any other way. The schedule underneath it is not redundant: the
+# dispatch needs PAPERS_READER_TOKEN, a token that lives outside both
+# repositories, and a token can expire, be revoked, or never have been set.
+# None of those should mean a site that quietly stops tracking the corpus,
+# and the worst case with the schedule is a day of staleness instead of an
+# indefinite one.
+on:
+  repository_dispatch:
+    types: [corpus-updated]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+# The build job reads. Only the deploy job writes, and it asks for what it
+# needs by name.
+permissions:
+  contents: read
+
+# Never cancel a deploy halfway. A run that is stopped between uploading the
+# artifact and deploying it leaves the live site on the previous build with
+# an artifact nobody used, which is recoverable but is a confusing state to
+# find. Builds are a few minutes and pushes are not that frequent, so
+# queueing costs less than the ambiguity does.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.27.1"
+  NODE_VERSION: "26"
+
+jobs:
+  build:
+    name: build the site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: papers-reader
+      # The tip of the corpus, and not the commit the dispatch named. A
+      # deploy publishes what the corpus says now, so pinning to the commit
+      # that triggered the run would mean a burst of merges could finish
+      # with an older one live than the one that ran last.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tamnd/papers
+          ref: main
+          persist-credentials: false
+          path: papers
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: papers-reader/web/package-lock.json
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        id: pages
+
+      # The audit before the build, and this one with --hard, unlike the one
+      # in ci.yml. That job is asking whether the toolchain can read the
+      # corpus and a content fault there is not the pull request's fault.
+      # This job is about to put the corpus in front of people, which is the
+      # moment a hard rule is for.
+      - name: build the toolchain
+        working-directory: papers-reader
+        run: go build -trimpath -o /usr/local/bin/papers ./cmd/papers
+      - name: audit
+        env:
+          PAPERS_CORPUS: ${{ github.workspace }}/papers
+        run: papers audit --hard
+      - name: emit
+        working-directory: papers-reader
+        run: papers emit -corpus ${{ github.workspace }}/papers -out web/public
+
+      - name: install
+        working-directory: papers-reader/web
+        run: npm ci
+      - name: test
+        working-directory: papers-reader/web
+        run: npm test
+      # SITE_URL and SITE_BASE come from the Pages settings rather than from
+      # astro.config.mjs, so that putting a custom domain on this repository
+      # is a change in one place and not a commit here.
+      - name: build
+        working-directory: papers-reader/web
+        env:
+          SITE_URL: ${{ steps.pages.outputs.origin }}
+          SITE_BASE: ${{ steps.pages.outputs.base_path }}
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: papers-reader/web/dist
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        id: deployment

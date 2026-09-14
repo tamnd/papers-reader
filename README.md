@@ -115,6 +115,11 @@ The citation graph is a chart with the year across and the field down rather tha
 Both pages carry the same thing as plain markup underneath for a reader without JavaScript.
 `make site CORPUS=<papers>` builds the emit and then the app, and `npm run dev` in `web/` serves it against whatever was last emitted.
 
+**The published site is a build of committed content and nothing else.**
+It is at [tamnd.github.io/papers-reader](https://tamnd.github.io/papers-reader/), built by `.github/workflows/pages.yml` from a checkout of this repository and a checkout of the corpus, which means the thing on the internet is a function of two commits and never of somebody's working tree.
+A push to the corpus asks for a rebuild over `repository_dispatch`, a push here rebuilds because the renderer changed, and there is a daily build underneath both of them, because the dispatch needs a token that lives outside both repositories and a token that has expired should not mean a site that quietly stops tracking the corpus.
+The deploy runs `papers audit --hard` before it builds anything, which is the one place the hard rules are worth failing on: the continuous integration job runs the audit soft, because a content fault in the corpus is not a pull request to the toolchain's fault, and this job is the moment before the corpus is put in front of people.
+
 **A draft says it is a draft.**
 A language whose glossary covers less than ninety per cent of the terms is emitted with `draft` against it, and the page says so.
 It is still offered, because hiding it would be the same corpus with less of it visible and no more of it true.
