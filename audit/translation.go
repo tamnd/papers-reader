@@ -701,6 +701,30 @@ func ruleL07(in *Input) ([]Finding, error) {
 // languages for good reasons: "Figure 3", an author's name, a venue.
 const prosePerParagraph = 8
 
+// proseWords is how many of them a paragraph holds, for the threshold above.
+//
+// A word has a letter in it. Splitting on spaces and counting what falls out
+// is not the same thing, and the difference is a line of a program. The
+// Floyd paper prints its algorithm as ALGOL, the extraction left four of the
+// lines outside a fence as paragraphs of their own, and `else d := 1; e :=
+// c; drop := op - 1;` splits into eleven pieces. Eleven is over the
+// threshold, so the rule read the line as a paragraph of prose, found the
+// Vietnamese identical, and reported a translator for not translating
+// ALGOL. It holds six words, which is under it.
+//
+// Rule C08 is the one that wants those lines fenced and it reports them
+// already. Until they are, they are still English text sitting in a
+// translation and every one of them is supposed to be left alone.
+func proseWords(s string) int {
+	n := 0
+	for _, f := range strings.Fields(s) {
+		if strings.IndexFunc(f, unicode.IsLetter) >= 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // untranslated is the indexes of the paragraphs of a pair that came back in
 // English, and is empty when the two sides do not have the same number of
 // paragraphs, which is rule L03's finding or the block count check's.
@@ -712,7 +736,7 @@ func untranslated(p pair) []int {
 	var out []int
 	for i := start(p); i < len(want); i++ {
 		a, b := plainProse(want[i]), plainProse(got[i])
-		if a == "" || len(strings.Fields(a)) < prosePerParagraph {
+		if a == "" || proseWords(a) < prosePerParagraph {
 			continue
 		}
 		if a == b {
@@ -928,7 +952,7 @@ func ruleL11(in *Input) ([]Finding, error) {
 			}
 			english := sentences(plainProse(want[i]))
 			for s := range sentences(plainProse(got[i])) {
-				if len(strings.Fields(s)) < prosePerSentence || !english[s] {
+				if proseWords(s) < prosePerSentence || !english[s] {
 					continue
 				}
 				out = append(out, Finding{
@@ -949,6 +973,10 @@ func ruleL11(in *Input) ([]Finding, error) {
 // matched inside a paragraph that was otherwise translated, and the
 // sentences that survive translation unchanged are things like "Here $n = 3$
 // and $m = 4$." A paper's real sentences are longer than that.
+//
+// Counted by proseWords for the reason given there. The line of ALGOL that
+// got past the paragraph threshold on eleven pieces of punctuation gets past
+// this one too, and it is the same six words either way.
 const prosePerSentence = 10
 
 var sentenceEnd = regexp.MustCompile(`[.!?](?:\s|$)`)

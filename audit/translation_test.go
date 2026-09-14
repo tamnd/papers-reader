@@ -358,6 +358,39 @@ func TestL07LeavesAParagraphWithNoProseAlone(t *testing.T) {
 	}
 }
 
+// algol is one line of a program that the extraction left outside a fence,
+// which is how the older papers in this corpus come out. It splits into
+// eleven pieces on spaces and holds six words.
+const algol = "else d := 1; e := c; drop := op - 1;"
+
+func TestL07LeavesALineOfAProgramAlone(t *testing.T) {
+	if n := len(strings.Fields(algol)); n < prosePerParagraph {
+		t.Fatalf("the line splits into %d pieces, which is already under the floor, so this test proves nothing", n)
+	}
+	en, tr := englishBody+"\n"+algol+"\n", viBody+"\n"+algol+"\n"
+	rep := pairOf(t, corpus.VI, en, tr)
+	// L11 reads the same line as a sentence and has its own floor, so both
+	// rules have to be looking at words for the line to get through.
+	for _, id := range []string{"L07", "L11"} {
+		if res := result(t, rep, id); res.Failed() {
+			t.Errorf("%s asked for a line of ALGOL to be translated: %v", id, res.Findings)
+		}
+	}
+}
+
+func TestProseWordsCountsWordsAndNotPunctuation(t *testing.T) {
+	for text, want := range map[string]int{
+		algol:                          6,
+		"for f := 1 step 1 until e do": 6,
+		"The bound is $n$ and the method of [3] reaches it.": 10,
+		"$$n = 3$$": 1,
+	} {
+		if got := proseWords(text); got != want {
+			t.Errorf("proseWords(%q) = %d, want %d", text, got, want)
+		}
+	}
+}
+
 // enFront is the masthead of a front page and its abstract: a title, a
 // byline, an affiliation and a paragraph long enough to be an abstract.
 const enFront = `A Bound On Sorting
