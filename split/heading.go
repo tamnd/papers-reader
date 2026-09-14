@@ -21,6 +21,7 @@ const (
 	SchemeArabic Scheme = "arabic" // 3 Model Architecture, 3.2 Multi-Head Attention
 	SchemeRoman  Scheme = "roman"  // IV. RESULTS
 	SchemeSign   Scheme = "sign"   // §4 The Consistency Condition
+	SchemeLetter Scheme = "letter" // A Details of Common Crawl Filtering
 )
 
 // How says what found a heading, which is the confidence in it. A heading
@@ -28,10 +29,11 @@ const (
 // text an emphasised line and a short paragraph look the same.
 type How string
 
-// The four detectors, in the order of how much they can be trusted.
+// The five detectors, in the order of how much they can be trusted.
 const (
 	Marked      How = "marked"      // the extractor wrote it as a heading
 	Numbered    How = "numbered"    // it continues the paper's own numbering
+	Lettered    How = "lettered"    // it continues the appendix lettering
 	Named       How = "named"       // it is one of the forty section names
 	Typographic How = "typographic" // it is set like a heading and nothing more
 )
@@ -90,6 +92,10 @@ var (
 	// bold is a whole paragraph inside one pair of emphasis markers, which is
 	// the other way a vision model writes a heading.
 	bold = regexp.MustCompile(`^(\*\*|__|\*|_)([^*_].*[^*_])(\*\*|__|\*|_)$`)
+	// A lettered appendix heading. One capital, the gap, and the name. The
+	// stop is optional because a paper that prints "A. Proofs" and one that
+	// prints "A Proofs" mean the same thing.
+	letter = regexp.MustCompile(`^([A-Z])\.?` + gap + `+(\S.*)$`)
 )
 
 // boldParts takes the emphasis off a paragraph that is nothing but emphasis.
@@ -162,9 +168,14 @@ func parseNumber(s Scheme, text string) (num string, parts []int, title string, 
 		m = roman.FindStringSubmatch(text)
 	case SchemeSign:
 		m = sign.FindStringSubmatch(text)
+	case SchemeLetter:
+		m = letter.FindStringSubmatch(text)
 	}
 	if m == nil {
 		return "", nil, "", false
+	}
+	if s == SchemeLetter {
+		return m[1], []int{int(m[1][0]-'A') + 1}, m[2], true
 	}
 	if s == SchemeRoman {
 		n := romanValue(m[1])
@@ -366,8 +377,14 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 	s := DetectScheme(paragraphs)
 	top := topLevel(paragraphs)
 	found := map[int]Heading{}
-	for _, h := range chain(s, paragraphs) {
+	body := chain(s, paragraphs)
+	for _, h := range body {
 		found[h.Index] = h
+	}
+	for _, h := range appendix(paragraphs, body) {
+		if _, taken := found[h.Index]; !taken {
+			found[h.Index] = h
+		}
 	}
 	for i, raw := range paragraphs {
 		if _, taken := found[i]; taken {
@@ -404,6 +421,46 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 	}
 	assignKinds(out)
 	return s, out
+}
+
+// appendix is the run of lettered appendix headings a paper prints after its
+// body: "A Details of Common Crawl Filtering", then B, then C.
+//
+// Lettering is not one of the schemes DetectScheme tries, and it must not
+// become one. A line that starts with a capital and a space is most of the
+// English language, and a paper that opens a section with "A simple model of
+// the network" would number that section A. What makes it safe here is where
+// it is allowed to look and how much it has to explain: only the paragraphs
+// after the last heading of the body, and only a run of at least minChain
+// letters in order, A then B then C. Nothing in the corpus produces that by
+// accident, and the GPT-3 paper produces it eight times.
+//
+// It is worth the trouble because the paper it was written for is the largest
+// in the corpus. Its appendices A to H are sixty four thousand characters of
+// text, the letters are the only thing marking where each one starts, and
+// with nothing to find them the whole of it was filed under the heading above
+// it, which happened to be the acknowledgements.
+//
+// The headings come back as Lettered rather than Numbered so that assignKinds
+// can call them appendices. They are appendices by construction: they are
+// after the body and they are lettered.
+func appendix(paragraphs []string, body []Heading) []Heading {
+	from := 0
+	if len(body) > 0 {
+		from = body[len(body)-1].Index + 1
+	}
+	if from >= len(paragraphs) {
+		return nil
+	}
+	out := chainFrom(SchemeLetter, paragraphs[from:], 1)
+	if len(out) < minChain {
+		return nil
+	}
+	for i := range out {
+		out[i].Index += from
+		out[i].How = Lettered
+	}
+	return out
 }
 
 // topLevel is the depth of hashes this document writes a top level section
@@ -626,7 +683,7 @@ func assignKinds(hs []Heading) {
 		case sectionNames[title] == "References":
 			hs[i].Kind = KindReferences
 			cited = true
-		case strings.HasPrefix(title, "appendix") || appendices || cited:
+		case hs[i].How == Lettered || strings.HasPrefix(title, "appendix") || appendices || cited:
 			hs[i].Kind = KindAppendix
 			appendices = true
 			if cited {

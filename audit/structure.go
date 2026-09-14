@@ -452,13 +452,41 @@ func ruleT08(in *Input) ([]Finding, error) {
 	})
 }
 
+// ruleT09 is the file that came out of the splitter with a whole paper in
+// it, and the length is the symptom rather than the fault. A paper whose
+// headings were all missed is one file of forty thousand characters, and the
+// ResNet appendices sat inside its bibliography the same way until the
+// splitter learned to read an appendix letter.
+//
+// Which is why a long file with subsections in it is not reported. Section 3
+// of the GPT-3 paper is sixty three thousand characters and it is not a
+// section that was never split: it is nineteen subsections, each with its
+// heading and its anchor, in a results section that runs to twenty pages. A
+// rule that asked a person to go and look at that would be asking them to
+// come back and say it was fine.
+//
+// Three subsections and not one, because one heading in forty thousand
+// characters is a file that swallowed a section and kept its first line.
+const minSubheads = 3
+
 func ruleT09(in *Input) ([]Finding, error) {
 	return eachFile(in, "T09", func(f *File) string {
-		if n := len(f.Body); n > maxBody {
+		if n := len(f.Body); n > maxBody && subheads(f.Body) < minSubheads {
 			return fmt.Sprintf("the body is %d characters, which is a section that was never split", n)
 		}
 		return ""
 	})
+}
+
+// subheads is how many subsection headings a body carries.
+func subheads(body string) int {
+	n := 0
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "### ") {
+			n++
+		}
+	}
+	return n
 }
 
 // folio matches a line that is only a page number, with or without the rules

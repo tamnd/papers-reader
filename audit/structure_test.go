@@ -315,6 +315,26 @@ func TestT08AndT09OnLength(t *testing.T) {
 	}
 }
 
+// Section 3 of the GPT-3 paper is sixty three thousand characters and it is
+// nineteen subsections of a results section that runs to twenty pages. The
+// length is a symptom of a splitter that missed every heading, and a file
+// with its subsections in it did not miss them.
+func TestT09LeavesALongSectionWithSubsectionsAlone(t *testing.T) {
+	var body strings.Builder
+	for i := 1; i <= minSubheads; i++ {
+		fmt.Fprintf(&body, "### 3.%d A Subsection {#p-s3-%d .section tag=00%d}\n\n", i, i, i)
+		body.WriteString(strings.Repeat("x", maxBody/2) + "\n\n")
+	}
+	files := map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), body.String()),
+	}
+	if res := result(t, Run(in(t, files), false), "T09"); res.Failed() {
+		t.Errorf("T09 reported a long section that is split into subsections: %v", res.Findings)
+	}
+}
+
 // The front file is the one file that is allowed to be short: it is a title
 // block and an abstract, and T06 is what holds it to that.
 func TestT08LeavesTheFrontFileAlone(t *testing.T) {
