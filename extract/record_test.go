@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -67,22 +68,65 @@ func TestASecondRunWidensTheRange(t *testing.T) {
 	}
 }
 
-// A paper read again by a different path is that path's text now, and the
-// range starts over: the pages the old path wrote have been overwritten.
-func TestANewPathReplacesTheRecord(t *testing.T) {
+// A whole paper read again by a different path is that path's text now, and
+// the range starts over: every page the old path wrote has been overwritten.
+func TestANewPathOverTheWholePaperReplacesTheRecord(t *testing.T) {
 	dir := t.TempDir()
 	if err := (Record{Path: "native", First: 1, Last: 8}).Write(dir); err != nil {
 		t.Fatal(err)
 	}
-	if err := (Record{Path: "layout", Tool: "docling 2.0.0", First: 3, Last: 5}).Write(dir); err != nil {
+	if err := (Record{Path: "layout", Tool: "docling 2.0.0", First: 1, Last: 8}).Write(dir); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ReadRecord(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Path != "layout" || got.First != 3 || got.Last != 5 {
-		t.Errorf("got %s over %d to %d, want layout over 3 to 5", got.Path, got.First, got.Last)
+	if got.Path != "layout" || got.First != 1 || got.Last != 8 {
+		t.Errorf("got %s over %d to %d, want layout over 1 to 8", got.Path, got.First, got.Last)
+	}
+}
+
+// Some of a paper read again by a different path is refused, because there
+// is no record that is true of it. This is the Bitcoin paper: nine pages
+// read by a model, page 5 read again with pdftotext, and the record left
+// saying native over one page while eight of the nine were still the
+// model's. Split then stamped extraction: native on all fourteen files.
+func TestAPartialReReadOnAnotherPathIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	if err := (Record{Path: "vision", Tool: "olmOCR", First: 1, Last: 9}).Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	err := (Record{Path: "native", Tool: "pdftotext version 26.09.0", First: 5, Last: 5}).Write(dir)
+	if err == nil {
+		t.Fatal("Write accepted a one page re-read on another path over a nine page paper")
+	}
+	for _, want := range []string{"1 to 9", "vision", "5 to 5", "native", "re-extract"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not say %q: %v", want, err)
+		}
+	}
+	// And the record on disk is the one that is still true, because a
+	// refusal that had already overwritten the file would be the same bug
+	// with a message on top of it.
+	got, err := ReadRecord(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Path != "vision" || got.First != 1 || got.Last != 9 {
+		t.Errorf("after the refusal the record is %s over %d to %d, want vision over 1 to 9", got.Path, got.First, got.Last)
+	}
+}
+
+// A record written before first_page was always filled in reads as starting
+// at page one, so a re-read of the whole paper still covers it.
+func TestAMissingFirstPageReadsAsPageOne(t *testing.T) {
+	dir := t.TempDir()
+	if err := (Record{Path: "native", Last: 4}).Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Record{Path: "vision", Tool: "olmOCR", First: 1, Last: 4}).Write(dir); err != nil {
+		t.Errorf("Write refused a re-read of the whole paper: %v", err)
 	}
 }
 

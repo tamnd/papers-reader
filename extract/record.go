@@ -106,13 +106,38 @@ func ReadRecord(dir string) (*Record, error) {
 // covered both would say this record described pages it has never seen. A
 // record from before Source existed does not say which file it read, and it
 // widens as it always did rather than being treated as a different one.
+//
+// A run on a different path over only some of the pages is refused. "A paper
+// re-read by a different tool is that tool's text now" is true of a whole
+// paper and false of one page, and taking it for both is how the Bitcoin
+// paper came to be labelled native after a model had read eight of its nine
+// pages: page 5 was re-read with pdftotext, the record was replaced whole,
+// and papers split stamped extraction: native on all fourteen content files.
+// Nothing warned and the split succeeded. There is no honest record to write
+// in that state, because a Record describes one paper read one way and the
+// pages on disk are now some of each, so Write says so instead of picking
+// one. It leaves the old record alone, which is stale about the pages the
+// new run rewrote and is at least not a claim about the whole paper.
+//
+// Refusing is the small fix and it is the one that is here. The real fix is
+// a range per path in the file, so that split can stamp each content file
+// from the pages it actually came from, and it is worth doing when a paper
+// needs it: one page no model could read and the rest read natively is a
+// normal outcome rather than a mistake. Until then the way through is to
+// re-extract the whole paper on the path you want.
 func (r Record) Write(dir string) error {
-	if old, err := ReadRecord(dir); err == nil && old != nil && old.Path == r.Path && !Replaced(old, r.Source) {
-		if old.First > 0 && old.First < r.First {
-			r.First = old.First
-		}
-		if old.Last > r.Last {
-			r.Last = old.Last
+	if old, err := ReadRecord(dir); err == nil && old != nil && !Replaced(old, r.Source) {
+		switch {
+		case old.Path == r.Path:
+			if old.First > 0 && old.First < r.First {
+				r.First = old.First
+			}
+			if old.Last > r.Last {
+				r.Last = old.Last
+			}
+		case !r.covers(*old):
+			return fmt.Errorf("%s had pages %d to %d read on the %s path and this run read pages %d to %d of it on the %s path, so the pages on disk are now some of each and no single record is true of them. the record was left as it was rather than made to say this paper is %s. re-extract the whole paper on one path, or delete %s and start again",
+				dir, first(old.First), old.Last, old.Path, first(r.First), r.Last, r.Path, r.Path, filepath.Join(dir, RecordFile))
 		}
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -123,6 +148,23 @@ func (r Record) Write(dir string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, RecordFile), b, 0o644)
+}
+
+// covers says this run read every page the old record covers, in which case
+// there is nothing of the old path left in the paper and replacing the
+// record outright is the whole truth about it.
+func (r Record) covers(old Record) bool {
+	return first(r.First) <= first(old.First) && r.Last >= old.Last
+}
+
+// first reads a missing first page as page one. A record written before the
+// field was always filled in has a zero there, and zero as a page number
+// would make every range look wider than it is.
+func first(n int) int {
+	if n <= 0 {
+		return 1
+	}
+	return n
 }
 
 // Replaced says the PDF has changed since this paper was read.
