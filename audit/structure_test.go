@@ -580,3 +580,37 @@ func TestT12FindsAMarkdownLink(t *testing.T) {
 		}
 	}
 }
+
+// A printed column breaks a word at a hyphen to make the line fit, and a
+// reader that joins the two halves with a space instead of with nothing
+// publishes a word that is not a word. "less than a mil- lisecond" is the
+// one in the MapReduce cluster description.
+func TestT13FindsAWordSplitAtALineBreakHyphen(t *testing.T) {
+	long := strings.Repeat("a sentence of the paper. ", 12)
+	for _, tc := range []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{"clean", long + "\n", false},
+		{"a word the page broke", long + "\n\nthe round-trip time was under a mil- lisecond.\n", true},
+		{"a word with its own hyphen", long + "\n\nthe round-trip time was short.\n", false},
+		{"a hanging hyphen", long + "\n\nthe map- and reduce-side costs are equal.\n", false},
+		{"a dash between two clauses", long + "\n\nthe cost is small - the gain is not.\n", false},
+		{"a new sentence after a dash", long + "\n\nthe cost is small- The gain is not.\n", false},
+		{"a single letter either side", long + "\n\nsend it by e- mail.\n", false},
+		{"a minus sign in a formula", long + "\n\nthe bound is $a- b$ throughout.\n", false},
+		{"a flag in inline code", long + "\n\nthe form `--keep- alive` is a flag.\n", false},
+		{"a flag in a fence", long + "\n\n```text\ncc --keep- alive\n```\n", false},
+	} {
+		files := map[string]string{
+			"manifests/sources.yaml":                          openSources,
+			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), tc.body),
+		}
+		res := result(t, Run(in(t, files), false), "T13")
+		if res.Failed() != tc.fails {
+			t.Errorf("%s: T13 failed=%v, want %v (%v)", tc.name, res.Failed(), tc.fails, res.Findings)
+		}
+	}
+}

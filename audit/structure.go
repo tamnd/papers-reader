@@ -79,6 +79,11 @@ func structureRules() []Rule {
 			What:  "no Markdown link is left in a body.",
 			Check: ruleT12,
 		},
+		{
+			ID:    "T13",
+			What:  "no word is left split at the hyphen the page broke it with.",
+			Check: ruleT13,
+		},
 	}
 }
 
@@ -635,3 +640,73 @@ func ruleT12(in *Input) ([]Finding, error) {
 // is not matched and does not need to be: nothing writes one, and the
 // definition it would need would be a finding of its own.
 var markdownLink = regexp.MustCompile(`!?\[[^\]\n]*\]\([^)\n]*\)`)
+
+// ruleT13 is the word the page broke across two lines and the reader put
+// back together wrong.
+//
+// A printed column breaks a word at a hyphen to make the line fit, and the
+// hyphen is the page's and not the word's. The reading prompt says so in as
+// many words and asks for the word written whole, and a reader that has one
+// of these to do in a page does it. The two in this corpus are a reader
+// that had one to do in a long page and joined the two halves with a space
+// instead of with nothing: "less than a mil- lisecond" in the MapReduce
+// cluster description, and a surname in its bibliography.
+//
+// This is a rule and not a repair because there is no way to tell the two
+// cases apart without a dictionary. "mil- lisecond" is one word with the
+// page's hyphen in it and wants both the hyphen and the space taken out;
+// "high- quality" is one word with its own hyphen in it and wants only the
+// space taken out. A repair that guessed would turn the second into
+// "highquality" across a hundred papers to save a person looking at two
+// lines.
+//
+// Not hard, for the same reason. What it reports is sometimes neither of
+// those: a paper writing "map- and reduce-style" means the hyphen and the
+// space both, and that is why the conjunctions are skipped rather than
+// reported and argued about.
+//
+// Math, code and inline code are skipped, where a hyphen is a minus sign
+// and a flag.
+func ruleT13(in *Input) ([]Finding, error) {
+	if !anyContent(in) {
+		return nil, ErrNotRun
+	}
+	var out []Finding
+	for _, f := range in.Content {
+		if f.Broken() {
+			continue
+		}
+		lines := strings.Split(f.Body, "\n")
+		safe := protectedLines(f.Body, len(lines))
+		for i, line := range lines {
+			if safe[i+1] {
+				continue
+			}
+			for _, m := range splitWord.FindAllStringSubmatch(inlineCode.ReplaceAllString(line, " "), -1) {
+				if suspended[m[2]] {
+					continue
+				}
+				out = append(out, Finding{
+					Rule: "T13", File: f.Path, Line: i + 1,
+					Message: fmt.Sprintf("%q is one word the page broke across two lines", m[0]),
+				})
+			}
+		}
+	}
+	return out, nil
+}
+
+// splitWord is two runs of lower case letters with a hyphen and a space
+// between them. Lower case on both sides, because a capital after the space
+// is a new sentence or a name and the hyphen before it is the page's dash.
+// Two letters at least on each side, because a single letter either side of
+// a hyphen is "e- mail" and "x- axis", which are their own repair.
+var splitWord = regexp.MustCompile(`(\p{Ll}{2,})[-\x{2010}\x{2011}] (\p{Ll}{2,})`)
+
+// suspended is the word that follows a hyphen the writer left hanging on
+// purpose: "map- and reduce-style", "input- or output-bound". The hyphen is
+// real, the space is real, and there is nothing to report.
+var suspended = map[string]bool{
+	"and": true, "or": true, "nor": true, "to": true, "but": true,
+	"và": true, "hoặc": true,
+}
