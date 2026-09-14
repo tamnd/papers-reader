@@ -865,6 +865,19 @@ func (e *extraction) vision(ctx context.Context, file string, store extract.Stor
 		PDF:    file,
 		Paper:  e.paper.ID,
 		Colour: colour,
+		// The same layer rule A9 reads, for the same reason: where the file
+		// carries its own text, that text is the authority on the characters
+		// of a web address, whatever its layout is worth.
+		Repair: func(page int, text string) string {
+			if checker.Layer == nil {
+				return text
+			}
+			layer, ok := checker.Layer(page)
+			if !ok {
+				return text
+			}
+			return extract.Readdress(text, layer)
+		},
 		Check: func(page int, text string) []extract.Fault {
 			// Taken fresh on every attempt, because the page before this one
 			// may have been what taught the paper its offset.

@@ -71,7 +71,14 @@ type Vision struct {
 	// usually are, and two checkers over one paper would each have half the
 	// evidence.
 	Check func(page int, text string) []Fault
-	Logf  func(string, ...any)
+	// Repair is a last pass over a page before the rules see it, for the
+	// mistakes that are worth correcting rather than asking about. It is
+	// separate from Tidy because it needs the file the page came from, which
+	// Tidy does not have and should not: Readdress is the one that wanted
+	// it, and it is the file's own text layer that says what the address is.
+	// nil is no repair, which is what a test wants.
+	Repair func(page int, text string) string
+	Logf   func(string, ...any)
 }
 
 // Detail is how closely a provider is asked to look at the image. High,
@@ -162,6 +169,9 @@ func (v *Vision) Page(ctx context.Context, page int) (Scan, error) {
 		}
 
 		text := Tidy(reply.Text)
+		if v.Repair != nil {
+			text = v.Repair(page, text)
+		}
 		faults := v.check(page, text)
 		if len(faults) == 0 {
 			out.Text = text
