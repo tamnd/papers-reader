@@ -251,3 +251,43 @@ func TestAFullPagePlateKeepsItsCaption(t *testing.T) {
 	hasWords(t, got, "Figure 4")
 	lacksWords(t, got, "Nonce")
 }
+
+func TestThePublishersPermissionNoticeIsNotProse(t *testing.T) {
+	// No reading transcribes it and it is not the paper, so leaving it in the
+	// layer is forty five consecutive words that A9 will score at nothing.
+	// Both wordings, because ACM has used both and the corpus has both.
+	for _, notice := range []string{
+		"Permission to make digital or hard copies of all or part of this " +
+			"work for personal or classroom use is granted without fee " +
+			"provided that copies are not made or distributed for profit",
+		"Permission to copy without fee all or part of this material is " +
+			"granted provided that the copies are not made or distributed " +
+			"for direct commercial advantage",
+	} {
+		p := page(1,
+			body(60, 100, 20, "a line of the body of the paper that runs on here"),
+			column(60, 400, strings.Fields(notice)...))
+		p.Blocks = []poppler.Block{{Lines: p.Blocks[0].Lines[:20]}, {Lines: p.Blocks[0].Lines[20:]}}
+		for i := range p.Blocks {
+			p.Blocks[i].Box = box(p.Blocks[i].Lines)
+		}
+		got := Prose(p, FindFurniture([]poppler.Layout{p}))
+		if strings.Contains(strings.ToLower(got), "permission") {
+			t.Errorf("the permission notice is still in the prose:\n%s", got)
+		}
+		if !strings.Contains(got, "a line of the body") {
+			t.Errorf("the body went with it:\n%s", got)
+		}
+	}
+}
+
+// box is the smallest box holding every line, which is what pdftotext reports
+// for a block and what the fixtures here have to supply themselves.
+func box(lines []poppler.TextLine) poppler.Box {
+	b := lines[0].Box
+	for _, l := range lines[1:] {
+		b.XMin, b.YMin = min(b.XMin, l.XMin), min(b.YMin, l.YMin)
+		b.XMax, b.YMax = max(b.XMax, l.XMax), max(b.YMax, l.YMax)
+	}
+	return b
+}

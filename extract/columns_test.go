@@ -316,3 +316,44 @@ func TestARowRunningAcrossThreeColumnsIsCutAtEveryGutter(t *testing.T) {
 		}
 	}
 }
+
+func TestATitleBlockOverTheChannelDoesNotHideIt(t *testing.T) {
+	// Page 1 of a two column paper: the title and the authors are set across
+	// the whole measure and land on the channel, and the body under them is
+	// in two columns. The projection over the whole page cannot see the
+	// channel through the title, so it is looked for again from under it.
+	var head []poppler.TextLine
+	for i := range 6 {
+		head = append(head, put(70, 60+float64(i)*linePitch,
+			"a full width line of the title block that reaches right across"))
+	}
+	left := body(60, 200, 16, "a line of the left column of the body here")
+	right := body(330, 200, 16, "a line of the right column of the body here")
+
+	p := page(1, head, left, right)
+	if got := Gutters(p); len(got) != 1 {
+		t.Fatalf("found %d gutters under a title block, want 1: %v", len(got), got)
+	}
+	got := texts(Lines(p))
+	for _, s := range got {
+		if strings.Contains(s, "left") && strings.Contains(s, "right") {
+			t.Fatalf("the columns are interleaved: %q", s)
+		}
+	}
+}
+
+func TestAPageThatIsAllTitleIsStillOneColumn(t *testing.T) {
+	// Nothing is gained by cutting further and further down a page until
+	// something that is not a channel looks like one. A cut that leaves less
+	// than half the words is a page being thrown away.
+	var lines []poppler.TextLine
+	for i := range 20 {
+		lines = append(lines, put(70, 60+float64(i)*linePitch,
+			"a full width line that reaches right across the measure here"))
+	}
+	lines = append(lines, body(60, 320, 4, "a short left stack")...)
+	lines = append(lines, body(330, 320, 4, "a short right stack")...)
+	if got := Gutters(page(1, lines)); len(got) != 0 {
+		t.Errorf("found %d gutters on a page that is mostly one column: %v", len(got), got)
+	}
+}

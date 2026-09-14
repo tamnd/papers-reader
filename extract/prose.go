@@ -39,7 +39,17 @@ const proseWidth = 0.5
 // 0.15 covered and correct: the twenty words of its worst stretch are user,
 // program, fork, fork, fork, master, which are the labels in Figure 1.
 //
-// The second is the running head and foot, which is why this wants the
+// The second is the publisher's permission notice, the block at the foot of a
+// first page that begins "Permission to make digital or hard copies of all or
+// part of this work". It is not the paper, no reading transcribes it, and on
+// a page whose columns read correctly it is forty five consecutive words of
+// layer that the answer does not account for, which is a whole window at
+// nothing. It was refusing page 1 of the TraceMonkey paper at all three
+// resolutions. The same block in its older wording, "Permission to copy
+// without fee all or part of this material", is on the first page of most of
+// the ACM papers in the corpus.
+//
+// The third is the running head and foot, which is why this wants the
 // furniture. The prompt does ask for the head and the readers do not give it,
 // and on the same page of the same paper, with the figure already out of the
 // way, what was left was usenix, association, osdi, symposium, operating,
@@ -95,11 +105,39 @@ func Prose(p poppler.Layout, f *Furniture) string {
 	// a running foot with the journal across the middle and the page number
 	// at the right is one line to pdftotext and two to the column reader.
 	for _, l := range f.Lines(p) {
-		if inProse(p, l, least) {
+		if inProse(p, l, least) && !inNotice(p, l) {
 			out = append(out, l.Text())
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// inNotice reports whether a line is in the publisher's permission notice.
+//
+// By the block and not by the line, because the notice is one block and only
+// its first line says what it is. The test is three phrases rather than one,
+// because ACM has reworded it over the years and the corpus has both, and it
+// is three rather than one because "permission" on its own is a word a paper
+// about access control uses on every page.
+func inNotice(p poppler.Layout, l poppler.TextLine) bool {
+	for _, b := range p.Blocks {
+		if notice(b) && meets(b.Box, l.Box) {
+			return true
+		}
+	}
+	return false
+}
+
+func notice(b poppler.Block) bool {
+	var sb strings.Builder
+	for _, l := range b.Lines {
+		sb.WriteString(l.Text())
+		sb.WriteString(" ")
+	}
+	s := strings.ToLower(sb.String())
+	return strings.Contains(s, "permission to") &&
+		(strings.Contains(s, "copies") || strings.Contains(s, "copy")) &&
+		strings.Contains(s, "fee")
 }
 
 // inProse reports whether a line is in a block at least as wide as least.
@@ -152,9 +190,11 @@ func columnWidth(p poppler.Layout) float64 {
 // Where it is wrong is a page whose figure crosses the channel. Gutters wants
 // a clear vertical strip and the labels scattered through a diagram fill it,
 // so a two column page reads as one and a column comes back twice its width.
-// Page 3 of the MapReduce paper is that page: no gutter found, 503 points of
+// Page 3 of the MapReduce paper was that page: no gutter found, 503 points of
 // type area, 503 points of column, and its nine real 225 point paragraphs all
-// measured against half of 503 and thrown away.
+// measured against half of 503 and thrown away. Gutters looks again from
+// under the top of the page now and finds that one, so the failure is rarer
+// than it was, and it is still the shape to watch for.
 func spannedWidth(p poppler.Layout) float64 {
 	left, right := p.Blocks[0].XMin, p.Blocks[0].XMax
 	for _, b := range p.Blocks[1:] {

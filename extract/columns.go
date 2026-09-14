@@ -84,13 +84,86 @@ func Channels(p poppler.Layout) [][2]float64 {
 		return nil
 	}
 	words := Words(p)
+	if ch := channels(words, p.Width); len(ch) > 0 {
+		return ch
+	}
+	return underHead(p, words)
+}
+
+// underHead looks for the channels again with the top of the page taken off.
+//
+// clearShare is the answer to a title set across a two column page and on a
+// first page it is not always enough. Page 1 of the TraceMonkey paper is six
+// full width lines of title and authors and then three centred lines of
+// affiliations, and the centred lines sit directly over the channel, so the
+// bins there hold more ink than a fifteenth of the busiest bin and the page
+// reads as one column. What that costs is not an abstract point: the reading
+// of the bottom of the left column, which is the ACM permission notice, is
+// interleaved word for word with the bottom of the right column, which is the
+// last paragraph of the abstract.
+//
+// So the page is asked again from further down. The candidates are the tops
+// of its lines, in order, so the first one that answers is the least of the
+// page that had to be given up. Lines and not blocks, because the blocks are
+// pdftotext's grouping and nothing else in this file trusts it.
+//
+// A cut that leaves less than half the words is not a header being taken off,
+// it is a page being thrown away, and it stops there. That floor is what keeps
+// this from cutting down a one column page until two of its paragraphs happen
+// to sit either side of a gap. The share test each channel still has to pass
+// is the other half of it.
+//
+// The channel it finds is then used for the whole page, title and all, which
+// is right and is already handled: what splits a line at a channel is a gap
+// that covers the channel, and the word space of a title set across one does
+// not.
+func underHead(p poppler.Layout, words []poppler.Word) [][2]float64 {
+	var tops []float64
+	for _, l := range p.Lines() {
+		tops = append(tops, l.YMin)
+	}
+	sort.Float64s(tops)
+	for i, y := range tops {
+		if i > 0 && y == tops[i-1] {
+			continue
+		}
+		var below []poppler.Word
+		for _, w := range words {
+			if w.YMid() >= y {
+				below = append(below, w)
+			}
+		}
+		if len(below)*2 < len(words) {
+			return nil
+		}
+		if ch := channels(below, p.Width); len(ch) > 0 && len(ch) <= maxUnderHead {
+			return ch
+		}
+	}
+	return nil
+}
+
+// maxUnderHead is how many channels the second look may find before it is
+// looking at something else.
+//
+// Two, so two or three columns, which is every paper in the corpus and is all
+// a title block can ever be hiding. The thing it turns down is a page whose
+// lower half is a diagram drawn out of widely spaced labels: cut the prose off
+// the top of one of those and the gaps between the labels project as a row of
+// clear strips, each of them wide enough to be a channel and holding enough of
+// what is left to survive the share test. Three channels on a page whose top
+// half is prose is not a paper set in four columns.
+const maxUnderHead = 2
+
+// channels is the projection itself, over whichever words it is given.
+func channels(words []poppler.Word, width float64) [][2]float64 {
 	if len(words) < minWords {
 		return nil
 	}
 	ink := make([]int, bins)
 	for _, w := range words {
-		from := max(bin(w.XMin, p.Width), 0)
-		to := min(bin(w.XMax, p.Width), bins-1)
+		from := max(bin(w.XMin, width), 0)
+		to := min(bin(w.XMax, width), bins-1)
 		for i := from; i <= to; i++ {
 			ink[i]++
 		}
@@ -143,7 +216,7 @@ func Channels(p poppler.Layout) [][2]float64 {
 	// note is not a column, and the gutter between the real columns still
 	// is.
 	for len(runs) > 0 {
-		share := shares(words, runs, p.Width)
+		share := shares(words, runs, width)
 		worst, at := 1.0, -1
 		for i, s := range share {
 			if s < worst {
@@ -166,7 +239,7 @@ func Channels(p poppler.Layout) [][2]float64 {
 
 	out := make([][2]float64, len(runs))
 	for i, r := range runs {
-		out[i] = [2]float64{float64(r[0]) / bins * p.Width, float64(r[1]) / bins * p.Width}
+		out[i] = [2]float64{float64(r[0]) / bins * width, float64(r[1]) / bins * width}
 	}
 	return out
 }
