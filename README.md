@@ -22,7 +22,7 @@ tags       hand out permanent identifiers
 translate  produce Vietnamese, Chinese and Japanese
 roundtrip  put a sample of the translations back into English and judge them
 audit      check the result against numbered rules
-report     write what the corpus knows about itself: coverage, and what it cost
+report     write what the corpus knows about itself: coverage, the citation graph, and what it cost
 emit       build the JSON the reading app consumes
 ```
 
@@ -78,10 +78,18 @@ A section keeps its tag across re-extraction, re-splitting and renumbering, whic
 A restricted paper gets its front matter and a short abstract and that is the whole of what its licence allows, so it counts as done rather than as a paper somebody forgot.
 The last table in the report is the one to act on: it names what each unfinished paper is waiting on, which is a fetch, a licence check, a layout tool or a vision model, and the count behind each of those is what decides whether to go and get it.
 
+**The corpus cites itself, and the graph says how much.**
+`papers report graph` writes `reports/graph.md`: which paper cites which, which are cited most, and which are connected to nothing yet.
+An edge is a bibliography entry of one paper here that was resolved to another paper here, so almost every reference points somewhere else and the edge count is small next to the reference count.
+The last table is the reading list: the papers outside the corpus that two or more papers inside it cite, which is what decides what to add next.
+
 **What it cost is written down.**
 Every ask put to a model is one line in a ledger, and `papers report usage` rolls that up into `reports/usage.md` by stage, by model and by paper.
 The ledger lives beside the routing table rather than in the corpus, because it names the hosts that were asked, and the report names none of them.
 A model that is not in a price table gets a dash in the money column rather than a zero, because a subscription costs a turn and not a sum of money, and printing zero dollars would be claiming a measurement nobody made.
+
+`papers report all` writes all four of these and the audit in one pass, which is the step before publishing.
+Running the commands one at a time is four chances to forget one, and a corpus whose coverage says ninety seven per cent while its audit was written a week ago is worse than one with no reports at all.
 
 **The audit is a contract, not a lint.**
 Eighty-eight numbered rules in nine groups, each one a sentence you can argue with.
@@ -119,7 +127,7 @@ translate/       the four language pipeline
 glossary/        the controlled vocabulary
 roundtrip/       the back translation check on a sample of the translations
 audit/           the numbered rules
-report/          the coverage, resolve and usage reports
+report/          the coverage, graph, resolve and usage reports
 emit/            JSON for the reading app
 web/             the Astro reading app
 ```

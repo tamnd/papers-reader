@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/tamnd/llm/ledger"
+	"github.com/tamnd/papers-reader/audit"
+	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/report"
 	"github.com/tamnd/papers-reader/work"
 )
@@ -23,24 +25,27 @@ func runReport(args []string) error {
 		return runReportUsage(args[1:])
 	case "coverage":
 		return runReportCoverage(args[1:])
+	case "graph":
+		return runReportGraph(args[1:])
+	case "all":
+		return runReportAll(args[1:])
 	case "-h", "--help", "help":
 		reportUsage(os.Stdout)
 		return nil
-	case "graph":
-		return fmt.Errorf("the %s report arrives in milestone M7", args[0])
 	}
 	reportUsage(os.Stderr)
 	return fmt.Errorf("there is no report %s", args[0])
 }
 
 func reportUsage(w *os.File) {
-	fmt.Fprint(w, `usage: papers report <coverage|usage> [flags]
+	fmt.Fprint(w, `usage: papers report <all|coverage|graph|usage> [flags]
 
+    all        every report below, and the audit, written in one pass
     coverage   how much of each paper is published, and what the rest waits on
+    graph      the citations between papers in the corpus
     usage      what the machine time cost, by stage
-    graph      the citations between papers in the corpus (milestone M7)
 
-Run papers report coverage -h or papers report usage -h for the flags.
+Run papers report coverage -h, and the same for the others, for the flags.
 `)
 }
 
@@ -95,6 +100,62 @@ number that decides whether to go and get it.
 	// and there is nothing on one machine that the other cannot see.
 	out := filepath.Join(c.Reports(), "coverage.md")
 	if err := os.WriteFile(out, []byte(cov.Markdown()), 0o644); err != nil {
+		return err
+	}
+	fmt.Println("wrote", out)
+	return nil
+}
+
+func runReportGraph(args []string) error {
+	fs := flag.NewFlagSet("report graph", flag.ContinueOnError)
+	root := fs.String("corpus", "", "path to a checkout of tamnd/papers")
+	write := fs.Bool("write", false, "write reports/graph.md as well as printing")
+	quiet := fs.Bool("quiet", false, "print the summary line only")
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `usage: papers report graph [flags]
+
+Draws the citations that run between papers of the corpus: which paper
+cites which, which are cited most, and which are connected to nothing yet.
+
+An edge is a bibliography entry of one paper here that was resolved to
+another paper here. Almost every reference points somewhere else, which is
+what a hundred papers spread over eighty years looks like, so the edge
+count is small next to the reference count and that is the shape rather
+than a shortfall.
+
+The last table is the one to act on. It names the papers outside the
+corpus that two or more papers inside it cite, which is the reading list
+for deciding what to add next.
+
+`)
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	c, err := openCorpus(*root)
+	if err != nil {
+		return err
+	}
+	g, err := report.BuildGraph(c)
+	if err != nil {
+		return err
+	}
+	if *quiet {
+		fmt.Println(g.Summary())
+	} else {
+		fmt.Print(g.Markdown())
+	}
+	if !*write {
+		return nil
+	}
+	if err := os.MkdirAll(c.Reports(), 0o755); err != nil {
+		return err
+	}
+	// No keep() here, for the same reason coverage has none: this is
+	// counted off the corpus, so a second checkout builds the same file.
+	out := filepath.Join(c.Reports(), "graph.md")
+	if err := os.WriteFile(out, []byte(g.Markdown()), 0o644); err != nil {
 		return err
 	}
 	fmt.Println("wrote", out)
@@ -272,4 +333,118 @@ func when(s string) (time.Time, error) {
 		d = -d
 	}
 	return time.Now().UTC().Add(-d), nil
+}
+
+// runReportAll writes every report the corpus carries in one pass.
+//
+// The four are built from three different places and the order here is the
+// order a person would want them in. Coverage and the graph are counted off
+// the content, so they are the same on any checkout. The audit is the same
+// again. Usage is read from the ledger, which lives beside the route file on
+// the machine that did the work, so it is the one that can be missing, and
+// a run on a second checkout writes the other three and says why it left
+// that one alone rather than overwriting a night of numbers with zeroes.
+//
+// It never fails on a finding. A report that refused to be written while
+// the corpus had a problem in it would be a report nobody could use to
+// diagnose the problem. `papers audit -hard` is the gate and this is not.
+func runReportAll(args []string) error {
+	fs := flag.NewFlagSet("report all", flag.ContinueOnError)
+	root := fs.String("corpus", "", "path to a checkout of tamnd/papers")
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, `usage: papers report all [flags]
+
+Writes reports/coverage.md, reports/graph.md, reports/audit.md and
+reports/usage.md, and prints a summary line for each.
+
+This is the step before publishing. Running the four commands by hand is
+four chances to forget one, and a corpus whose coverage says ninety seven
+per cent while its audit was written a week ago is worse than one with no
+reports at all.
+
+The usage report is the one that can be skipped. It is read from the
+ledger, which lives on the machine that did the work rather than in the
+corpus, so on a second checkout there is nothing to build it from. The run
+says so and leaves the committed one alone.
+
+Findings do not fail this command. Use papers audit -hard for that.
+
+`)
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	c, err := openCorpus(*root)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(c.Reports(), 0o755); err != nil {
+		return err
+	}
+
+	cov, err := report.BuildCoverage(c)
+	if err != nil {
+		return err
+	}
+	if err := saved(c, "coverage.md", cov.Markdown(), cov.Summary()); err != nil {
+		return err
+	}
+
+	g, err := report.BuildGraph(c)
+	if err != nil {
+		return err
+	}
+	if err := saved(c, "graph.md", g.Markdown(), g.Summary()); err != nil {
+		return err
+	}
+
+	in, err := audit.Load(c)
+	if err != nil {
+		return err
+	}
+	rep := audit.Run(in, false)
+	for _, err := range rep.Errors() {
+		fmt.Fprintf(os.Stderr, "papers: %v\n", err)
+	}
+	if err := saved(c, "audit.md", rep.Markdown(), rep.Summary()); err != nil {
+		return err
+	}
+
+	work.Configure()
+	from := ledger.DefaultPath()
+	entries, err := ledger.Read(from)
+	if err != nil {
+		return err
+	}
+	table, err := report.LoadPrices(c.PricesManifest())
+	if err != nil {
+		return err
+	}
+	reads, err := report.ReadPages(c)
+	if err != nil {
+		return err
+	}
+	u := report.BuildUsage(entries, report.UsageOptions{
+		Prices: table,
+		Stages: askingStages(),
+		Reads:  reads,
+	})
+	path := filepath.Join(c.Reports(), "usage.md")
+	if err := keep(path, u, false); err != nil {
+		fmt.Printf("usage.md: left alone, %v\n", err)
+		return nil
+	}
+	return saved(c, "usage.md", u.Markdown(), u.Summary())
+}
+
+// saved puts one report in the corpus and says what went in it, so that a
+// run of four of them reads as four lines rather than as silence.
+func saved(c *corpus.Corpus, name, body, summary string) error {
+	path := filepath.Join(c.Reports(), name)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("%s: %s\n", name, summary)
+	return nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,5 +69,86 @@ func TestTheWindowIsADateOrAWindow(t *testing.T) {
 	}
 	if _, err := when("last tuesday"); err == nil {
 		t.Error("last tuesday was accepted")
+	}
+}
+
+// reportCorpus is tagsCorpus with the licence records the audit reads. The
+// tags tests do not need them and this one does, because report all runs
+// the whole audit and group S is about the licences.
+func reportCorpus(t *testing.T, body string) string {
+	t.Helper()
+	root := tagsCorpus(t, body)
+	const sources = `sources:
+  - id: a-1970-paper
+    access: open
+    licence: CC-BY-4.0
+    url: https://example.org/a.pdf
+    text_layer: native
+`
+	if err := os.WriteFile(filepath.Join(root, "manifests", "sources.yaml"), []byte(sources), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const collections = `collections:
+  - id: canon-100
+    title: The hundred
+    description: The seed list, in its own numbering.
+    order: number
+    members: all-with-number
+`
+	if err := os.WriteFile(filepath.Join(root, "manifests", "collections.yaml"), []byte(collections), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The ledger is on the machine that did the work and this is not that
+	// machine, so the usage report has nothing to build from. The other
+	// three still have to be written, which is the case a second checkout
+	// is in and the one worth proving.
+	t.Setenv("LLM_LEDGER", filepath.Join(t.TempDir(), "ledger.jsonl"))
+	return root
+}
+
+// The point of report all is that four commands become one, so the test is
+// that all four files are there afterwards and that none of them is the
+// stub a failed build would leave.
+func TestReportAllWritesEveryReport(t *testing.T) {
+	root := reportCorpus(t, section(""))
+	if err := runReportAll([]string{"-corpus", root}); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{
+		"coverage.md": "# Coverage",
+		"graph.md":    "# The citation graph",
+		"audit.md":    "rules",
+		"usage.md":    "",
+	} {
+		b, err := os.ReadFile(filepath.Join(root, "reports", name))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if want != "" && !strings.Contains(string(b), want) {
+			t.Errorf("%s does not read like itself:\n%s", name, b)
+		}
+	}
+}
+
+// A corpus with a hard rule failing still gets its reports. A report that
+// refused to be written while the corpus had a problem in it would be a
+// report nobody could use to diagnose the problem.
+func TestReportAllDoesNotFailOnAFinding(t *testing.T) {
+	root := reportCorpus(t, section(""))
+	// A link to a paper that is not in papers.yaml, which is rule R01.
+	body := section("") + "\nAnd a paragraph that cites [[no-such-1970-paper]] and nothing else.\n"
+	if err := os.WriteFile(filepath.Join(root, "content/en/a-1970-paper/01_first.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runReportAll([]string{"-corpus", root}); err != nil {
+		t.Fatalf("a finding failed the report: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(root, "reports", "audit.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "no-such-1970-paper") {
+		t.Errorf("the audit report does not carry the finding:\n%s", b)
 	}
 }
