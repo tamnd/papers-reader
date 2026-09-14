@@ -3,6 +3,8 @@ package extract
 import (
 	"regexp"
 	"strings"
+
+	"github.com/tamnd/papers-reader/mathtex"
 )
 
 // Money escapes the dollar signs that are currency and not mathematics.
@@ -37,6 +39,9 @@ import (
 // with the sentence between them read as one long formula. That one is
 // caught by reading it: a span that opens on a price and holds two ordinary
 // words is a sentence, and neither of its delimiters was a delimiter.
+//
+// A last pass looks across lines rather than within one, for the dollar a
+// paper uses as a footnote mark rather than as a price. See unstretched.
 func Money(s string) string {
 	if !strings.Contains(s, "$") {
 		return s
@@ -53,7 +58,80 @@ func Money(s string) string {
 		}
 		lines[i] = unsentence(line)
 	}
-	return strings.Join(lines, "\n")
+	return unstretched(strings.Join(lines, "\n"))
+}
+
+// unstretched escapes a pair of single dollars with a line break between
+// them.
+//
+// The other dollar that is not a delimiter is the one a paper uses as a
+// footnote mark. The TraceMonkey author line runs "Mohammad R. Haghighat$,
+// Blake Kaplan*, ..." and gives the affiliation four lines down as "Intel
+// Corporation$", using the dollar the way the line beside it uses a star, a
+// hash and a plus. Those two pair up, the page has an even number of dollars
+// so the counting above says nothing, and what they enclose is half the
+// authors of the paper and three email addresses. Rule A4 hands it to KaTeX,
+// KaTeX says what anybody would, and the page is refused at all three
+// resolutions.
+//
+// An inline span does not cross a line. A paragraph is one line in what the
+// prompt asks for and the rest of this package already assumes it: the
+// rewriter that turns TeX's own delimiters into this corpus's pairs them
+// only within a line, for the same reason. A display may cross as many lines
+// as it likes and is left alone.
+func unstretched(s string) string {
+	for {
+		open, shut, ok := stretched(s)
+		if !ok {
+			return s
+		}
+		s = s[:shut] + `\` + s[shut:]
+		s = s[:open] + `\` + s[open:]
+	}
+}
+
+// stretched is the first inline pair with a line break inside it.
+//
+// The fenced blocks are blanked out rather than cut, which leaves every byte
+// where it was, so an offset found here is an offset in what was passed in.
+func stretched(s string) (open, shut int, ok bool) {
+	at := marksIn(mathtex.BlankFences(s))
+	for i := 0; i+1 < len(at); i += 2 {
+		a, b := at[i], at[i+1]
+		if a.double || b.double {
+			continue
+		}
+		if strings.Contains(s[a.at+1:b.at], "\n") {
+			return a.at, b.at, true
+		}
+	}
+	return 0, 0, false
+}
+
+// A mark is one math delimiter: where it is and whether it is a display.
+type mark struct {
+	at     int
+	double bool
+}
+
+// marksIn is the delimiters of a body, in order, with the escaped dollars
+// left out.
+func marksIn(s string) []mark {
+	var out []mark
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '$':
+			if i+1 < len(s) && s[i+1] == '$' {
+				out = append(out, mark{at: i, double: true})
+				i++
+				continue
+			}
+			out = append(out, mark{at: i})
+		}
+	}
+	return out
 }
 
 // price is a dollar sign in front of an amount.

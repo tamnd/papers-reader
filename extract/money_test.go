@@ -84,3 +84,28 @@ func TestAPriceSurvivesTheWholeTidier(t *testing.T) {
 		t.Errorf("Tidy gave %q and wanted %q", got, want)
 	}
 }
+
+func TestAFootnoteMarkDoesNotOpenAFormula(t *testing.T) {
+	// The TraceMonkey author block, typeset here rather than quoted, which
+	// used the dollar as the fourth footnote mark after the star, the hash
+	// and the plus.
+	in := "Ada Lovelace*, Grace Hopper$, Alan Turing#\n\nFirst Institute*\n\nSecond Institute$\n"
+	want := "Ada Lovelace*, Grace Hopper" + `\$` + ", Alan Turing#\n\nFirst Institute*\n\nSecond Institute" + `\$` + "\n"
+	if got := Money(in); got != want {
+		t.Errorf("Money gave\n%q\nand wanted\n%q", got, want)
+	}
+}
+
+func TestADisplayMayCrossAsManyLinesAsItLikes(t *testing.T) {
+	in := "Before.\n\n$$\nx = \\sum_{i=1}^{n} a_i\n\\quad\\text{for all } i\n$$\n\nAfter.\n"
+	if got := Money(in); got != in {
+		t.Errorf("Money broke a display:\n%q", got)
+	}
+}
+
+func TestTwoInlineSpansOnNeighbouringLinesArePairedWithinTheirLines(t *testing.T) {
+	in := "The value $x$ is fixed.\nThe value $y$ is not.\n"
+	if got := Money(in); got != in {
+		t.Errorf("Money paired across lines:\n%q", got)
+	}
+}
