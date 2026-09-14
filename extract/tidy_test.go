@@ -191,3 +191,55 @@ func TestASentenceThatStartsLikeTheInterfaceStays(t *testing.T) {
 		t.Errorf("a sentence of the paper came off:\n%s", got)
 	}
 }
+
+// Two pages of the MapReduce paper, and the number in each is the page
+// number the proceedings printed. Both were published with the number on
+// them, because the question underneath it was the last line of the page and
+// the folio was the second last.
+func TestTheRelayAsksItsOwnQuestionsAtTheFootOfThePage(t *testing.T) {
+	for _, page := range []string{
+		"The reduce function is passed all per-document term vectors.\n\n138\n\n Is this conversation helpful so far?\n",
+		"The Map invocations are distributed across multiple machines.\n\n139\n\n Do you like this personality?\n",
+	} {
+		got := strings.TrimSpace(Tidy(page))
+		if strings.Contains(got, "?") {
+			t.Errorf("the question is still on the page:\n%s", got)
+		}
+		if !strings.HasSuffix(got, "9") && !strings.HasSuffix(got, "8") {
+			t.Errorf("the folio is no longer the last line:\n%s", got)
+		}
+	}
+}
+
+// The first line of a page is the running head, and the furniture pass
+// counts first lines across the paper to find it. A progress line standing
+// where the head should be is a head the pass never sees.
+func TestTheRelaysProgressLineComesOffTheHeadOfThePage(t *testing.T) {
+	const page = "Worked for 9s\n\nFigure 1: Execution overview\n\nInverted Index: The map function parses each document.\n"
+	got := Tidy(page)
+	if strings.Contains(got, "Worked for") {
+		t.Errorf("the progress line is still on the page:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "Figure 1:") {
+		t.Errorf("the page does not start where it should:\n%s", got)
+	}
+}
+
+// A progress line and an announcement are two lines above the page, and
+// taking one off has to leave none.
+func TestAProgressLineAndAnAnnouncementBothComeOff(t *testing.T) {
+	const page = "Thought for 12 seconds\nHere is the transcription of the page:\n\nThe computation takes a set of input key/value pairs.\n"
+	if got := Tidy(page); !strings.HasPrefix(got, "The computation takes") {
+		t.Errorf("the page does not start where it should:\n%s", got)
+	}
+}
+
+// A sentence of a paper that begins the way the progress line does. The
+// match is the whole line and ends on a duration, so a paper that says how
+// long something took keeps saying it.
+func TestASentenceThatStartsLikeTheProgressLineStays(t *testing.T) {
+	const page = "Worked for 9s on the first shard, the machine then failed and the task was\nreassigned to another worker.\n"
+	if got := Tidy(page); !strings.HasPrefix(got, "Worked for 9s on the first shard") {
+		t.Errorf("a sentence of the paper came off:\n%s", got)
+	}
+}

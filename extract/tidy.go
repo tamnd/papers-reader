@@ -72,16 +72,22 @@ var preamble = regexp.MustCompile(`(?i)^(?:(?:sure|certainly|of course)[!,.]?\s*
 // label is a preamble with the opener left off: the word on its own.
 var label = regexp.MustCompile(`(?i)^(?:the )?(?:transcription|transcript|transcribed text)(?: of (?:the|this) page)?:$`)
 
+// dropPreamble takes the introduction and the progress line off the head of
+// the page, and keeps going until the first line is neither. A relay that
+// reports how long it worked and then announces the transcription has put
+// two lines above the page, and taking one of them off leaves the other.
 func dropPreamble(s string) string {
-	line, rest, found := strings.Cut(s, "\n")
-	if !found {
-		return s
+	for {
+		line, rest, found := strings.Cut(s, "\n")
+		if !found {
+			return s
+		}
+		line = strings.TrimSpace(line)
+		if !preamble.MatchString(line) && !label.MatchString(line) && !status.MatchString(line) {
+			return s
+		}
+		s = strings.TrimLeft(rest, "\n")
 	}
-	line = strings.TrimSpace(line)
-	if !preamble.MatchString(line) && !label.MatchString(line) {
-		return s
-	}
-	return strings.TrimLeft(rest, "\n")
 }
 
 // trailers are the closing courtesies. They are matched on the whole of the
@@ -119,9 +125,31 @@ var trailers = []string{
 // Matched on the whole line and not as a prefix, and the list holds only
 // what has actually been seen, because these are two and three word phrases
 // and a paper will one day end a page on one of them.
+//
+// The two questions are the same thing as the button and they cost the same
+// thing. Page 2 of the MapReduce paper came back ending "Is this
+// conversation helpful so far?" and page 3 ending "Do you like this
+// personality?", and both pages published with their printed page number on
+// them, 138 and 139, because the folio was the line above the question and
+// so was no longer at the edge for the furniture pass to see.
 var chrome = []string{
 	"give feedback",
+	"is this conversation helpful so far?",
+	"do you like this personality?",
 }
+
+// status is the relay's progress line, which it sometimes puts at the top of
+// the answer where the page's first line should be. Page 3 of the MapReduce
+// paper opened on "Worked for 9s" and page 8 on "Worked for 17s".
+//
+// A whole line, a small vocabulary of verbs and a duration, because the risk
+// here is the other way round from the trailers: this is the first line of
+// the page, and the first line of a page is the running head, which is what
+// the furniture pass counts. A page whose head has been eaten is a page that
+// publishes its head, and a paper that opens a page on the words "Worked for
+// 9s" does not exist.
+var status = regexp.MustCompile(`(?i)^(?:worked|thought|thinking|reasoned|searched|read)` +
+	`(?: for)? [0-9]+(?:\.[0-9]+)? ?(?:ms|s|m|sec|secs|second|seconds|min|mins|minute|minutes)$`)
 
 // dropTrailer takes the courtesies and the chrome off the foot of the page,
 // and keeps going until the last line is neither. A reader that signs off
