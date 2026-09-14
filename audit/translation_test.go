@@ -971,6 +971,8 @@ func TestL19ReadsTheTitleInTheFrontMatter(t *testing.T) {
 		{"an abbreviation that stands", "GAN", "GAN", false},
 		{"a numbered title that stands", "3.2", "3.2", false},
 		{"one long word left in English", "Experiments", "Experiments", true},
+		{"a coined name that stands", "TrueTime", "TrueTime", false},
+		{"a compound that is two words", "Related Work", "Related Work", true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			rep := Run(build(t, map[string]string{

@@ -1496,7 +1496,35 @@ func ruleL19(in *Input) ([]Finding, error) {
 // called "3.2". Asking for two words, or one long one, leaves those alone
 // and still catches "Introduction", "Experiments" and "Related work", which
 // are the titles that actually come back untranslated.
+//
+// One long word with a capital letter inside it is not one of those. It is
+// a coined name, and nothing in ordinary English is written that way:
+// TrueTime, MapReduce, BigTable, PageRank. Spanner's section 3 is headed
+// TrueTime and the Vietnamese keeps it, which is the right answer and the
+// only answer, because the name is the name.
 func words(title string) bool {
+	if coined(title) {
+		return false
+	}
+	return spelled(title)
+}
+
+// coined says whether a title is one word with a capital inside it.
+func coined(title string) bool {
+	title = strings.TrimSpace(title)
+	if strings.ContainsFunc(title, unicode.IsSpace) {
+		return false
+	}
+	rs := []rune(title)
+	for i := 1; i < len(rs); i++ {
+		if unicode.IsLower(rs[i-1]) && unicode.IsUpper(rs[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+func spelled(title string) bool {
 	n, longest, run := 0, 0, 0
 	for _, r := range title + " " {
 		if unicode.IsLetter(r) {
