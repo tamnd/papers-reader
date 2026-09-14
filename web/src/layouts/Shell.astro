@@ -26,12 +26,10 @@ const {
   lang = "en",
 } = Astro.props;
 
-// Search is not in here yet. It is a page that cannot work without
-// JavaScript and the island that does the work is the next change, so the
-// entry arrives with the thing it points at rather than before it.
 const nav = [
   { key: "papers", to: href(""), label: "Papers" },
   { key: "graph", to: href("graph"), label: "Graph" },
+  { key: "search", to: href("search"), label: "Search" },
   { key: "about", to: href("about"), label: "About" },
 ] as const;
 ---

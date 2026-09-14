@@ -131,6 +131,24 @@ export function search(lang: Lang): Search | undefined {
 }
 
 /**
+ * The languages there is a search index for.
+ *
+ * By looking for the file and not by reading it. The search page needs the
+ * list of languages to draw its buttons and nothing else from the indexes,
+ * and the indexes are most of a megabyte each: parsing four of them at
+ * build time to count them would be the slowest thing in the build.
+ */
+export function searchLangs(): Lang[] {
+  return LANGS.filter((l) => existsSync(join(root, `search-${l}.json`)));
+}
+
+/** Paper identifier to title, which is what the islands need to put a name
+ * on something they only know the identifier of. */
+export function titles(): Record<string, string> {
+  return Object.fromEntries(index().papers.map((p) => [p.id, p.title]));
+}
+
+/**
  * A link, with the base the site is deployed under on the front of it.
  *
  * Every href in this app goes through here. Astro exposes the base as

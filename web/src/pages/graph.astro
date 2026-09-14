@@ -1,6 +1,12 @@
 ---
-// The citation graph as a list: which of these papers cite which others.
+// The citation graph: a chart of it, and then the same thing as a list.
+//
+// Both, and not one or the other. The chart says something about the shape
+// of the corpus that a list cannot, and the list is readable without
+// JavaScript, is what a screen reader gets, and is what you can search the
+// page for. Neither is a decoration of the other.
 import Shell from "../layouts/Shell.astro";
+import Chart from "../components/Graph.tsx";
 import { graph, href, index } from "../site";
 
 const g = graph();
@@ -24,13 +30,28 @@ const unread = g.nodes.filter((n) => !n.parsed).length;
   <h1>What cites what</h1>
   <p class="lede">
     {g.edges.length} citations between the {g.nodes.length} papers here, out of
-    the thousands each of them makes to work that is not in this corpus. The
-    list is by how often a paper is cited by the others.
+    the thousands each of them makes to work that is not in this corpus.
     {
       unread > 0 &&
         ` ${unread} ${unread === 1 ? "paper has" : "papers have"} a bibliography nobody has read yet, so ${unread === 1 ? "it cites" : "they cite"} nothing here for want of looking rather than for want of citing.`
     }
   </p>
+
+  <Chart
+    client:load
+    base={import.meta.env.BASE_URL}
+    nodes={g.nodes}
+    edges={g.edges}
+    fields={site.fields.map((f) => ({ id: f.id, title: f.title }))}
+  />
+  <p class="byline">
+    Across is the year, down is the field, and the size of a dot is how often
+    the others here cite it. Hover a paper to light up what it drew on, in one
+    colour, and what drew on it, in another. A hollow dot is a paper whose
+    bibliography nobody has read yet.
+  </p>
+
+  <h2>By how often they are cited</h2>
 
   <ul class="toc">
     {

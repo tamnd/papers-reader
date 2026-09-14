@@ -164,6 +164,12 @@ jobs:
         run: |
           npm run schema
           git diff --exit-code -- src/types.gen.ts
+      # The tokeniser here is a port of the one in emit/search.go and the
+      # ranking is the part of the search a reader cannot see the workings
+      # of, so both are tested rather than eyeballed.
+      - name: test
+        working-directory: papers-reader/web
+        run: npm test
       - name: build
         working-directory: papers-reader/web
         run: npm run build

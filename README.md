@@ -109,6 +109,10 @@ It reads the emitted JSON off `web/public` at build time and generates static pa
 The types it reads the build with are generated from the same schema the emitter validates against, committed so the app builds without a generator, and checked in CI so the committed copy cannot be an old one.
 Side by side is block i against block i, drawn as one grid so the two columns cannot drift, and a block that is in one language and not the other is drawn as a gap and said out loud rather than closed up.
 There is no CSS framework: the corpus is text and the typography is the design.
+Two pages ship JavaScript and both do the work in the browser rather than on a server.
+Search fetches the index for one language on the first query, ranks prose above formulas, shows at most three blocks of any one paper, and sends nothing anywhere: the tokeniser it runs queries through is a port of the one the index was built with and is tested against the same table, because one character of drift there means a Japanese query silently finds nothing.
+The citation graph is a chart with the year across and the field down rather than a force directed cloud, so it is the same picture on every load, and hovering a paper lights up what it drew on in one colour and what drew on it in another.
+Both pages carry the same thing as plain markup underneath for a reader without JavaScript.
 `make site CORPUS=<papers>` builds the emit and then the app, and `npm run dev` in `web/` serves it against whatever was last emitted.
 
 **A draft says it is a draft.**

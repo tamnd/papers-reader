@@ -6,6 +6,7 @@
     "dev": "astro dev",
     "build": "astro check && astro build",
     "preview": "astro preview",
+    "test": "node --test 'src/**/*.test.ts'",
     "schema": "json2ts --input ../schema/site.schema.json --output src/types.gen.ts --additionalProperties false --unreachableDefinitions --bannerComment \"// Code generated from schema/site.schema.json by make schema. DO NOT EDIT.\""
   },
   "dependencies": {

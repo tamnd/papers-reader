@@ -1,0 +1,77 @@
+---
+// Search. The one page here that does not work without JavaScript, and it
+// says so rather than leaving a reader who has it off with a box that does
+// nothing.
+//
+// The index is a file in the build like everything else, so the search runs
+// in the browser against a file it fetched. No query anybody types on this
+// site is sent anywhere.
+import Shell from "../layouts/Shell.astro";
+import Search from "../components/Search.tsx";
+import { LANG_NAMES, href, searchLangs, titles } from "../site";
+
+const langs = searchLangs();
+// Built here rather than inline in the sentence, because two expressions
+// side by side in the markup run together with nothing between them.
+const count = `${langs.length} ${langs.length === 1 ? "language" : "languages"}`;
+---
+
+<Shell title="Search" here="search">
+  <h1>Search</h1>
+  <p class="lede">
+    Every word of every paper here, in {count}. The index is a file this page
+    downloads the first time you type in the box, and the search runs in your
+    browser. Nothing you type leaves it.
+  </p>
+
+  <noscript>
+    <p class="missing">
+      This page needs JavaScript, because the searching happens in your browser
+      rather than on a server. Everything else here is plain pages and works
+      without it: the <a href={href("")}>catalogue</a> lists every paper by field
+      and by year.
+    </p>
+  </noscript>
+
+  <Search
+    client:load
+    base={import.meta.env.BASE_URL}
+    langs={langs}
+    names={LANG_NAMES}
+    titles={titles()}
+  />
+
+  <h2>What it looks in</h2>
+  <p>
+    Every block of every page: the paragraphs, the headings, the formulas and
+    the program listings. The prose and the mathematics are indexed apart, so a
+    word you typed finds the paragraph that uses it before the formula that
+    happens to contain the same letters.
+  </p>
+  <p>
+    A word in more than a third of the blocks of a language is left out of that
+    language's index. It could not narrow a search down and it was most of the
+    file. That is why searching for the returns nothing, in any of the four.
+  </p>
+  <p>
+    Chinese and Japanese are cut into overlapping pairs of characters rather
+    than into words. It is crude, it finds short words inside longer ones, and
+    it is what a corpus this size can afford without shipping a segmenter to
+    every reader.
+  </p>
+  <p>
+    Results are per block and not per paper, so a long paper that mentions your
+    word in two places is two lines and each one goes to the section it is in.
+    No paper gets more than three lines, or one paper that keeps saying the
+    word would be the whole page. The last word you type also matches on its
+    beginning, which is why the list keeps moving while you are still typing
+    it.
+  </p>
+  <p>
+    The two lines under a result are the section it is in and the opening of
+    the block. The opening, and not the sentence that matched: the index
+    carries the first part of every block so that a page of results is not a
+    page of downloads, and in a long paragraph your word may be further in
+    than the part you can see.
+  </p>
+</Shell>

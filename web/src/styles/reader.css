@@ -18,6 +18,12 @@
   --link: #1c4f9c;
   --warn: #8a4b12;
   --warn-tint: #fbf3e8;
+  /* The two directions of the citation graph. Warm is backwards in time,
+     towards what a paper drew on, and cool is forwards, towards what drew
+     on it. Two hues rather than two shades of one, because the whole point
+     of the colouring is telling the two apart at a glance. */
+  --up: #b4530f;
+  --down: #0f7a63;
 
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia,
     "Times New Roman", serif;
@@ -35,6 +41,8 @@
     --link: #8ab4f8;
     --warn: #e0a86a;
     --warn-tint: #2a2118;
+    --up: #e2a15e;
+    --down: #4fc0a4;
   }
 }
 
@@ -551,4 +559,210 @@ h6 {
     padding-left: 0.9rem;
     margin-bottom: 1rem;
   }
+}
+
+/* The citation chart */
+
+.chart {
+  position: relative;
+  max-width: var(--wide);
+  margin: 1.5rem 0 0.6rem;
+}
+
+.graph {
+  display: block;
+  overflow: visible;
+  font-family: var(--sans);
+}
+
+.graph .grid {
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+
+.graph .tick,
+.graph .band {
+  fill: var(--faint);
+  font-size: 10px;
+}
+
+.graph .band {
+  letter-spacing: 0.03em;
+}
+
+.graph .edge {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 1;
+}
+
+.graph .node {
+  fill: var(--faint);
+  cursor: pointer;
+}
+
+/* A paper nobody has read the bibliography of. Hollow, because the thing
+   it is missing is its outgoing edges and an empty middle is what that
+   looks like. */
+.graph .node.unread {
+  fill: var(--paper);
+  stroke: var(--faint);
+  stroke-width: 1.2;
+}
+
+/* Once something is hovered, everything that is not part of the answer
+   gets out of the way rather than disappearing, so the shape of the whole
+   is still there behind the part being asked about. */
+.graph.lit .edge {
+  stroke: var(--rule);
+  opacity: 0.25;
+}
+
+.graph.lit .node {
+  opacity: 0.3;
+}
+
+.graph .node.hot,
+.graph .node.up,
+.graph .node.down,
+.graph .edge.up,
+.graph .edge.down {
+  opacity: 1;
+}
+
+.graph .node.hot {
+  fill: var(--ink);
+}
+
+.graph .node.up {
+  fill: var(--up);
+  stroke: var(--up);
+}
+
+.graph .node.down {
+  fill: var(--down);
+  stroke: var(--down);
+}
+
+/* Stroke only. An edge is a path and a path with a fill is the area under
+   the curve, which is a wedge across half the chart rather than a line. */
+.graph .edge.up {
+  stroke: var(--up);
+}
+
+.graph .edge.down {
+  stroke: var(--down);
+}
+
+.graph .edge.up,
+.graph .edge.down {
+  stroke-width: 1.2;
+}
+
+.chart .tip {
+  position: absolute;
+  width: 15rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.45rem 0.6rem;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.chart .tip strong {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.chart .tip span {
+  color: var(--faint);
+}
+
+/* Search */
+
+.finder form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  max-width: var(--measure);
+  margin: 1.5rem 0 0.5rem;
+}
+
+.finder input {
+  flex: 1 1 16rem;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.5rem 0.7rem;
+}
+
+.finder input:focus {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.finder .langs button {
+  font: inherit;
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  color: var(--faint);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+
+.finder .langs button[aria-pressed="true"] {
+  color: var(--paper);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.results {
+  list-style: none;
+  padding: 0;
+  max-width: var(--measure);
+}
+
+.results li {
+  border-top: 1px solid var(--rule);
+  padding: 0.7rem 0;
+}
+
+.results li > a {
+  font-family: var(--sans);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.results li > a:hover {
+  text-decoration: underline;
+}
+
+.results .where {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  color: var(--faint);
+  margin: 0.15rem 0;
+}
+
+.results .snippet {
+  margin: 0.2rem 0 0;
+  font-size: 0.92rem;
+}
+
+.results mark {
+  background: var(--warn-tint);
+  color: inherit;
+  padding: 0 0.1em;
 }
