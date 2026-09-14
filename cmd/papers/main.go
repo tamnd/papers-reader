@@ -55,6 +55,7 @@ var commands = []command{
 	{"emit", "M8", "build the JSON the reading app consumes", nil},
 	{"graph", "M7", "build the citation graph over the corpus", nil},
 	{"report", "M7", "write the coverage, usage and citation reports", runReport},
+	{"publish", "M6", "push what has been written to the corpus as a pull request", runPublish},
 	{"queue", "M1", "show and drain the work queue", runQueue},
 	{"routes", "M1", "show the model routing table", runRoutes},
 	{"doctor", "M1", "check that the tools and the routes are usable", runDoctor},

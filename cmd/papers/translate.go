@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/glossary"
 	"github.com/tamnd/papers-reader/prompt"
+	"github.com/tamnd/papers-reader/publish"
 	"github.com/tamnd/papers-reader/roundtrip"
 	"github.com/tamnd/papers-reader/split"
 	"github.com/tamnd/papers-reader/translate"
@@ -46,6 +48,7 @@ func runTranslate(args []string) error {
 	floor := fs.Int("floor", Floor, "the glossary coverage a language needs, as a percentage")
 	force := fs.Bool("force", false, "translate again even where the English has not changed")
 	atOnce := fs.Int("jobs", 0, "how many files to translate at once, or 0 for one per lane in the fleet")
+	every := fs.Int("publish", 0, "push what has been written to the corpus and merge it, every so many files")
 	dry := fs.Bool("dry-run", false, "say what would be asked and ask nothing")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `usage: papers translate [flags]
@@ -162,7 +165,7 @@ and a references file has nothing else in it.
 	var total llm.Usage
 	written, asks, refused, skipped := 0, 0, 0, 0
 	var failed []string
-	inARow, stopping := 0, false
+	inARow, stopping, batch := 0, false, 0
 	for o := range spread(ctx, lanes, jobs, func(j job) (translate.Result, error) {
 		return translated(ctx, c, t, g, j, run, free)
 	}) {
@@ -191,6 +194,13 @@ and a references file has nothing else in it.
 		written++
 		fmt.Printf("%s %s %s: %d chunks, %d asks, %s\n",
 			o.job.lang, o.job.front.Paper, o.job.name, o.res.Chunks, o.res.Asks, strings.Join(o.res.Models, " and "))
+		if *every > 0 && written%*every == 0 {
+			batch++
+			pushed(c, run, batch, false)
+		}
+	}
+	if *every > 0 {
+		pushed(c, run, batch+1, true)
 	}
 	fmt.Printf("%d files written, %d asks of which %d were refused, %d input and %d output tokens\n",
 		written, asks, refused, total.InputTokens, total.OutputTokens)
@@ -205,6 +215,37 @@ and a references file has nothing else in it.
 		return fmt.Errorf("%d of %d files were not written", len(failed), len(jobs))
 	}
 	return nil
+}
+
+// pushed opens a pull request for what the run has written so far, merges
+// it, and carries on.
+//
+// It never stops the run. A push fails because the network dropped or
+// because github was busy, and neither of those is a reason to throw away
+// the six hours of model time that is still in the queue. What was not
+// pushed this time is picked up by the next batch, because a batch is
+// whatever is in the working tree and not a list kept in memory.
+//
+// The opening says which run and whether it is over, because a person
+// looking at a merged pull request three days later wants to know whether
+// there is more coming and whether anybody has read it yet.
+func pushed(c *corpus.Corpus, run string, batch int, last bool) {
+	opening := fmt.Sprintf("This is translation run %s pushing out what it has finished so far.\n", run)
+	if last {
+		opening += "That is the run finished, so this is the last batch of it.\n"
+	} else {
+		opening += "The run is still going and the next batch will look like this one.\n"
+	}
+	opening += "Nothing here has been through the audit yet, because the raw translations go in first and the rules are written against what the models actually write rather than against what they were asked for.\n"
+	res, err := push(context.Background(), c, "main", publish.Branch(run, batch), opening, true, false)
+	switch {
+	case errors.Is(err, publish.Nothing):
+		return
+	case err != nil:
+		fmt.Printf("batch %d could not be pushed, and the run carries on: %v\n", batch, err)
+		return
+	}
+	fmt.Printf("batch %d: %d files in %s\n", batch, res.Files, res.URL)
 }
 
 // An outcome is one finished file: what was asked for, what came back, and
@@ -486,7 +527,38 @@ func translated(ctx context.Context, c *corpus.Corpus, t *translate.Translator, 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return res, err
 	}
-	return res, os.WriteFile(filepath.Join(dir, j.name), out, 0o644)
+	return res, atomic(filepath.Join(dir, j.name), out)
+}
+
+// atomic puts a file in place in one step.
+//
+// Written and then renamed rather than written in place, because the run
+// publishes as it goes and a git add that caught a file halfway through
+// being written would commit half a translated section to a public
+// repository and then mark it current in the front matter, which is a page
+// nothing further down the toolchain would ever ask for again.
+//
+// The temporary name ends in .tmp rather than .md so that a run interrupted
+// between the two steps leaves something the corpus reader skips rather than
+// a section file with no front matter in it.
+func atomic(name string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(name), filepath.Base(name)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, name)
 }
 
 // provisional says whether a body is provisional, and why.
