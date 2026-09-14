@@ -266,6 +266,21 @@ var aligned = regexp.MustCompile(`\S {3,}\S`)
 // wrong one. So is a line inside a fence or inside mathematics, where the
 // spaces are already safe.
 //
+// One line on its own is not a table, because a column needs rows. That is
+// the whole of what this rule used to get wrong: seven of its eight findings
+// over the corpus were a single line, and every one of them was prose with a
+// wide gap in it rather than data in columns. Three are a GPT-3 figure
+// caption where the typesetter set the number in bold and the reader kept
+// the gap after it, two are a run-in heading with its paragraph on the same
+// line, and collapsing the gap in any of them costs a reader nothing.
+//
+// The masthead of a front page is skipped too, which is the same exception
+// rule L07 makes and for the same reason. A byline is names in three columns
+// and an affiliation line is institutions in six, set that way because the
+// page is two columns wide and not because the paper is presenting a table.
+// The Borg byline and the P4 affiliations were the last two findings and are
+// both that.
+//
 // Soft, because a run of spaces is a strong hint and not a proof, and because
 // a stray double space somebody typed is not worth failing a build over.
 func ruleC09(in *Input) ([]Finding, error) {
@@ -273,7 +288,8 @@ func ruleC09(in *Input) ([]Finding, error) {
 		var out []Finding
 		lines := strings.Split(f.Body, "\n")
 		skip := protectedLines(f.Body, len(lines))
-		for i := 0; i < len(lines); i++ {
+		from := mastheadLines(f)
+		for i := from; i < len(lines); i++ {
 			if skip[i+1] || strings.Contains(lines[i], "|") || !aligned.MatchString(lines[i]) {
 				continue
 			}
@@ -281,14 +297,39 @@ func ruleC09(in *Input) ([]Finding, error) {
 			for end < len(lines) && !skip[end+1] && !strings.Contains(lines[end], "|") && aligned.MatchString(lines[end]) {
 				end++
 			}
-			out = append(out, Finding{
-				Rule: "C09", File: f.Path, Line: i + 1,
-				Message: fmt.Sprintf("%d lines here are lined up with spaces that Markdown will collapse, so the columns are lost", end-i),
-			})
+			if end-i > 1 {
+				out = append(out, Finding{
+					Rule: "C09", File: f.Path, Line: i + 1,
+					Message: fmt.Sprintf("%d lines here are lined up with spaces that Markdown will collapse, so the columns are lost", end-i),
+				})
+			}
 			i = end
 		}
 		return out
 	})
+}
+
+// mastheadLines is how many lines of a file the masthead takes up, or none
+// for a file that is not a front page. See masthead, which does the same
+// thing in blocks for the rules that work in blocks.
+func mastheadLines(f *File) int {
+	if f.Front.Kind != "front" {
+		return 0
+	}
+	blocks := blocksOf(f.Body)
+	at := masthead(blocks)
+	if at == 0 || at > len(blocks) {
+		return 0
+	}
+	// The end of the last block of the masthead, found in the body rather
+	// than counted from the blocks, because Blocks drops the blank lines
+	// between them and this needs the line number the file has.
+	last := blocks[at-1]
+	cut := strings.Index(f.Body, last)
+	if cut < 0 {
+		return 0
+	}
+	return strings.Count(f.Body[:cut]+last, "\n") + 1
 }
 
 // protectedLines is the lines of a body that C08 and C09 do not look at:

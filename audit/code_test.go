@@ -243,6 +243,51 @@ func TestC09LeavesAFencedTableAlone(t *testing.T) {
 	}
 }
 
+// A column needs rows. One line with a wide gap in it is prose that was
+// typeset with the gap, and seven of this rule's eight findings over the
+// corpus were that: a GPT-3 figure caption with the number set in bold, and
+// a run-in heading with its paragraph on the same line.
+func TestC09LeavesOneLineWithAWideGapAlone(t *testing.T) {
+	body := "Figure 4.1: GPT-3 Training Curves   We measure model performance during training on a validation split." + pad
+	if res := result(t, onePaper(t, body), "C09"); res.Failed() {
+		t.Errorf("C09 reported one line with a gap in it: %v", res.Findings)
+	}
+}
+
+// A byline is names in three columns and an affiliation line is
+// institutions in six, set that way because the page is two columns wide.
+// This is the same exception rule L07 makes on the same lines.
+func TestC09LeavesTheMastheadAlone(t *testing.T) {
+	front := "A Paper With A Wide Byline\n\n" +
+		"Ada Lovelace†    Grace Hopper‡    Edsger Dijkstra\n" +
+		"Barbara Liskov†    Alan Turing‡    Tony Hoare\n\n" +
+		"†A University    ‡Another University    A Third University\n\n" +
+		abstract
+	rep := Run(in(t, map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), front),
+	}), false)
+	if res := result(t, rep, "C09"); res.Failed() {
+		t.Errorf("C09 reported a byline: %v", res.Findings)
+	}
+}
+
+// And the exception stops where the masthead does. A table of results
+// further down the same front page is still a finding.
+func TestC09StillReadsATableUnderTheAbstract(t *testing.T) {
+	front := "A Paper With A Table On Its First Page\n\n" +
+		"Ada Lovelace†    Grace Hopper‡\n\n" +
+		abstract +
+		"\nz=0    P=1.0000000\nz=1    P=0.2045873\nz=2    P=0.0509779\n"
+	rep := Run(in(t, map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), front),
+	}), false)
+	if res := result(t, rep, "C09"); !res.Failed() {
+		t.Error("C09 passed a table of numbers under the abstract")
+	}
+}
+
 func TestC09LeavesOrdinaryProseAlone(t *testing.T) {
 	body := "A paragraph with one space between every pair of words, which is what prose is.\n\nAnd a second one." + pad
 	if res := result(t, onePaper(t, body), "C09"); res.Failed() {
