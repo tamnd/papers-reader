@@ -95,6 +95,12 @@ down to a smaller model than the route file names.
 	if err := registry.Validate(); err != nil {
 		fmt.Printf("\n%v\n", err)
 	}
+	// A job name that is not a stage is a route that will never be picked
+	// for anything, and it looks exactly like a route that is configured.
+	// The library cannot check this because the names are ours.
+	for _, line := range strayJobs(registry) {
+		fmt.Printf("\n%s\n", line)
+	}
 	if !*probe {
 		return nil
 	}
@@ -153,23 +159,71 @@ func routeTable(routes []route.Route) string {
 	width := len("route")
 	kind := len("kind")
 	model := len("model")
+	jobs := len("jobs")
 	for _, r := range routes {
 		width = max(width, len(r.Name))
 		kind = max(kind, len(string(r.Kind)))
 		model = max(model, len(r.Model))
+		jobs = max(jobs, len(jobsOf(r)))
 	}
 	var out strings.Builder
-	fmt.Fprintf(&out, "%-*s  %-*s  %-*s  %5s  %5s  %6s  %s\n",
-		width, "route", kind, "kind", model, "model", "rank", "lanes", "vision", "note")
+	fmt.Fprintf(&out, "%-*s  %-*s  %-*s  %5s  %5s  %6s  %-*s  %s\n",
+		width, "route", kind, "kind", model, "model", "rank", "lanes", "vision", jobs, "jobs", "note")
 	for _, r := range routes {
 		vision := "no"
 		if r.Vision {
 			vision = "yes"
 		}
-		fmt.Fprintf(&out, "%-*s  %-*s  %-*s  %5d  %5d  %6s  %s\n",
-			width, r.Name, kind, r.Kind, model, r.Model, r.Rank, r.Lanes(), vision, r.Note)
+		fmt.Fprintf(&out, "%-*s  %-*s  %-*s  %5d  %5d  %6s  %-*s  %s\n",
+			width, r.Name, kind, r.Kind, model, r.Model, r.Rank, r.Lanes(), vision, jobs, jobsOf(r), r.Note)
 	}
 	return out.String()
+}
+
+// jobsOf is the stages a route will serve, for the table. A route that names
+// none serves all of them, and printing an empty cell for that reads as a
+// route that serves nothing.
+func jobsOf(r route.Route) string {
+	if len(r.Jobs) == 0 {
+		return "any"
+	}
+	return strings.Join(r.Jobs, ",")
+}
+
+// strayJobs is a line per route that names a job no stage answers to.
+//
+// The route file names stages by hand and a misspelled one is silent: the
+// route is skipped by every pool and reads in the table as a route that is
+// configured and is simply never chosen. work.Stages is the whole list, so
+// this can say what was meant.
+func strayJobs(registry route.Registry) []string {
+	known := map[string]bool{}
+	for _, s := range work.Stages {
+		known[string(s)] = true
+	}
+	var out []string
+	for _, r := range registry.Routes {
+		var stray []string
+		for _, j := range r.Jobs {
+			if !known[strings.ToLower(strings.TrimSpace(j))] {
+				stray = append(stray, j)
+			}
+		}
+		if len(stray) == 0 {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s names %s, which %s a stage, so no work will ever reach it under %s. the stages are %s",
+			r.Name, strings.Join(stray, " and "), oneOrMore(len(stray), "is not", "are not"),
+			oneOrMore(len(stray), "that name", "those names"), stageNames()))
+	}
+	return out
+}
+
+func oneOrMore(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // off is the routes the file has turned off. They are printed separately

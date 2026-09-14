@@ -142,16 +142,27 @@ func (a *Ask) logf(format string, args ...any) {
 // route fails here, at the start, rather than an hour into a run: the pages
 // are the slow part and finding out at the end that there was nowhere to send
 // them is the expensive way to learn it.
+//
+// The stage is also what narrows the fleet. A route may name the stages it
+// will serve and one that names some other stage is not in this pool. See
+// Able.
 func Fleet(stage queue.Stage, path string, vision bool, logf func(string, ...any)) (*Ask, string, error) {
 	registry, from, err := Routes(path)
 	if err != nil {
 		return nil, from, err
 	}
-	pool := Pool(registry)
+	able := Able(registry, stage)
+	pool := Pool(able)
 	if vision {
-		pool = Vision(registry)
+		pool = Vision(able)
 	}
 	if pool.Empty() {
+		// Which of the two filters emptied it, because the remedies are
+		// different and a run that says only "no routes" sends somebody to
+		// look at a table that has plenty of them in it.
+		if len(able.Routes) < len(registry.Routes) {
+			return nil, from, fmt.Errorf("no route will do %s (the routing table is %s): every route there names other jobs, so add %s to the jobs of one of them", stage, from, stage)
+		}
 		if vision {
 			return nil, from, fmt.Errorf("no route can take a page image (the routing table is %s): add one with vision set, or run papers routes init", from)
 		}

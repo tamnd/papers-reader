@@ -14,8 +14,8 @@ github.com/google/pprof v0.0.0-20260906184651-6331bc6350fe h1:QAinXoAFJdGQYztXn3
 github.com/google/pprof v0.0.0-20260906184651-6331bc6350fe/go.mod h1:jl5iWTm0/hd5PjEYEOuwAJ57L/CibdZfrqZ5XA5GrCk=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 h1:1EYB5IzjZawrrnELUi78f9fPu57HuXjmddZPjrls/28=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
-github.com/tamnd/llm v0.1.4 h1:UJXV597OQXes6cwo3iNbwEHdh1rLAzxhIxt+ycu/prg=
-github.com/tamnd/llm v0.1.4/go.mod h1:1PKUw3AqMTFJygbwpo/xAcRXJXctUKNRHw5Jnz+wnPQ=
+github.com/tamnd/llm v0.1.5 h1:eWZ6TQCjUnUkesMqHFKeLDFJ6UhnlNwlVzdGXa6/VSk=
+github.com/tamnd/llm v0.1.5/go.mod h1:1PKUw3AqMTFJygbwpo/xAcRXJXctUKNRHw5Jnz+wnPQ=
 golang.org/x/text v0.42.0 h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=
 golang.org/x/text v0.42.0/go.mod h1:ojzP1Z+2QtioaF8DTtO8K5q7JWVVYwZKenzujK0Zd0E=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405 h1:yhCVgyC4o1eVCa2tZl7eS0r+SDo693bJlVdllGtEeKM=

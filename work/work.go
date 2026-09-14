@@ -97,6 +97,29 @@ func Pool(registry route.Registry) *route.Pool { return wire(route.NewPool(regis
 // to send them, rather than an hour in.
 func Vision(registry route.Registry) *route.Pool { return wire(route.NewVisionPool(registry)) }
 
+// Able is the subset that will do the work of one stage, which is the routes
+// that name the stage in their jobs and the routes that name no jobs at all.
+//
+// A route's model can be very good at one stage and useless at another and
+// the routing table is the only place that can be known. The reader on the
+// machine with the graphics card is an OCR model at rank 5, so it won every
+// pick there was, and asked to translate a paragraph it answered in a mixture
+// of Vietnamese and Russian with the headings left in English. The answer
+// passed every check the translator makes, because those checks are about
+// whether the formulas and the citations survived and they all did.
+//
+// A registry rather than a pool, so that the caller can go on to ask for the
+// vision subset of it. See Fleet.
+func Able(registry route.Registry, stage queue.Stage) route.Registry {
+	var out route.Registry
+	for _, r := range registry.Routes {
+		if r.Does(string(stage)) {
+			out.Routes = append(out.Routes, r)
+		}
+	}
+	return out
+}
+
 // wire registers the transport for an exec route, which is the subscription
 // on this machine, reached by running its CLI rather than by calling an
 // endpoint. The route package cannot build one itself without importing

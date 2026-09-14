@@ -83,6 +83,12 @@ The last table in the report is the one to act on: it names what each unfinished
 An edge is a bibliography entry of one paper here that was resolved to another paper here, so almost every reference points somewhere else and the edge count is small next to the reference count.
 The last table is the reading list: the papers outside the corpus that two or more papers inside it cite, which is what decides what to add next.
 
+**A route says what it is good for, not just that it is up.**
+The routing table ranks the hosts the toolchain can ask, and rank decides who gets a question.
+That is the wrong answer when one of them runs a model that is excellent at one stage and useless at another: the OCR model on the machine with the graphics card sits at rank 5, so it won every pick there was, and asked to translate a paragraph it came back in a confident mix of Vietnamese and Russian with the headings left in English.
+Every check the translator makes is about whether the formulas and the citations survived, and they all had.
+A route may now name the stages it will serve, a route that names none serves all of them, and `papers routes show` prints the column and says so when a route names something that is not a stage, because a misspelled stage is a route that is quietly never chosen.
+
 **What it cost is written down.**
 Every ask put to a model is one line in a ledger, and `papers report usage` rolls that up into `reports/usage.md` by stage, by model and by paper.
 The ledger lives beside the routing table rather than in the corpus, because it names the hosts that were asked, and the report names none of them.

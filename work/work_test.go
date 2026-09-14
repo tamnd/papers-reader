@@ -3,10 +3,12 @@ package work
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tamnd/llm"
 	"github.com/tamnd/llm/queue"
+	"github.com/tamnd/llm/route"
 	"github.com/tamnd/papers-reader/corpus"
 )
 
@@ -103,6 +105,56 @@ func TestTheSameWorkTwiceIsOneJob(t *testing.T) {
 	}
 	if got := stats.Counts[queue.Pending]; got != 1 {
 		t.Errorf("%d jobs pending, want 1", got)
+	}
+}
+
+// The reader on the machine with the graphics card is an OCR model at rank
+// 5, so it wins every pick there is. Asked to translate, it answered in a
+// mixture of Vietnamese and Russian, and the translator's own checks passed
+// it because the formulas and the citations all survived.
+func TestAStageOnlyGetsTheRoutesThatWillServeIt(t *testing.T) {
+	reader := route.Route{
+		Name: "reader", Kind: route.KindDirect, BaseURL: "http://127.0.0.1:1/v1",
+		Model: "olmOCR", Rank: 5, Vision: true, Jobs: []string{"extract"},
+	}
+	general := route.Route{
+		Name: "pool", Kind: route.KindPool, BaseURL: "http://127.0.0.1:2/v1",
+		Model: "gpt-5", Rank: 10, Vision: true,
+	}
+	registry := route.Registry{Routes: []route.Route{reader, general}}
+	for _, c := range []struct {
+		stage queue.Stage
+		want  []string
+	}{
+		{"extract", []string{"reader", "pool"}},
+		{"translate", []string{"pool"}},
+	} {
+		var got []string
+		for _, r := range Able(registry, c.stage).Routes {
+			got = append(got, r.Name)
+		}
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s = %v, want %v", c.stage, got, c.want)
+		}
+	}
+}
+
+// A fleet with routes in it that all name other stages is a route file to
+// edit, and saying "no routes configured" over a table with two in it sends
+// somebody to look in the wrong place.
+func TestAFleetSaysWhichFilterEmptiedIt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "routes.json")
+	registry := route.Registry{Routes: []route.Route{{
+		Name: "reader", Kind: route.KindDirect, BaseURL: "http://127.0.0.1:1/v1",
+		Model: "olmOCR", Rank: 5, Vision: true, Jobs: []string{"extract"},
+	}}}
+	if err := registry.Write(path); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := Fleet("translate", path, false, nil)
+	if err == nil || !strings.Contains(err.Error(), "no route will do translate") {
+		t.Errorf("error = %v, want it to name the stage nothing will serve", err)
 	}
 }
 
