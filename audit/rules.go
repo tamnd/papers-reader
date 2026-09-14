@@ -354,6 +354,13 @@ func ruleS06(in *Input) ([]Finding, error) {
 // S02 says a restricted paper gets one file. This says how much may be in
 // it, and the two together are the whole of what the corpus claims about a
 // paper it may not redistribute.
+//
+// The limit travels with the language. A translation of the stub
+// republishes the same quotation and not a longer one, and corpus.Words
+// counts a Japanese sentence at more than twice what it counts the English
+// of it, so holding every language to the English number failed the corpus
+// for translating something it was allowed to publish. See corpus.Limit for
+// where the numbers come from.
 func ruleS07(in *Input) ([]Finding, error) {
 	restricted := 0
 	var out []Finding
@@ -362,10 +369,11 @@ func ruleS07(in *Input) ([]Finding, error) {
 			continue
 		}
 		restricted++
-		if n := corpus.Words(f.Body); n > split.AbstractWords {
+		limit := corpus.Limit(split.AbstractWords, f.Lang)
+		if n := corpus.Words(f.Body); n > limit {
 			out = append(out, Finding{
 				Rule: "S07", File: f.Path,
-				Message: fmt.Sprintf("%d words quoted from a restricted paper, and the limit is %d", n, split.AbstractWords),
+				Message: fmt.Sprintf("%d words quoted from a restricted paper, and the limit in %s is %d", n, f.Lang.Name(), limit),
 			})
 		}
 	}

@@ -125,7 +125,9 @@ It restamps the hash over the corrected body and writes edited: true in the
 front matter, which is what the splitter then protects the file by, and the
 rule goes green. It touches no file whose body still hashes to its own hash,
 because putting a fence round a file nobody has edited would stop the
-splitter keeping it up to date.
+splitter keeping it up to date. It covers the translations as well as the
+English, because a Japanese file gets corrected for the same reasons and
+papers translate reads the same flag.
 
 A file from an earlier split that this one did not produce is reported and
 not deleted, because the usual reason for one is that a section boundary
@@ -182,33 +184,47 @@ words. Nothing else about it may be published, so nothing else is written.
 	return nil
 }
 
-// acceptEdits takes the hand corrections in a paper's content directory as
+// acceptEdits takes the hand corrections in a paper's content directories as
 // the version of record. It writes nothing else: this is a separate pass from
 // the split and not a mode of it, because a run that both re-split a paper
 // and accepted the edits in it would be deciding which of the two won.
+//
+// Every language and not only the English. A translation gets corrected by
+// hand for the same reasons the English does, and it is protected by the
+// same hash and fails the same rule T03 until the correction is accepted,
+// so leaving the translations out meant a person who fixed a Japanese file
+// had no way to make the audit go green again. papers translate reads the
+// same edited flag and skips a file that carries it, which is what keeps the
+// correction from being asked for a second time and thrown away.
 func acceptEdits(c *corpus.Corpus, todo []corpus.Paper, dry bool) error {
 	var n int
 	for _, p := range todo {
-		dir := c.Content(corpus.EN, p.ID)
-		if dry {
-			// Nothing to do here but say so. Accept reads and writes in one
-			// pass and splitting it in two so that a dry run could report
-			// without writing would be two ways to decide the same thing.
-			fmt.Printf("  %-34s would accept the hand edits under %s\n", p.ID, dir)
-			continue
-		}
-		names, err := split.Accept(dir)
-		if err != nil {
-			fmt.Printf("  %-34s %v\n", p.ID, err)
-			continue
-		}
-		if len(names) == 0 {
-			continue
-		}
-		n += len(names)
-		fmt.Printf("  %-34s %d accepted\n", p.ID, len(names))
-		for _, name := range names {
-			fmt.Printf("    %s\n", name)
+		for _, l := range corpus.Langs {
+			dir := c.Content(l, p.ID)
+			if _, err := os.Stat(dir); err != nil {
+				continue
+			}
+			if dry {
+				// Nothing to do here but say so. Accept reads and writes in
+				// one pass and splitting it in two so that a dry run could
+				// report without writing would be two ways to decide the
+				// same thing.
+				fmt.Printf("  %-34s would accept the hand edits under %s\n", p.ID, dir)
+				continue
+			}
+			names, err := split.Accept(dir)
+			if err != nil {
+				fmt.Printf("  %-34s %v\n", p.ID, err)
+				continue
+			}
+			if len(names) == 0 {
+				continue
+			}
+			n += len(names)
+			fmt.Printf("  %-34s %s, %d accepted\n", p.ID, l, len(names))
+			for _, name := range names {
+				fmt.Printf("    %s\n", name)
+			}
 		}
 	}
 	if dry {

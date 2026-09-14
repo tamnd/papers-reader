@@ -162,7 +162,7 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 		}
 		out.Usage = add(out.Usage, reply.Usage)
 
-		answer := Clean(c.Text, reply.Text)
+		answer := Unlink(c.Text, Clean(c.Text, reply.Text))
 		bad := Verify(c.Text, answer)
 		if len(bad) == 0 {
 			out.Models = keep(out.Models, reply.Model)
@@ -191,8 +191,13 @@ func (t *Translator) logf(format string, args ...any) {
 
 // Verify says every way an answer is not the source in another language.
 //
-// Three checks, and each one is a thing that happened. The spans are the
-// spec's rule and the reason this package exists. The block count is the
+// Four checks, and each one is a thing that happened. The spans are the
+// spec's rule and the reason this package exists. The added link is the
+// model that reads a web address printed as prose and writes it back as
+// markup, which a span comparison passes because the address itself is
+// unchanged; the harmless form of it, the address linked to itself, has
+// already been undone by Unlink before this runs, so what is left to refuse
+// is a link that says something the page did not. The block count is the
 // preamble: a model that opens with "Here is the Vietnamese translation:"
 // adds no span and would otherwise be written into the corpus as the first
 // paragraph of the section. The echo is the model that returned the English
@@ -208,6 +213,10 @@ func Verify(source, answer string) []Difference {
 	}
 	if bad := Compare(source, answer); len(bad) > 0 {
 		return bad
+	}
+	if l := added(source, answer); l != "" {
+		return []Difference{{At: 1, Why: fmt.Sprintf(
+			"%s is a link the passage does not have, and the corpus has no links in it", short(l))}}
 	}
 	if want, got := len(blocks(source)), len(blocks(answer)); want != got {
 		return []Difference{{At: 1, Why: fmt.Sprintf(
