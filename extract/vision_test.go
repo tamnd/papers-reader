@@ -159,11 +159,50 @@ func TestAPageRefusedEverywhereComesBackWithItsFaults(t *testing.T) {
 	if got.OK() {
 		t.Fatal("an apology was accepted as a page")
 	}
-	if got.Attempts != len(render.Ladder) {
-		t.Errorf("it gave up after %d attempts", got.Attempts)
-	}
 	if got.Faults[0].Rule != A1 {
 		t.Errorf("it was refused for %s", got.Faults[0].Rule)
+	}
+}
+
+// A9 twice with the same words missing is a ladder that has stopped
+// helping. The reader saw the paragraph and decided the page was over, and
+// page 5 of the bitcoin paper spent two calls proving that at 400 and 600.
+func TestTheLadderStopsOnTheSameMissingWordsTwice(t *testing.T) {
+	first, _, ok := strings.Cut(layer, "\n\n")
+	if !ok {
+		t.Fatal("the fixture no longer has two paragraphs in it")
+	}
+	r := &reader{says: []string{first + "\n"}}
+	v := testVision(t, r)
+	checker := Checker{Layer: layerOf(1, layer)}
+	v.Check = checker.Check
+
+	got, err := v.Page(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OK() {
+		t.Fatal("a page with a paragraph missing was accepted")
+	}
+	if got.Attempts != 2 {
+		t.Errorf("it asked %d times for the same missing words, want 2", got.Attempts)
+	}
+}
+
+// Every other rule is about the answer alone, so two bad answers say nothing
+// about the third and the ladder is walked the whole way.
+func TestTheLadderStillClimbsForAnyOtherFault(t *testing.T) {
+	r := &reader{says: []string{"I'm sorry, I cannot read this image."}}
+	v := testVision(t, r)
+	var checker Checker
+	v.Check = checker.Check
+
+	got, err := v.Page(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Attempts != len(render.Ladder) {
+		t.Errorf("it gave up after %d attempts", got.Attempts)
 	}
 }
 

@@ -3,6 +3,7 @@ package extract
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/tamnd/llm"
@@ -137,12 +138,16 @@ func (r Scan) How() string {
 // trouble with, and the trouble may well have been the model rather than the
 // pixels; asking at 300 first costs one call and keeps the expensive rungs for
 // the pages that need them.
+//
+// The ladder stops early on one fault and one only, which is the same A9 as
+// the rung below it. See stuck.
 func (v *Vision) Page(ctx context.Context, page int) (Scan, error) {
 	out := Scan{Page: page}
 	if err := v.ready(page); err != nil {
 		return out, err
 	}
 	profile := render.Profile{DPI: render.Base, Gray: !v.Colour[page]}
+	var before []Fault
 	for {
 		out.Attempts++
 		out.Profile = profile
@@ -182,20 +187,52 @@ func (v *Vision) Page(ctx context.Context, page int) (Scan, error) {
 		out.Faults = faults
 
 		next, ok := profile.Next()
-		if !ok {
-			// Out of rungs. The one thing left worth trying costs nothing
-			// and asks nobody: a table the reader would not spell as a grid
-			// is written as the fence the prompt asked for. See Fence.
+		settled := stuck(before, faults)
+		before = faults
+		if !ok || settled {
+			// Out of rungs, or the rungs have stopped making a difference.
+			// The one thing left worth trying costs nothing and asks
+			// nobody: a table the reader would not spell as a grid is
+			// written as the fence the prompt asked for. See Fence.
 			if text := Fence(text); len(v.check(page, text)) == 0 {
 				out.Text = text
 				out.Faults = nil
 				v.logf("%s page %d was refused at %s (%s), and its tables are written as fences", v.Paper, page, profile, faults[0])
+			} else if settled {
+				v.logf("%s page %d was refused at %s (%s), the same words as at the rung below, so the rest of the ladder is skipped", v.Paper, page, profile, faults[0])
 			}
 			return out, nil
 		}
 		v.logf("%s page %d was refused at %s (%s), asking again at %s", v.Paper, page, profile, faults[0], next)
 		profile = next
 	}
+}
+
+// stuck says whether this rung came back with an A9 the rung below it had
+// too, word for word, which is the one refusal the rest of the ladder cannot
+// help with.
+//
+// A9 is the rule that holds the answer against the words pdftotext found in
+// the same page, so it is the only one of the ten with an outside reference.
+// The same words missing at two resolutions is not a reader that could not
+// see them. It is a reader that saw them and decided the page was over.
+//
+// Page 5 of the bitcoin paper is the case. It ends with the transaction
+// diagram and then one more paragraph under it, and the reader transcribed
+// the page down to the diagram and stopped. A9 named the same twenty words
+// at 300, at 400 and at 600, and two of those three calls bought nothing.
+//
+// Only A9. Every other rule is about the answer alone, and two bad answers
+// are two bad answers and say nothing about the third. The page above this
+// one is the proof: an unclosed dollar at 300 and an unclosed dollar at 400,
+// and at 600 the reader read the page.
+func stuck(before, now []Fault) bool {
+	for _, f := range now {
+		if f.Rule == A9 && slices.Contains(before, f) {
+			return true
+		}
+	}
+	return false
 }
 
 // ready says which required field is missing, by name, before anything is
