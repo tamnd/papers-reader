@@ -333,3 +333,68 @@ func TestAPaperWithNoContentInALanguageIsNotABook(t *testing.T) {
 		t.Errorf("Load said %v and there is no Japanese, which the caller reads as nothing to set", err)
 	}
 }
+
+// The MapReduce front page sets its byline as plain text rather than bold,
+// so the bold test did not catch it and the title page printed the authors
+// twice: once out of the front matter and once out of the masthead
+// underneath it.
+func TestAPlainBylineIsNotPartOfTheMasthead(t *testing.T) {
+	page := strings.Replace(front, "**Pierre de Fermat**", "Pierre de Fermat and Blaise Pascal", 1)
+	page = strings.Replace(page, "  - Pierre de Fermat\n", "  - Pierre de Fermat\n  - Blaise Pascal\n", 1)
+	b := frontBook(t, page)
+	for _, m := range b.Masthead {
+		if strings.Contains(m, "Fermat") {
+			t.Errorf("the byline is in the masthead: %v", b.Masthead)
+		}
+	}
+}
+
+// A paragraph that names the authors and then says something is a paragraph
+// that says something.
+func TestAParagraphThatMentionsTheAuthorsStays(t *testing.T) {
+	page := strings.Replace(front, "**Pierre de Fermat**",
+		"Pierre de Fermat is grateful to the reader for their patience", 1)
+	b := frontBook(t, page)
+	found := false
+	for _, m := range b.Masthead {
+		found = found || strings.Contains(m, "grateful")
+	}
+	if !found {
+		t.Errorf("a sentence of the page came off: %v", b.Masthead)
+	}
+}
+
+// An abstract of more than one paragraph, where the first is not the
+// longest. The longest paragraph rule set the first paragraph as part of the
+// masthead and the rest under the heading, which is how the MapReduce book
+// came out.
+func TestAnAbstractOfSeveralParagraphsStartsAtTheWord(t *testing.T) {
+	page := strings.Replace(front, "Faculty of Mathematics, Toulouse[^1]",
+		"Faculty of Mathematics, Toulouse[^1]\n\nAbstract\n\nThe margin is narrow.", 1)
+	b := frontBook(t, page)
+	if !strings.HasPrefix(b.Abstract, "The margin is narrow.") {
+		t.Errorf("the abstract starts at %q", b.Abstract)
+	}
+	if !strings.Contains(b.Abstract, "every exponent above two") {
+		t.Errorf("the rest of the abstract is not in it: %q", b.Abstract)
+	}
+	for _, m := range b.Masthead {
+		if strings.Contains(m, "margin is narrow") {
+			t.Errorf("a paragraph of the abstract is in the masthead: %v", b.Masthead)
+		}
+	}
+}
+
+// frontBook loads a book whose front matter file is the page given.
+func frontBook(t *testing.T, page string) *Book {
+	t.Helper()
+	c := testCorpus(t)
+	if err := os.WriteFile(filepath.Join(c.Root, "content", "en", paper, "00_front.md"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Load(c, paper, corpus.EN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}

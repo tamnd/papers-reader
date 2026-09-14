@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/figures"
@@ -145,7 +146,7 @@ func Load(c *corpus.Corpus, id string, l corpus.Lang) (*Book, error) {
 		case "front":
 			b.title(front)
 			var printed string
-			printed, b.Masthead, b.Abstract = masthead(text)
+			printed, b.Masthead, b.Abstract = masthead(text, front.Authors, l)
 			b.TitleAs = translated(printed, b.Title, l)
 		case "references":
 			b.Bibliography = entries(text)
@@ -270,12 +271,22 @@ func notes(body string, into map[string]string) string {
 // setting.
 // The first paragraph comes back on its own, because on a translated front
 // page it is the title as the translator wrote it and the title page wants it.
-func masthead(body string) (string, []string, string) {
+//
+// The word Abstract is looked for before the longest paragraph is, because
+// the longest paragraph is only the abstract when the abstract is one
+// paragraph. The MapReduce front page has three, and the first of them is
+// not the longest, so the longest paragraph rule set the first one as part
+// of the masthead and the other two under the heading. Where the page prints
+// the word, everything after it is the abstract and there is nothing to
+// guess.
+func masthead(body string, authors []string, l corpus.Lang) (string, []string, string) {
 	paras := split(body)
-	at := -1
-	for i, p := range paras {
-		if at < 0 || corpus.Words(p) > corpus.Words(paras[at]) {
-			at = i
+	at := abstractAt(paras, l)
+	if at < 0 {
+		for i, p := range paras {
+			if at < 0 || corpus.Words(p) > corpus.Words(paras[at]) {
+				at = i
+			}
 		}
 	}
 	if at < 0 {
@@ -293,6 +304,10 @@ func masthead(body string) (string, []string, string) {
 			// The author line, which the title page sets.
 			continue
 		}
+		if byline(p, authors) {
+			// The author line again, on a page that does not set it bold.
+			continue
+		}
 		if corpus.Words(p) < 3 {
 			// The word Abstract, in whichever language.
 			continue
@@ -300,6 +315,73 @@ func masthead(body string) (string, []string, string) {
 		keep = append(keep, p)
 	}
 	return title, keep, strings.Join(paras[at:], "\n\n")
+}
+
+// abstractAt is the paragraph the abstract starts at, found by the page
+// printing the word Abstract on a line of its own, and -1 where it does not.
+// Either the language's own word or the English one, because a front page
+// read in English and translated afterwards can carry either.
+func abstractAt(paras []string, l corpus.Lang) int {
+	want := map[string]bool{strings.ToLower(Words(l).Abstract): true, "abstract": true}
+	for i, p := range paras {
+		if h := heading(p); h != "" && want[h] && i+1 < len(paras) {
+			return i + 1
+		}
+	}
+	return -1
+}
+
+// heading is a paragraph reduced to the bare word it might be: the emphasis
+// off, the attribute block off, the trailing punctuation off, folded down.
+func heading(p string) string {
+	s := strings.TrimSpace(p)
+	if i := strings.Index(s, "{#"); i >= 0 {
+		s = s[:i]
+	}
+	s = strings.Trim(s, "*#_ \t")
+	s = strings.TrimRight(s, ".:\u00b7- \t")
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// byline says whether a paragraph is the author line, by being the authors
+// and nothing else.
+//
+// The bold test above catches a front page that sets the byline bold, which
+// is what the first papers to be set as books happened to do. The MapReduce
+// front page sets it as plain text, so the byline was kept and the title
+// page printed the authors twice, once from the front matter and once out of
+// the masthead underneath it.
+//
+// Every author has to be in it, and what is left over has to be nothing: a
+// joining word, an affiliation marker, punctuation. A paragraph that names
+// the authors and then says something is a paragraph that says something.
+func byline(p string, authors []string) bool {
+	if len(authors) == 0 {
+		return false
+	}
+	s := strings.ToLower(p)
+	for _, a := range authors {
+		a = strings.ToLower(strings.TrimSpace(a))
+		if a == "" || !strings.Contains(s, a) {
+			return false
+		}
+		s = strings.Replace(s, a, " ", 1)
+	}
+	for _, w := range strings.Fields(s) {
+		w = strings.TrimFunc(w, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+		if w != "" && !joiner[w] {
+			return false
+		}
+	}
+	return true
+}
+
+// joiner is what stands between two names on a byline and is not a name.
+// The comma and the ampersand are punctuation and are trimmed before this is
+// asked, so what is here is the words.
+var joiner = map[string]bool{
+	"and": true, "with": true, "et": true, "al": true,
+	"và": true, "和": true, "と": true,
 }
 
 // translated is the paper's title in the language of the book, and empty
