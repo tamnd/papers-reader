@@ -14,6 +14,11 @@ const site = index();
 const fields = new Map(site.fields.map((f) => [f.id, f.title]));
 
 const byId = new Map(g.nodes.map((n) => [n.id, n]));
+// How many references each paper has in total. An edge in the graph is a
+// reference that resolved to another paper here, and there are a hundred
+// papers and thousands of references, so the two numbers side by side are
+// the honest version of both.
+const refs = new Map(site.papers.map((p) => [p.id, p.refs]));
 const cited = new Map<string, string[]>();
 for (const e of g.edges) {
   cited.set(e.to, [...(cited.get(e.to) ?? []), e.from]);
@@ -43,6 +48,7 @@ const unread = g.nodes.filter((n) => !n.parsed).length;
     nodes={g.nodes}
     edges={g.edges}
     fields={site.fields.map((f) => ({ id: f.id, title: f.title }))}
+    refs={Object.fromEntries(site.papers.map((p) => [p.id, p.refs]))}
   />
   <p class="byline">
     Across is the year, down is the field, and the size of a dot is how often
@@ -61,7 +67,10 @@ const unread = g.nodes.filter((n) => !n.parsed).length;
           <div>
             <a href={href("p", n.id)}>{n.title}</a>
             <p class="byline">
-              {n.year}, {fields.get(n.field) ?? n.field}
+              {`${n.year}, ${fields.get(n.field) ?? n.field}. `}
+              {n.parsed
+                ? `Of its ${refs.get(n.id) ?? 0} references, ${n.out} ${n.out === 1 ? "is a paper" : "are papers"} here.`
+                : "Its bibliography has not been read yet."}
             </p>
             <p class="byline">
               Cited here by{" "}

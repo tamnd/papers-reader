@@ -22,6 +22,12 @@ interface Props {
   /** Field to its title, in the order the catalogue lists them, so the
    * bands are in the same order as the front page. */
   fields: { id: string; title: string }[];
+  /** Paper to how many references its bibliography has, which is the
+   * denominator the chart is a numerator of: the edges here are the few
+   * references that resolved to another paper in this corpus, and without
+   * the total beside them a paper that cites three looks like a paper that
+   * cites three. */
+  refs: Record<string, number>;
 }
 
 interface Placed extends GraphNode {
@@ -138,7 +144,13 @@ function reach(from: string, next: Map<string, string[]>): Set<string> {
   return seen;
 }
 
-export default function GraphChart({ base, nodes, edges, fields }: Props) {
+export default function GraphChart({
+  base,
+  nodes,
+  edges,
+  fields,
+  refs,
+}: Props) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(assumed);
   const [hot, setHot] = useState<string | undefined>(undefined);
@@ -158,10 +170,7 @@ export default function GraphChart({ base, nodes, edges, fields }: Props) {
     () => layout(nodes, fields, width),
     [nodes, fields, width],
   );
-  const where = useMemo(
-    () => new Map(placed.map((p) => [p.id, p])),
-    [placed],
-  );
+  const where = useMemo(() => new Map(placed.map((p) => [p.id, p])), [placed]);
 
   const [cites, citedBy] = useMemo(() => {
     const a = new Map<string, string[]>();
@@ -303,8 +312,10 @@ export default function GraphChart({ base, nodes, edges, fields }: Props) {
         >
           <strong>{shown.title}</strong>
           <span>
-            {`${shown.year}. Cited by ${shown.in} here, cites ${shown.out} here.`}
-            {shown.parsed ? "" : " Its bibliography has not been read yet."}
+            {`${shown.year}. Cited by ${shown.in} ${shown.in === 1 ? "paper" : "papers"} here.`}
+            {shown.parsed
+              ? ` Of its ${refs[shown.id] ?? 0} references, ${shown.out} ${shown.out === 1 ? "is a paper" : "are papers"} here.`
+              : " Its bibliography has not been read yet, so it cites nothing here for want of looking."}
           </span>
         </div>
       )}
