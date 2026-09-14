@@ -37,7 +37,7 @@ func Rules() []Rule {
 		},
 		{
 			ID: "S03", Hard: true,
-			What:  "no PDF is tracked by git, whatever the licence says.",
+			What:  "no PDF and no EPUB is tracked by git, whatever the licence says.",
 			Check: ruleS03,
 		},
 		{
@@ -232,18 +232,30 @@ func ruleS02(in *Input) ([]Finding, error) {
 // because the difference between a corpus and a mirror is one `git add -f`
 // and the rule has to catch the thing that happened rather than the
 // configuration that should have prevented it.
+//
+// An EPUB is here beside the PDF because papers book writes one and it is
+// the same object under another extension: the whole text of the paper and
+// every figure, in one file, ready to read. The rule is about what leaves
+// the repository and not about which format it left in.
 func ruleS03(in *Input) ([]Finding, error) {
 	if in.Tracked == nil {
 		return nil, ErrNotRun
 	}
 	var out []Finding
 	for _, path := range in.Tracked {
-		if strings.HasPrefix(path, "pdf/") || strings.HasSuffix(strings.ToLower(path), ".pdf") {
-			out = append(out, Finding{
-				Rule: "S03", File: path,
-				Message: "a PDF is tracked in a repository that commits no PDFs",
-			})
+		what := ""
+		switch {
+		case strings.HasPrefix(path, "pdf/"), strings.HasSuffix(strings.ToLower(path), ".pdf"):
+			what = "PDF"
+		case strings.HasSuffix(strings.ToLower(path), ".epub"):
+			what = "EPUB"
+		default:
+			continue
 		}
+		out = append(out, Finding{
+			Rule: "S03", File: path,
+			Message: fmt.Sprintf("a %s is tracked in a repository that commits no %ss", what, what),
+		})
 	}
 	return out, nil
 }

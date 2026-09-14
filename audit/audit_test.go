@@ -198,6 +198,14 @@ func TestS03(t *testing.T) {
 	if len(res.Findings) != 2 {
 		t.Errorf("S03 found %d PDFs, want 2: %v", len(res.Findings), res.Findings)
 	}
+
+	// An EPUB is the same object under another extension: the whole paper
+	// and every figure, in one file, ready to read.
+	in.Tracked = []string{"books/a-1970-paper.vi.epub", "books/a-1970-paper.vi.tex"}
+	res = result(t, Run(in, true), "S03")
+	if len(res.Findings) != 1 {
+		t.Errorf("S03 found %d, want the EPUB and not the LaTeX: %v", len(res.Findings), res.Findings)
+	}
 }
 
 func TestS04(t *testing.T) {
