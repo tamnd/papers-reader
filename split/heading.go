@@ -608,18 +608,50 @@ const (
 // appendix B after it and neither is a section of the argument. References
 // are the exception: a bibliography printed after the appendices is still the
 // bibliography.
+//
+// A heading after the references is an appendix too, whatever it calls
+// itself. Half the papers in the corpus that have one do not print the word:
+// the MapReduce paper heads its last page "A Word Frequency", where the A is
+// the appendix letter and not the article, and the page before it is the
+// bibliography. Nothing else is printed after a bibliography. The letter
+// becomes the heading's number, which is what the paper refers to it by, and
+// it is only taken off a heading in this position: before the references
+// "A Note on Two Problems" is a title that starts with an article, and after
+// them it is not a title anybody prints.
 func assignKinds(hs []Heading) {
-	appendices := false
+	appendices, cited := false, false
 	for i := range hs {
 		title := strings.ToLower(hs[i].Title)
 		switch {
 		case sectionNames[title] == "References":
 			hs[i].Kind = KindReferences
-		case strings.HasPrefix(title, "appendix") || appendices:
+			cited = true
+		case strings.HasPrefix(title, "appendix") || appendices || cited:
 			hs[i].Kind = KindAppendix
 			appendices = true
+			if cited {
+				lettered(&hs[i])
+			}
 		default:
 			hs[i].Kind = KindSection
 		}
 	}
+}
+
+// lettered pulls the appendix letter off the front of a heading that has one
+// and has no number of its own. "A Word Frequency" is appendix A, named Word
+// Frequency.
+func lettered(h *Heading) {
+	if h.Number != "" {
+		return
+	}
+	fields := strings.SplitN(strings.TrimSpace(h.Title), " ", 2)
+	if len(fields) != 2 || len([]rune(fields[0])) != 1 {
+		return
+	}
+	r := []rune(fields[0])[0]
+	if r < 'A' || r > 'Z' {
+		return
+	}
+	h.Number, h.Title = fields[0], strings.TrimSpace(fields[1])
 }

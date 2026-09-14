@@ -207,6 +207,10 @@ terms:
     vi: chú ý
   - en: encoder
     vi: bộ mã hóa
+  - en: chain
+    vi: chuỗi
+  - en: Markov chain
+    vi: xích Markov
 `
 
 // glossaryPair is pairOf with a glossary on disk, for L06 and L10.
@@ -235,6 +239,29 @@ func TestL06IsQuietWhenTheRenderingIsThere(t *testing.T) {
 	tr := "Cơ chế chú ý là nội dung của mục này và nó được mô tả chi tiết ở bên dưới đây.\n"
 	if res := result(t, glossaryPair(t, en, tr), "L06"); res.Failed() {
 		t.Errorf("L06 reported a page that used the glossary: %v", res.Findings)
+	}
+}
+
+// A one word term inside a longer glossary term the translation did render
+// is not a missed rendering. Japanese writes "Markov chain" as マルコフ連鎖,
+// which has no チェーン in it, so every page that mentioned one was reported
+// for a word it had translated correctly.
+func TestL06AcceptsATermInsideALongerTermTheTranslationRendered(t *testing.T) {
+	en := "A Markov chain is what this section is about and it is described at length below the figure.\n"
+	tr := "Xích Markov là nội dung của mục này và nó được mô tả chi tiết ở bên dưới hình vẽ này.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L06"); res.Failed() {
+		t.Errorf("L06 reported a word inside a phrase the translation handled whole: %v", res.Findings)
+	}
+}
+
+// The way out is only for the occurrence inside the phrase. A page that
+// wrote the phrase and then used the word on its own still has to render it.
+func TestL06StillAsksForTheTermWhereItStandsAlone(t *testing.T) {
+	en := "A Markov chain is what this section is about, and the chain is described at length below.\n"
+	tr := "Xích Markov là nội dung của mục này, và cái đó được mô tả chi tiết ở bên dưới đây.\n"
+	res := result(t, glossaryPair(t, en, tr), "L06")
+	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "chain") {
+		t.Fatalf("L06 said %v about a page that left a standalone term unrendered", res.Findings)
 	}
 }
 

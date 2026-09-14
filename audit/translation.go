@@ -389,12 +389,15 @@ func ruleL06(in *Input) ([]Finding, error) {
 		}
 		en := strings.ToLower(translate.Prose(p.en.Body))
 		tr := strings.ToLower(translate.Prose(p.tr.Body))
+		rs := []rune(en)
+		terms := renderings(in.Glossary, p.en.Front.Field, p.tr.Lang)
+		whole := handled(terms, rs, tr)
 		var missed []string
-		for _, t := range renderings(in.Glossary, p.en.Front.Field, p.tr.Lang) {
-			if t.as == t.en {
+		for _, t := range terms {
+			if t.as == t.en || t.rendered(tr) {
 				continue
 			}
-			if !alone(en, tr, t.en) || t.rendered(tr) {
+			if !missing(rs, tr, t.en, whole) {
 				continue
 			}
 			missed = append(missed, fmt.Sprintf("%q as %q", t.en, t.as))
@@ -499,7 +502,22 @@ func cap5(list []string) []string {
 // standing is not this rule's business: L11 has it, and L07 has a whole
 // English paragraph.
 func alone(text, other, term string) bool {
-	rs, ts := []rune(text), []rune(term)
+	rs := []rune(text)
+	for _, s := range spans(rs, term) {
+		if copied(rs, other, s[0], s[1]) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// spans is every place term stands as a word of rs, as half open rune
+// indexes. A hyphen counts as a letter, so "log-likelihood" holds no span
+// of "log".
+func spans(rs []rune, term string) [][2]int {
+	ts := []rune(term)
+	var out [][2]int
 	for at := 0; at+len(ts) <= len(rs); at++ {
 		if string(rs[at:at+len(ts)]) != term {
 			continue
@@ -511,10 +529,61 @@ func alone(text, other, term string) bool {
 		if end < len(rs) && wordRune(rs[end]) {
 			continue
 		}
-		if copied(rs, other, at, end) {
+		out = append(out, [2]int{at, end})
+	}
+	return out
+}
+
+// missing says whether the English uses this term somewhere the translation
+// had to render it on its own and did not.
+//
+// This is alone with one more way out. An occurrence inside a longer
+// glossary term that the translation did render is not a missed rendering:
+// the translation handled the whole phrase, and the phrase is what the
+// reader sees. Japanese writes "Markov chain" as マルコフ連鎖, which has no
+// チェーン in it, and the glossary's "chain" is rendered チェーン, so every
+// Japanese page that mentions a Markov chain was reported for a word it
+// translated correctly. Three of the seven L06 findings on the first paper
+// translated were that, in three different shapes: "chain" inside "Markov
+// chain", and "objective" inside "training objective" in both Vietnamese
+// and Chinese.
+//
+// It only works for a phrase the glossary knows, which is why the multiword
+// entries were added at the same time. A rule that guessed at phrases would
+// be guessing about the one thing the glossary exists to settle.
+func missing(rs []rune, tr, term string, whole [][2]int) bool {
+	for _, s := range spans(rs, term) {
+		if copied(rs, tr, s[0], s[1]) {
+			continue
+		}
+		if within(whole, s) {
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+// handled is where the English wrote a multiword glossary term that the
+// translation rendered, which is the text a one word term inside it does
+// not have to be rendered separately in.
+func handled(terms []rendering, rs []rune, tr string) [][2]int {
+	var out [][2]int
+	for _, t := range terms {
+		if !strings.Contains(t.en, " ") || !t.rendered(tr) {
+			continue
+		}
+		out = append(out, spans(rs, t.en)...)
+	}
+	return out
+}
+
+// within says whether s sits inside one of the ranges.
+func within(ranges [][2]int, s [2]int) bool {
+	for _, r := range ranges {
+		if r[0] <= s[0] && s[1] <= r[1] {
+			return true
+		}
 	}
 	return false
 }

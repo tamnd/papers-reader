@@ -122,3 +122,45 @@ func TestTidyKeepsARefusalWhereTheRulesCanSeeIt(t *testing.T) {
 		t.Errorf("an apology came through as %q with faults %v", text, faults)
 	}
 }
+
+// The offer at the foot of a page, which the last two pages of the MapReduce
+// paper came back with and which took the printed page number into the
+// corpus with it: the folio was the line above the offer, so it was no longer
+// the last line of the page and the furniture pass left it alone.
+func TestTidyTakesOffAnOfferThatIsNotAddressedToAnybody(t *testing.T) {
+	for _, c := range []struct {
+		what string
+		in   string
+		want string
+	}{
+		{
+			"an offer with no me in it",
+			"## A Word Frequency\n\n149\n\nWould you like a concise explanation of how this example works?",
+			"## A Word Frequency\n\n149",
+		},
+		{
+			"two courtesies, one under the other",
+			"308\n\nWould you like the next page?\nI hope this helps.",
+			"308",
+		},
+		{
+			"an offer to do more work",
+			"## 1. Introduction\n\nDo you want me to transcribe page 2 as well?",
+			"## 1. Introduction",
+		},
+	} {
+		if got := Tidy(c.in); got != c.want {
+			t.Errorf("%s: Tidy gave %q, want %q", c.what, got, c.want)
+		}
+	}
+}
+
+// A page of a paper that ends on one of these sentences keeps it. The test
+// above works because the sentence is the whole of the last line, and a
+// paper writes it in the middle of a paragraph.
+func TestTidyKeepsAnOfferAPaperPrinted(t *testing.T) {
+	const page = "The system then asks the user: would you like to see the next ten results, or refine the query?"
+	if got := Tidy(page); got != page {
+		t.Errorf("a sentence of the paper was trimmed to %q", got)
+	}
+}

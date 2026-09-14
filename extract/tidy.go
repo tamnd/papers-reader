@@ -82,27 +82,50 @@ func dropPreamble(s string) string {
 // trailers are the closing courtesies. They are matched on the whole of the
 // last line rather than as a prefix, because a page of a paper about dialogue
 // systems will one day contain one of these sentences inside a paragraph.
+//
+// "would you like" and not "would you like me to", which is what this said
+// until the last two pages of the MapReduce paper came back ending "Would
+// you like a concise summary of the paper's main contributions?" and "Would
+// you like a concise explanation of how this MapReduce word-count example
+// works?". Neither has a "me to" in it and both went into the corpus, and
+// they took the printed page number with them: the folio was the line above
+// the offer, so it was no longer the last line of the page and the furniture
+// pass left it alone. One courtesy sentence cost two pages their page
+// numbers as well as their last paragraph.
 var trailers = []string{
 	"let me know",
 	"i hope this helps",
 	"hope this helps",
 	"if you need anything",
 	"feel free to ask",
-	"would you like me to",
+	"would you like",
+	"do you want me to",
+	"shall i",
 }
 
+// dropTrailer takes the courtesies off the foot of the page, and keeps going
+// until the last line is not one. A reader that signs off twice, with "I hope
+// this helps." under "Would you like a summary?", is a reader whose page ends
+// two lines above where it looks like it ends.
 func dropTrailer(s string) string {
-	i := strings.LastIndex(s, "\n")
-	if i < 0 {
-		return s
-	}
-	last := strings.ToLower(strings.TrimSpace(s[i+1:]))
-	for _, t := range trailers {
-		if strings.HasPrefix(last, t) {
-			return strings.TrimRight(s[:i], "\n")
+	for {
+		i := strings.LastIndex(s, "\n")
+		if i < 0 {
+			return s
 		}
+		last := strings.ToLower(strings.TrimSpace(s[i+1:]))
+		found := false
+		for _, t := range trailers {
+			if strings.HasPrefix(last, t) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return s
+		}
+		s = strings.TrimRight(s[:i], "\n")
 	}
-	return s
 }
 
 // wrapper is an opening fence with nothing on it, or with the word markdown on

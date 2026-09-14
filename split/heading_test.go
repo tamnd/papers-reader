@@ -207,6 +207,52 @@ func TestEverythingAfterTheFirstAppendixIsAnAppendix(t *testing.T) {
 	}
 }
 
+// A lettered appendix after the references, which is how the MapReduce
+// paper prints its word count listing: the heading is "A Word Frequency",
+// the A is the appendix letter and not the article, and the page before it
+// is the bibliography. Nothing else is printed after a bibliography.
+func TestAHeadingAfterTheReferencesIsALetteredAppendix(t *testing.T) {
+	_, hs := Headings([]string{
+		"1 Introduction", prose,
+		"2 Method", prose,
+		"3 Results", prose,
+		"References", prose,
+		"## A Word Frequency", prose,
+		"## B Distributed Sort", prose,
+	})
+	if len(hs) != 6 {
+		t.Fatalf("found %d headings, want 6: %v", len(hs), titles(hs))
+	}
+	for i, want := range []struct{ number, title string }{
+		{"A", "Word Frequency"},
+		{"B", "Distributed Sort"},
+	} {
+		h := hs[4+i]
+		if h.Kind != KindAppendix {
+			t.Errorf("%q came back as %q, want %q", h.Title, h.Kind, KindAppendix)
+		}
+		if h.Number != want.number || h.Title != want.title {
+			t.Errorf("appendix %d came back as %q %q, want %q %q", i, h.Number, h.Title, want.number, want.title)
+		}
+	}
+}
+
+// Before the references the same shape is a title that starts with an
+// article, and the letter must stay where the paper put it.
+func TestATitleThatStartsWithAnArticleKeepsIt(t *testing.T) {
+	_, hs := Headings([]string{
+		"1 Introduction", prose,
+		"2 Method", prose,
+		"A Note on Two Problems", prose,
+		"3 Results", prose,
+	})
+	for _, h := range hs {
+		if h.Title == "Note on Two Problems" {
+			t.Error("the article was read as an appendix letter before the references")
+		}
+	}
+}
+
 func TestARomanNumeralThatIsNotOneIsNotASection(t *testing.T) {
 	for _, s := range []string{"", "MCM", "Hello", "C", "LXXX"} {
 		if n := romanValue(s); n != 0 {
