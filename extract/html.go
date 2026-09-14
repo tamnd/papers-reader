@@ -264,6 +264,18 @@ func fenceTable(html string) ([]string, bool) {
 	return append(out, "```"), true
 }
 
+// tidyScript is a subscript or a superscript as Unscript has already written
+// it, which is how most of them arrive here: Unscript runs in Tidy and Fence
+// runs at the top of the ladder, so by the time a cell is read the `<sub>`
+// the reader wrote has been mathematics for some time.
+//
+// Only this exact shape, a token and a mark and one group of braces with no
+// mathematics inside it. A cell holding a real formula is left with its
+// dollars on, because `1.0 \cdot 10^{20}` with the dollars taken off is TeX
+// source pretending to be text, and inside a fence nobody is going to render
+// it either way.
+var tidyScript = regexp.MustCompile(`\$([\p{L}\p{N}.)\]]+)([_^])\{([^{}$\\]*)\}\$`)
+
 // plain is one cell as the words in it and nothing else.
 //
 // A subscript comes out the way a person types one at a terminal rather than
@@ -274,6 +286,7 @@ func fenceTable(html string) ([]string, bool) {
 // presentation to begin with.
 func plain(s string) string {
 	s = linebreak.ReplaceAllString(s, " ")
+	s = tidyScript.ReplaceAllString(s, "$1$2$3")
 	s = script.ReplaceAllStringFunc(s, func(m string) string {
 		p := script.FindStringSubmatch(m)
 		mark := "_"

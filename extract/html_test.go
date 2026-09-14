@@ -422,3 +422,20 @@ func TestATableWithNoRowsIsNotFenced(t *testing.T) {
 		t.Errorf("Fence wrote an empty fence: %q", got)
 	}
 }
+
+// The realistic input. Unscript runs in Tidy and Fence runs at the top of the
+// ladder, so the scripts in a cell are mathematics long before the fence is
+// written, and a fence with dollars in it prints the dollars.
+func TestAFenceUndoesTheMathematicsUnscriptWrote(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>$d_{model}$</th><th>params ×$10^{6}$</th><th>$1.0 \\cdot 10^{20}$</th></tr>\n" +
+		"<tr><td rowspan=\"3\">512</td><td colspan=\"8\">65</td></tr>\n" +
+		"</table>"
+	want := "```text\n" +
+		"d_model  params ×10^6  $1.0 \\cdot 10^{20}$\n" +
+		"512  65\n" +
+		"```"
+	if got := Fence(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
