@@ -14,6 +14,7 @@ import (
 	"github.com/tamnd/llm"
 	"github.com/tamnd/llm/route"
 
+	"github.com/tamnd/papers-reader/audit"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/glossary"
 	"github.com/tamnd/papers-reader/prompt"
@@ -36,6 +37,7 @@ func runTranslate(args []string) error {
 	tries := fs.Int("tries", translate.Tries, "how many times one chunk is asked before the file is given up on")
 	floor := fs.Int("floor", glossary.Floor, "the glossary coverage a language needs, as a percentage")
 	force := fs.Bool("force", false, "translate again even where the English has not changed")
+	redo := fs.Bool("redo", false, "translate again the files a hard audit rule refuses, and nothing else")
 	atOnce := fs.Int("jobs", 0, "how many files to translate at once, or 0 for one per lane in the fleet")
 	every := fs.Int("publish", 0, "push the papers the run has finished to the corpus and merge them, once so many files are ready")
 	dry := fs.Bool("dry-run", false, "say what would be asked and ask nothing")
@@ -82,6 +84,14 @@ working tree until it is finished. A paper with a section that could not be
 written is held back entire and reported at the end, and the next run is
 owed the one section it is missing.
 
+A batch also carries nothing a hard audit rule refuses, and a paper one of
+them names stays in the working tree. Use -redo to ask again for exactly
+those files: the run audits the corpus, keeps the files the hard rules are
+unhappy with and translates those and nothing else. Editing one by hand is
+not the repair. The front matter carries the hash of the English the
+translation answers, so an edit either breaks that hash or lies about what
+produced the text.
+
 `)
 		fs.PrintDefaults()
 	}
@@ -114,9 +124,19 @@ owed the one section it is missing.
 		}
 	}
 
-	jobs, err := plan(c, g, todo, want, *force)
+	jobs, err := plan(c, g, todo, want, *force || *redo)
 	if err != nil {
 		return err
+	}
+	if *redo {
+		found, err := hardFindings(c)()
+		if err != nil {
+			return err
+		}
+		if jobs = refusedOnly(found, jobs); len(jobs) == 0 {
+			fmt.Println("no hard audit rule refuses a translation of these papers")
+			return nil
+		}
 	}
 	if len(jobs) == 0 {
 		fmt.Println("every translation is up to date with its English")
@@ -410,6 +430,52 @@ func plan(c *corpus.Corpus, g *glossary.Glossary, papers []corpus.Paper, langs [
 		}
 	}
 	return out, nil
+}
+
+// refusedOnly keeps the jobs whose file a hard audit rule refuses.
+//
+// The run holds back a paper an audit rule names rather than publishing it,
+// which is the right answer and leaves the paper sitting in the working tree
+// with nobody to fix it. Fixing one by hand is not on: the front matter
+// carries the hash of the English the translation answers, so an edit either
+// breaks the hash or is a lie about what produced the text. The honest repair
+// is to ask again, and until now asking again meant deleting the file by hand
+// and remembering which ones they were.
+//
+// So the audit says which. It knows already, it is the thing that refused
+// them, and a rule that can name a file can name a job. A run with -redo
+// plans every file of the papers it was given and then keeps the handful the
+// rules are unhappy with, which over the three papers that were red on
+// tamnd/papers main was five files out of twenty five.
+//
+// Hard rules only, because a soft rule is a report worth reading and not a
+// reason to spend four more questions on a page. A finding that names no
+// file, or names an English file, or names something that is not a section
+// of a paper, keeps nothing: there is no translation in it to ask for again.
+func refusedOnly(found []audit.Finding, jobs []job) []job {
+	bad := map[string]bool{}
+	for _, f := range found {
+		if l, id, name, ok := contentPath(f.File); ok && l != corpus.EN {
+			bad[string(l)+"/"+id+"/"+name] = true
+		}
+	}
+	var out []job
+	for _, j := range jobs {
+		if bad[string(j.lang)+"/"+j.front.Paper+"/"+j.name] {
+			out = append(out, j)
+		}
+	}
+	return out
+}
+
+// contentPath pulls the language, the paper and the file name out of a path
+// under content, and says whether the path was one.
+func contentPath(path string) (corpus.Lang, string, string, bool) {
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	if len(parts) != 4 || parts[0] != "content" {
+		return "", "", "", false
+	}
+	return corpus.Lang(parts[1]), parts[2], parts[3], true
 }
 
 // abstractWords is how much of the abstract goes in the prompt.

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/tamnd/papers-reader/audit"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/glossary"
 	"github.com/tamnd/papers-reader/prompt"
@@ -524,5 +525,88 @@ func TestSpreadAlwaysHasALane(t *testing.T) {
 	}
 	if done != 1 {
 		t.Errorf("%d files came back, want 1", done)
+	}
+}
+
+// planned is the jobs of a corpus in every language, which is what -redo
+// narrows down.
+func planned(t *testing.T, c *corpus.Corpus, langs ...corpus.Lang) []job {
+	t.Helper()
+	papers, err := c.LoadPapers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := plan(c, nil, papers.Papers, langs, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return jobs
+}
+
+func TestRedoKeepsOnlyTheFilesTheAuditRefuses(t *testing.T) {
+	c := translateCorpus(t)
+	jobs := planned(t, c, corpus.VI, corpus.ZH)
+	got := refusedOnly([]audit.Finding{{
+		Rule:    "L07",
+		File:    "content/vi/a-1970-paper/01_first.md",
+		Message: "paragraph 3 is the English paragraph, word for word",
+	}}, jobs)
+	if len(got) != 1 {
+		t.Fatalf("%d of %d jobs kept for one finding, want 1", len(got), len(jobs))
+	}
+	if got[0].lang != corpus.VI || got[0].name != "01_first.md" {
+		t.Errorf("the job kept is %s %s, want vi 01_first.md", got[0].lang, got[0].name)
+	}
+}
+
+// Two rules on one file is one job. A file asked for twice is a file
+// translated twice and the second answer overwrites the first.
+func TestTwoFindingsOnOneFileAreOneJob(t *testing.T) {
+	c := translateCorpus(t)
+	got := refusedOnly([]audit.Finding{
+		{Rule: "L07", File: "content/vi/a-1970-paper/01_first.md"},
+		{Rule: "L10", File: "content/vi/a-1970-paper/01_first.md"},
+	}, planned(t, c, corpus.VI))
+	if len(got) != 1 {
+		t.Errorf("%d jobs for two findings on one file, want 1", len(got))
+	}
+}
+
+// A finding that names no translation keeps nothing. There is no file to
+// ask for again in any of these.
+func TestRedoIgnoresAFindingThatIsNotATranslation(t *testing.T) {
+	c := translateCorpus(t)
+	jobs := planned(t, c, corpus.VI)
+	for _, f := range []audit.Finding{
+		{Rule: "S03", Message: "a pdf is in the index"},
+		{Rule: "M02", File: "manifests/papers.yaml"},
+		{Rule: "T01", File: "content/en/a-1970-paper/01_first.md"},
+		{Rule: "F06", File: "figures/a-1970-paper/fig-1.png"},
+		{Rule: "L07", File: "content/vi/b-1980-paper/01_first.md"},
+	} {
+		if got := refusedOnly([]audit.Finding{f}, jobs); len(got) != 0 {
+			t.Errorf("%s on %q kept %d jobs, want 0", f.Rule, f.File, len(got))
+		}
+	}
+}
+
+func TestContentPathReadsAPathUnderContent(t *testing.T) {
+	for _, c := range []struct {
+		path     string
+		lang     corpus.Lang
+		id, name string
+		ok       bool
+	}{
+		{"content/vi/a-1970-paper/01_first.md", corpus.VI, "a-1970-paper", "01_first.md", true},
+		{"content/en/a-1970-paper/01_first.md", corpus.EN, "a-1970-paper", "01_first.md", true},
+		{"content/vi/a-1970-paper", "", "", "", false},
+		{"manifests/papers.yaml", "", "", "", false},
+		{"", "", "", "", false},
+	} {
+		l, id, name, ok := contentPath(c.path)
+		if ok != c.ok || l != c.lang || id != c.id || name != c.name {
+			t.Errorf("contentPath(%q) is %q %q %q %v, want %q %q %q %v",
+				c.path, l, id, name, ok, c.lang, c.id, c.name, c.ok)
+		}
 	}
 }
