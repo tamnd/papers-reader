@@ -243,3 +243,23 @@ func TestASentenceThatStartsLikeTheProgressLineStays(t *testing.T) {
 		t.Errorf("a sentence of the paper came off:\n%s", got)
 	}
 }
+
+// The relay draws its buttons side by side and the tool picks them up with
+// nothing between them. The re-read of page 13 of the MapReduce paper came
+// back ending "Give feedbackDo you like this personality?".
+func TestTwoButtonsRunTogetherAreStillButtons(t *testing.T) {
+	const page = "[18] Jim Wyllie. Spsort: How to sort a terabyte quickly.\n\n Give feedbackDo you like this personality?\n"
+	got := strings.TrimSpace(Tidy(page))
+	if !strings.HasSuffix(got, "terabyte quickly.") {
+		t.Errorf("the buttons are still on the page:\n%s", got)
+	}
+}
+
+// The whole of the line has to be chrome. A sentence that ends on one of the
+// phrases has words in front of it and keeps them.
+func TestALineThatIsOnlyPartlyChromeStays(t *testing.T) {
+	const page = "A paragraph about what the system does.\n\nReviewers give feedback\n"
+	if got := Tidy(page); !strings.Contains(got, "Reviewers give feedback") {
+		t.Errorf("a sentence of the paper came off:\n%s", got)
+	}
+}

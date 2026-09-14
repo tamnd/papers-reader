@@ -124,7 +124,9 @@ var trailers = []string{
 //
 // Matched on the whole line and not as a prefix, and the list holds only
 // what has actually been seen, because these are two and three word phrases
-// and a paper will one day end a page on one of them.
+// and a paper will one day end a page on one of them. allChrome is what
+// makes "whole line" hold when the relay hands back two of these run
+// together with nothing between them.
 //
 // The two questions are the same thing as the button and they cost the same
 // thing. Page 2 of the MapReduce paper came back ending "Is this
@@ -151,6 +153,37 @@ var chrome = []string{
 var status = regexp.MustCompile(`(?i)^(?:worked|thought|thinking|reasoned|searched|read)` +
 	`(?: for)? [0-9]+(?:\.[0-9]+)? ?(?:ms|s|m|sec|secs|second|seconds|min|mins|minute|minutes)$`)
 
+// allChrome says whether a line is nothing but chrome: one of the phrases,
+// or several of them one after another.
+//
+// The relay puts its buttons side by side, and the tool that reads the page
+// picks them up in the order they are drawn and with nothing between them.
+// The re-read of page 13 of the MapReduce paper came back ending "Give
+// feedbackDo you like this personality?", which is two phrases and no line
+// break, so neither of them was the whole of the last line and the line
+// stayed. Optional whitespace between them, because whether there is any
+// depends on how the buttons were drawn.
+//
+// The whole of the line has to be consumed. A sentence of a paper that ends
+// on one of these phrases has words in front of it that nothing here
+// matches, so it keeps them and stays.
+func allChrome(line string) bool {
+	if line == "" {
+		return false
+	}
+	for _, c := range chrome {
+		rest, ok := strings.CutPrefix(line, c)
+		if !ok {
+			continue
+		}
+		rest = strings.TrimSpace(rest)
+		if rest == "" || allChrome(rest) {
+			return true
+		}
+	}
+	return false
+}
+
 // dropTrailer takes the courtesies and the chrome off the foot of the page,
 // and keeps going until the last line is neither. A reader that signs off
 // twice, with "I hope this helps." under "Would you like a summary?", is a
@@ -169,11 +202,8 @@ func dropTrailer(s string) string {
 				break
 			}
 		}
-		for _, c := range chrome {
-			if last == c {
-				found = true
-				break
-			}
+		if allChrome(last) {
+			found = true
 		}
 		if !found {
 			return s
