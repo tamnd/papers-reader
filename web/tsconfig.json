@@ -1,0 +1,25 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "include": [
+    ".astro/types.d.ts",
+    "**/*"
+  ],
+  "exclude": [
+    "dist",
+    "public"
+  ],
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "strictNullChecks": true,
+    "noUncheckedIndexedAccess": true,
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@katex/*": [
+        "../katex/assets/*"
+      ]
+    }
+  }
+}

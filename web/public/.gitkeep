@@ -1,0 +1,4 @@
+# Astro copies this directory into the build verbatim, and papers emit
+# writes the corpus into it. Both want it to exist, and everything either of
+# them puts here is ignored, so this file is what keeps the directory in the
+# repository.

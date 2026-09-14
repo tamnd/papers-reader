@@ -1,0 +1,37 @@
+---
+// One field, its papers oldest first.
+import type { GetStaticPaths } from "astro";
+
+import Cards from "../../components/Cards.astro";
+import Shell from "../../layouts/Shell.astro";
+import { index, years } from "../../site";
+
+export const getStaticPaths = (() => {
+  const site = index();
+  return site.fields
+    .map((f) => ({
+      field: f,
+      papers: site.papers
+        .filter((p) => p.field === f.id)
+        .sort((a, b) => a.year - b.year || a.title.localeCompare(b.title)),
+    }))
+    .filter((f) => f.papers.length > 0)
+    .map((f) => ({
+      params: { field: f.field.id },
+      props: { title: f.field.title, papers: f.papers },
+    }));
+}) satisfies GetStaticPaths;
+
+const { title, papers } = Astro.props;
+const span = years(papers);
+---
+
+<Shell title={`${title} papers`} here="papers">
+  <h1>{title}</h1>
+  <p class="lede">
+    {`${papers.length} ${papers.length === 1 ? "paper" : "papers"}`}, {span[0]} to {
+      span[1]
+    }.
+  </p>
+  <Cards papers={papers} />
+</Shell>

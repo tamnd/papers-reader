@@ -1,0 +1,71 @@
+---
+// One reading list, in the order the list says to read it.
+//
+// The order is the emitter's: a collection may be written as a rule rather
+// than as a list, and sorting by prerequisites is a corpus rule. Resolving
+// either of those here would be a second place for them to be wrong.
+import type { GetStaticPaths } from "astro";
+
+import Shell from "../../layouts/Shell.astro";
+import { LANGS, LANG_NAMES, href, index, paper } from "../../site";
+
+export const getStaticPaths = (() => {
+  return index().collections.map((c) => ({
+    params: { collection: c.id },
+    props: { list: c },
+  }));
+}) satisfies GetStaticPaths;
+
+const { list } = Astro.props;
+const members = list.members.map((id) => paper(id));
+const inList = new Set(list.members);
+---
+
+<Shell title={list.title} here="papers">
+  <h1>{list.title}</h1>
+  {list.description && <p class="lede">{list.description}</p>}
+  <p class="lede">
+    {`${members.length} ${members.length === 1 ? "paper" : "papers"}`}, in the
+    order to read them. A paper that needs another one first is listed under
+    it.
+  </p>
+
+  <ol class="reading">
+    {
+      members.map((p, at) => (
+        <li>
+          <span class="n">{at + 1}</span>
+          <div>
+            <a class="title" href={href("p", p.id)}>
+              {p.title}
+            </a>
+            <p class="byline">
+              {p.authors.slice(0, 3).join(", ")}
+              {p.authors.length > 3 ? " and others" : ""}, {p.year}
+            </p>
+            {p.core_idea && <p class="idea">{p.core_idea}</p>}
+            {p.prerequisites && p.prerequisites.length > 0 && (
+              <p class="needs">
+                Read first:{" "}
+                {p.prerequisites.map((id, i) => (
+                  <>
+                    {i > 0 ? ", " : ""}
+                    <a href={href("p", id)}>{paper(id).title}</a>
+                    {!inList.has(id) ? " (not on this list)" : ""}
+                  </>
+                ))}
+              </p>
+            )}
+            <p class="langs">
+              {LANGS.filter((l) => p.status[l] && p.status[l] !== "none").map(
+                (l) => (
+                  <a href={href("p", p.id, l)}>{LANG_NAMES[l]}</a>
+                ),
+              )}
+            </p>
+          </div>
+        </li>
+      ))
+    }
+  </ol>
+</Shell>

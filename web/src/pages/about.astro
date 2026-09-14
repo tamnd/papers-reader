@@ -1,0 +1,109 @@
+---
+// What this is, where it came from, and what a reader should not trust.
+import Shell from "../layouts/Shell.astro";
+import { LANGS, LANG_NAMES, href, index, years } from "../site";
+
+const site = index();
+const span = years(site.papers);
+const draft = new Set(site.draft_langs);
+
+const counted = LANGS.map((l) => ({
+  lang: l,
+  full: site.papers.filter((p) => p.status[l] === "full").length,
+  stub: site.papers.filter((p) => p.status[l] === "stub").length,
+}));
+
+const restricted = site.papers.filter((p) => p.access === "restricted").length;
+---
+
+<Shell title="About" here="about" narrow>
+  <h1>What this is</h1>
+
+  <p>
+    A hundred papers that built computing, read off the published PDFs and set
+    as text: {site.papers.length} of them, {span[0]} to {span[1]}. Each one
+    keeps its formulas, its figures, its listings and its bibliography, and
+    each one is translated into Vietnamese, Chinese and Japanese. The point is
+    to be able to read the original work in the language you think in, with
+    the mathematics still readable.
+  </p>
+
+  <h2>What is machine written</h2>
+
+  <p>
+    All of it, except the papers themselves. The text was got off each PDF by a
+    tool: the text layer where the PDF had a usable one, a layout model or a
+    vision model over the page images where it did not. The translations were
+    written by a language model against a glossary of terms that is fixed for
+    the whole corpus, so that one term is one term in every paper. Nothing here
+    was translated by a person and nothing here was checked by one.
+  </p>
+
+  <p>
+    Every page says at the foot of it how it was made and which model made it.
+    Where a page or a section was written by a model small enough that the
+    result is doubtful, or went through a gateway rather than the model it was
+    meant for, the page says that too, where you are reading rather than only
+    at the top. Read a translation against the English if it matters.
+  </p>
+
+  <ul class="facts">
+    {
+      counted.map((c) => (
+        <li>
+          {LANG_NAMES[c.lang]}: {c.full} full
+          {c.stub > 0 ? `, ${c.stub} abstract only` : ""}
+          {draft.has(c.lang) ? ", draft" : ""}
+        </li>
+      ))
+    }
+  </ul>
+
+  <p>
+    A draft language is one whose glossary does not yet cover enough of the
+    terms in the corpus. It is still published, with the page saying what it
+    is, because hiding it would be the same corpus with less of it visible and
+    no more of it true.
+  </p>
+
+  <h2>Licences</h2>
+
+  <p>
+    The papers belong to their authors and their publishers. Nothing here
+    republishes a PDF: where a paper is linked, it is linked to the page the
+    publisher put it on. What is published here is the text and the figures,
+    and only where the licence allows it.
+  </p>
+
+  <p>
+    A paper in the public domain, or under a licence that allows
+    redistribution, is here in full. {
+      `${restricted} ${restricted === 1 ? "paper is" : "papers are"}`
+    } under a licence that does not, and {restricted === 1 ? "is" : "are"} here
+    as front matter and a short abstract with a link to the publisher, which is
+    what quotation allows and no more. A paper whose licence nobody has
+    established is not here at all, in any form, until somebody establishes it.
+  </p>
+
+  <h2>How it is made</h2>
+
+  <p>
+    Two repositories. <a href="https://github.com/tamnd/papers">tamnd/papers</a>
+    is the corpus: Markdown, figures, manifests and reports, and never a PDF.
+    <a href="https://github.com/tamnd/papers-reader">tamnd/papers-reader</a> is
+    the toolchain that reads the PDFs, translates them, audits the result
+    against ninety-two numbered rules and builds this site. Both are public and
+    both take corrections.
+  </p>
+
+  <p>
+    A paper that should be here and is not can be proposed as an issue on the
+    toolchain. So can a translation that is wrong, which is the more useful of
+    the two: a wrong term in the glossary is wrong in a hundred papers at once,
+    and one report fixes all of them.
+  </p>
+
+  <p>
+    <a href={href("")}>Back to the papers</a>.
+  </p>
+</Shell>

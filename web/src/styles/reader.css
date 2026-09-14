@@ -1,0 +1,554 @@
+/*
+ * The corpus is text and the typography is the design, so there is no
+ * framework here and there is not going to be one. What this file does is
+ * set a measure, a scale and two colour schemes, and then get out of the
+ * way of the papers.
+ */
+
+:root {
+  --measure: 34rem;
+  --wide: 68rem;
+  --gap: 1.5rem;
+
+  --paper: #fdfdfb;
+  --ink: #1a1a18;
+  --faint: #6a6a64;
+  --rule: #ddddd6;
+  --tint: #f2f2ec;
+  --link: #1c4f9c;
+  --warn: #8a4b12;
+  --warn-tint: #fbf3e8;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Charter, Georgia,
+    "Times New Roman", serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #16171a;
+    --ink: #e4e3de;
+    --faint: #9a9a93;
+    --rule: #33343a;
+    --tint: #1e1f24;
+    --link: #8ab4f8;
+    --warn: #e0a86a;
+    --warn-tint: #2a2118;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 18px;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  line-height: 1.6;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--link);
+  text-underline-offset: 0.15em;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--mono);
+  font-size: 0.85em;
+}
+
+pre {
+  overflow-x: auto;
+  padding: 0.8rem 1rem;
+  background: var(--tint);
+  border-radius: 4px;
+  line-height: 1.45;
+}
+
+/* Chrome */
+
+.bar {
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+}
+
+.bar nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  align-items: baseline;
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: 0.8rem var(--gap);
+}
+
+.bar .home {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.bar a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.bar a:hover,
+.bar a[aria-current="page"] {
+  text-decoration: underline;
+}
+
+.bar .right {
+  margin-left: auto;
+  color: var(--faint);
+}
+
+main {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: 2rem var(--gap) 4rem;
+}
+
+main.narrow {
+  max-width: var(--measure);
+}
+
+footer {
+  border-top: 1px solid var(--rule);
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  color: var(--faint);
+}
+
+footer div {
+  max-width: var(--wide);
+  margin: 0 auto;
+  padding: 1.2rem var(--gap) 2.5rem;
+}
+
+/* Headings */
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 2rem 0 0.6rem;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: 1.85rem;
+  margin-top: 0;
+}
+
+h2 {
+  font-size: 1.35rem;
+}
+
+h3 {
+  font-size: 1.1rem;
+}
+
+h4,
+h5,
+h6 {
+  font-size: 1rem;
+}
+
+.lede {
+  font-size: 0.95rem;
+  color: var(--faint);
+  max-width: var(--measure);
+}
+
+/* The catalogue */
+
+.years {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  color: var(--faint);
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.3rem;
+  margin-bottom: 1.5rem;
+}
+
+.field {
+  margin: 0 0 2.5rem;
+}
+
+.field h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1.05rem;
+  font-family: var(--sans);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.field h2 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.field h2 a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--link);
+}
+
+.field .count {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+.cards {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+
+.cards li {
+  background: var(--paper);
+  padding: 0.9rem 1rem 1rem;
+}
+
+.cards .title {
+  font-weight: 600;
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.cards .title:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--link);
+}
+
+.cards .byline,
+.cards .idea {
+  font-size: 0.8rem;
+  color: var(--faint);
+  margin: 0.35rem 0 0;
+}
+
+.cards .idea {
+  color: var(--ink);
+}
+
+.langs {
+  font-family: var(--sans);
+  font-size: 0.68rem;
+  margin-top: 0.6rem;
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.langs a,
+.langs span {
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+  text-decoration: none;
+  color: var(--faint);
+}
+
+.langs a:hover {
+  border-color: var(--link);
+  color: var(--link);
+}
+
+.langs .stub {
+  font-style: italic;
+}
+
+/* A paper */
+
+.masthead {
+  max-width: var(--measure);
+  margin-bottom: 2rem;
+}
+
+.masthead .byline {
+  font-size: 0.9rem;
+  color: var(--faint);
+  margin: 0.4rem 0 0;
+}
+
+.toc {
+  list-style: none;
+  padding: 0;
+  max-width: var(--measure);
+}
+
+.toc li {
+  border-top: 1px solid var(--rule);
+  padding: 0.4rem 0;
+  display: flex;
+  gap: 0.6rem;
+}
+
+.toc .n {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--faint);
+  min-width: 2.2rem;
+}
+
+/* A reading list, which is a table of contents with more on each line */
+
+.reading {
+  list-style: none;
+  padding: 0;
+  max-width: var(--measure);
+  counter-reset: none;
+}
+
+.reading li {
+  border-top: 1px solid var(--rule);
+  padding: 0.8rem 0;
+  display: flex;
+  gap: 0.8rem;
+}
+
+.reading .n {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--faint);
+  min-width: 1.6rem;
+}
+
+.reading .title {
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+}
+
+.reading .title:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--link);
+}
+
+.reading .byline,
+.reading .idea,
+.reading .needs,
+.toc .byline {
+  font-size: 0.8rem;
+  color: var(--faint);
+  margin: 0.3rem 0 0;
+}
+
+.reading .idea {
+  color: var(--ink);
+}
+
+.toc li > div {
+  min-width: 0;
+}
+
+.facts {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--faint);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.2rem;
+  padding: 0;
+  list-style: none;
+}
+
+/* The prose of a paper */
+
+.prose {
+  max-width: var(--measure);
+}
+
+.prose p {
+  margin: 0 0 1rem;
+}
+
+.prose li {
+  margin-bottom: 0.3rem;
+}
+
+.prose table {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  width: 100%;
+  margin: 1.2rem 0;
+}
+
+.prose th,
+.prose td {
+  border-bottom: 1px solid var(--rule);
+  padding: 0.3rem 0.6rem 0.3rem 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.prose th {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.prose figure {
+  margin: 1.6rem 0;
+}
+
+.prose figure img {
+  max-width: 100%;
+  height: auto;
+  background: var(--tint);
+  border: 1px solid var(--rule);
+}
+
+.prose figcaption,
+.prose .caption {
+  font-size: 0.8rem;
+  color: var(--faint);
+  margin-top: 0.4rem;
+}
+
+.prose .math {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 1.2rem 0;
+}
+
+.prose .math .tex {
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+
+.prose .math .n {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--faint);
+}
+
+.prose .listing {
+  margin: 1.2rem 0;
+}
+
+.prose .anchored {
+  scroll-margin-top: 2rem;
+}
+
+/* The apparatus */
+
+.notes,
+.refs {
+  max-width: var(--measure);
+  font-size: 0.85rem;
+}
+
+.notes ol,
+.refs ol {
+  padding-left: 1.6rem;
+}
+
+.notes li,
+.refs li {
+  margin-bottom: 0.5rem;
+}
+
+.colophon {
+  max-width: var(--measure);
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  color: var(--faint);
+  border-top: 1px solid var(--rule);
+  padding-top: 0.8rem;
+  margin-top: 3rem;
+}
+
+.provisional {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  color: var(--warn);
+  background: var(--warn-tint);
+  border-left: 3px solid var(--warn);
+  padding: 0.5rem 0.8rem;
+  margin: 1.2rem 0;
+  max-width: var(--measure);
+}
+
+/* Side by side */
+
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 2.5rem;
+  align-items: start;
+}
+
+.pair > .head {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.3rem;
+  position: sticky;
+  top: 0;
+  background: var(--paper);
+}
+
+.pair .row {
+  display: contents;
+}
+
+.pair .cell {
+  max-width: none;
+  padding-top: 0.6rem;
+}
+
+.pair .missing {
+  color: var(--warn);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+}
+
+@media (max-width: 52rem) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .pair > .head:nth-of-type(2) {
+    display: none;
+  }
+  .pair .cell + .cell {
+    border-left: 3px solid var(--rule);
+    padding-left: 0.9rem;
+    margin-bottom: 1rem;
+  }
+}

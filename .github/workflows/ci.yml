@@ -19,6 +19,7 @@ concurrency:
 
 env:
   GO_VERSION: "1.27.1"
+  NODE_VERSION: "26"
 
 jobs:
   build:
@@ -118,3 +119,51 @@ jobs:
         env:
           PAPERS_CORPUS: ${{ github.workspace }}/papers
         run: papers report coverage --quiet
+
+  # The reading app, built the way the deploy builds it: emit the real
+  # corpus and then run the app over what came out. Building it against a
+  # fixture would test the app against the only input that cannot surprise
+  # it, and the emit and the app are held together by a schema that either
+  # of them can be changed out from under.
+  web:
+    name: build the reading app
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: papers-reader
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tamnd/papers
+          persist-credentials: false
+          path: papers
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: papers-reader/web/package-lock.json
+      - name: emit
+        working-directory: papers-reader
+        run: |
+          go build -trimpath -o /usr/local/bin/papers ./cmd/papers
+          papers emit -corpus ${{ github.workspace }}/papers -out web/public
+      - name: install
+        working-directory: papers-reader/web
+        run: npm ci
+      # The types are generated from the schema and committed, so that a
+      # reader of the app can see what it reads. This is what stops the
+      # committed copy from being an old one.
+      - name: the generated types are current
+        working-directory: papers-reader/web
+        run: |
+          npm run schema
+          git diff --exit-code -- src/types.gen.ts
+      - name: build
+        working-directory: papers-reader/web
+        run: npm run build

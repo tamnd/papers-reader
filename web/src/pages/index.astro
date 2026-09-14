@@ -1,0 +1,73 @@
+---
+// The catalogue: every paper in the corpus, grouped by field, each group in
+// the order it was read in.
+import Cards from "../components/Cards.astro";
+import Shell from "../layouts/Shell.astro";
+import { href, index, years } from "../site";
+
+const site = index();
+const span = years(site.papers);
+
+// A field with nothing in it is not drawn. The emitter writes the full list
+// of fields so that a reader of the JSON knows the vocabulary, which is not
+// the same thing as the catalogue having a heading with nothing under it.
+const fields = site.fields
+  .map((f) => ({
+    ...f,
+    papers: site.papers
+      .filter((p) => p.field === f.id)
+      .sort((a, b) => a.year - b.year || a.title.localeCompare(b.title)),
+  }))
+  .filter((f) => f.papers.length > 0);
+---
+
+<Shell title="Papers" here="papers">
+  <h1>A hundred papers that built computing</h1>
+  <p class="lede">
+    Each one read off the published PDF, set as Markdown with its formulas,
+    figures and bibliography intact, and translated into Vietnamese, Chinese
+    and Japanese. {site.papers.length} papers, {span[0]} to {span[1]}. The
+    translations are machine written and every page says so.
+  </p>
+
+  <p class="years">
+    <span>{span[0]}</span>
+    <span>{span[1]}</span>
+  </p>
+
+  {
+    fields.map((f) => (
+      <section class="field">
+        <h2>
+          <a href={href("f", f.id)}>{f.title}</a>
+        </h2>
+        <span class="count">
+          {f.papers.length} {f.papers.length === 1 ? "paper" : "papers"}
+        </span>
+        <Cards papers={f.papers} />
+      </section>
+    ))
+  }
+
+  {
+    site.collections.length > 0 && (
+      <section class="field">
+        <h2>Reading lists</h2>
+        <span class="count">
+          {site.collections.length} in prerequisite order
+        </span>
+        <ul class="toc">
+          {site.collections.map((c) => (
+            <li>
+              <span class="n">{c.members.length}</span>
+              <span>
+                <a href={href("c", c.id)}>{c.title}</a>
+                {c.description && <> {c.description}</>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+</Shell>

@@ -1,0 +1,52 @@
+---
+// A grid of papers, which is what the catalogue, a field and a reading
+// list are all made of.
+import type { IndexPaper, Lang } from "../site";
+import { LANGS, LANG_NAMES, href, index } from "../site";
+
+interface Props {
+  papers: IndexPaper[];
+  /** Show the position in the seed list rather than the year. */
+  numbered?: boolean;
+}
+
+const { papers, numbered = false } = Astro.props;
+const draft = new Set<Lang>(index().draft_langs);
+---
+
+<ul class="cards">
+  {
+    papers.map((p) => (
+      <li>
+        <a class="title" href={href("p", p.id)}>
+          {p.title}
+        </a>
+        <p class="byline">
+          {numbered && p.number ? `${p.number}. ` : ""}
+          {p.authors.slice(0, 3).join(", ")}
+          {p.authors.length > 3 ? " and others" : ""}, {p.year}
+          {p.venue ? `, ${p.venue}` : ""}
+        </p>
+        {p.core_idea && <p class="idea">{p.core_idea}</p>}
+        <p class="langs">
+          {LANGS.filter((l) => p.status[l] && p.status[l] !== "none").map((l) => (
+            <a
+              href={href("p", p.id, l)}
+              class:list={[p.status[l] === "stub" && "stub"]}
+              title={
+                p.status[l] === "stub"
+                  ? "front matter and an abstract only"
+                  : draft.has(l)
+                    ? "a draft: the glossary for this language is under the floor"
+                    : undefined
+              }
+            >
+              {LANG_NAMES[l]}
+              {draft.has(l) && l !== "en" ? " (draft)" : ""}
+            </a>
+          ))}
+        </p>
+      </li>
+    ))
+  }
+</ul>

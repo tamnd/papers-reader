@@ -1,0 +1,149 @@
+---
+// One paper: what it is, what is in it, what cites it, and the ways to read
+// it. The paper itself is one click away rather than here, because the
+// choice of language belongs to the reader and picking one for them would
+// make three of the four translations pages nobody ever lands on.
+import type { GetStaticPaths } from "astro";
+
+import Shell from "../../../layouts/Shell.astro";
+import {
+  LANG_NAMES,
+  graph,
+  href,
+  index,
+  langsOf,
+  page,
+  paper,
+} from "../../../site";
+
+export const getStaticPaths = (() => {
+  return index().papers.map((p) => ({ params: { id: p.id }, props: { id: p.id } }));
+}) satisfies GetStaticPaths;
+
+const { id } = Astro.props;
+const meta = paper(id);
+const langs = langsOf(id);
+const draft = new Set(index().draft_langs);
+
+// The table of contents is the same in every language by construction, so it
+// is read from whichever one is there, English first.
+const first = langs[0];
+const contents = first ? page(id, first).sections : [];
+
+const g = graph();
+const cites = g.edges.filter((e) => e.from === id).map((e) => e.to);
+const cited = g.edges.filter((e) => e.to === id).map((e) => e.from);
+const node = g.nodes.find((n) => n.id === id);
+
+// The side by side views offered from here, English on the left. Both
+// orders exist as routes, because a reader on the Vietnamese page wants the
+// Vietnamese on the left, but offering both from here would be the same six
+// links twice over.
+const pairs = langs.filter((l) => l !== "en" && langs.includes("en"));
+---
+
+<Shell title={meta.title} here="papers">
+  <div class="masthead">
+    <h1>{meta.title}</h1>
+    <p class="byline">
+      {meta.authors.join(", ")}, {meta.year}{meta.venue ? `, ${meta.venue}` : ""}
+    </p>
+    {meta.core_idea && <p class="lede">{meta.core_idea}</p>}
+  </div>
+
+  <h2>Read it</h2>
+  {
+    langs.length === 0 ? (
+      <p class="lede">
+        This paper is in the catalogue and has not been built yet.
+      </p>
+    ) : (
+      <p class="langs">
+        {langs.map((l) => (
+          <a href={href("p", id, l)}>
+            {LANG_NAMES[l]}
+            {draft.has(l) ? " (draft)" : ""}
+            {meta.status[l] === "stub" ? " (abstract only)" : ""}
+          </a>
+        ))}
+      </p>
+    )
+  }
+  {
+    pairs.length > 0 && (
+      <p class="langs">
+        {pairs.map((l) => (
+          <a href={href("p", id, `en+${l}`)}>
+            English beside {LANG_NAMES[l]}
+          </a>
+        ))}
+      </p>
+    )
+  }
+
+  <ul class="facts">
+    <li>{meta.sections} sections</li>
+    <li>{meta.figures} figures</li>
+    <li>{meta.equations} equations</li>
+    <li>{meta.refs} references</li>
+    <li>cited by {meta.cited_by} here</li>
+    {meta.difficulty && <li>difficulty {meta.difficulty} of 5</li>}
+    {meta.landing && (
+      <li>
+        <a href={meta.landing}>the publisher's page</a>
+      </li>
+    )}
+  </ul>
+
+  {
+    contents.length > 0 && (
+      <>
+        <h2>Contents</h2>
+        <ul class="toc">
+          {contents.map((s) => (
+            <li style={`padding-left: ${(s.level - 2) * 1.2}rem`}>
+              <span class="n">{s.number ?? ""}</span>
+              <span>
+                {first ? (
+                  <a href={`${href("p", id, first)}#${s.anchor}`}>{s.title}</a>
+                ) : (
+                  s.title
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </>
+    )
+  }
+
+  <h2>Its place here</h2>
+  {
+    cited.length === 0 && cites.length === 0 ? (
+      <p class="lede">
+        {node && !node.parsed
+          ? "Nobody has read this paper's bibliography yet, so it cites nothing here."
+          : "No other paper in this corpus cites it and it cites none of them."}
+      </p>
+    ) : (
+      <ul class="toc">
+        {cites.map((to) => (
+          <li>
+            <span class="n">cites</span>
+            <span>
+              <a href={href("p", to)}>{paper(to).title}</a>
+            </span>
+          </li>
+        ))}
+        {cited.map((from) => (
+          <li>
+            <span class="n">cited by</span>
+            <span>
+              <a href={href("p", from)}>{paper(from).title}</a>
+            </span>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</Shell>

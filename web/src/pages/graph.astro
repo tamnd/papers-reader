@@ -1,0 +1,61 @@
+---
+// The citation graph as a list: which of these papers cite which others.
+import Shell from "../layouts/Shell.astro";
+import { graph, href, index } from "../site";
+
+const g = graph();
+const site = index();
+const fields = new Map(site.fields.map((f) => [f.id, f.title]));
+
+const byId = new Map(g.nodes.map((n) => [n.id, n]));
+const cited = new Map<string, string[]>();
+for (const e of g.edges) {
+  cited.set(e.to, [...(cited.get(e.to) ?? []), e.from]);
+}
+
+const ranked = g.nodes
+  .filter((n) => n.in > 0)
+  .sort((a, b) => b.in - a.in || a.year - b.year);
+
+const unread = g.nodes.filter((n) => !n.parsed).length;
+---
+
+<Shell title="The citation graph" here="graph">
+  <h1>What cites what</h1>
+  <p class="lede">
+    {g.edges.length} citations between the {g.nodes.length} papers here, out of
+    the thousands each of them makes to work that is not in this corpus. The
+    list is by how often a paper is cited by the others.
+    {
+      unread > 0 &&
+        ` ${unread} ${unread === 1 ? "paper has" : "papers have"} a bibliography nobody has read yet, so ${unread === 1 ? "it cites" : "they cite"} nothing here for want of looking rather than for want of citing.`
+    }
+  </p>
+
+  <ul class="toc">
+    {
+      ranked.map((n) => (
+        <li>
+          <span class="n">{n.in}</span>
+          <div>
+            <a href={href("p", n.id)}>{n.title}</a>
+            <p class="byline">
+              {n.year}, {fields.get(n.field) ?? n.field}
+            </p>
+            <p class="byline">
+              Cited here by{" "}
+              {(cited.get(n.id) ?? []).map((from, i) => (
+                <>
+                  {i > 0 ? ", " : ""}
+                  <a href={href("p", from)}>
+                    {byId.get(from)?.title ?? from}
+                  </a>
+                </>
+              ))}
+            </p>
+          </div>
+        </li>
+      ))
+    }
+  </ul>
+</Shell>

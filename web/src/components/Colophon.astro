@@ -1,0 +1,47 @@
+---
+// How the page came to exist, at the foot of it.
+//
+// Every page carries this. A corpus that is mostly machine written and
+// does not say so on the page is dishonest, and the emitter already knows
+// which pages those are, so there is no reason not to print it.
+//
+// A field is absent where the sections of the page disagree, which is the
+// emitter's doing and not an omission: a paper half of which was read by
+// one tool and half by another has no single answer to give.
+import type { Page } from "../site";
+import { LANG_NAMES } from "../site";
+
+interface Props {
+  page: Page;
+}
+
+const { page } = Astro.props;
+const p = page.provenance;
+
+const how: Record<string, string> = {
+  native: "the text layer of the PDF",
+  layout: "a layout model over the page images",
+  vision: "a vision model reading the page images",
+};
+
+const parts: string[] = [];
+if (p.extraction) {
+  parts.push(
+    `Read off the page by ${how[p.extraction] ?? p.extraction}` +
+      (p.extraction_tool ? ` using ${p.extraction_tool}` : ""),
+  );
+}
+if (p.translation_model) {
+  parts.push(
+    `Translated into ${LANG_NAMES[page.lang]} by ${p.translation_model}` +
+      (p.glossary_version ? `, against glossary version ${p.glossary_version}` : ""),
+  );
+}
+if (page.source_lang) {
+  parts.push(`Translated from the ${LANG_NAMES[page.source_lang]}`);
+}
+---
+
+<p class="colophon">
+  {parts.length === 0 ? "Nothing is recorded about how this page was made." : parts.join(". ") + "."}
+</p>

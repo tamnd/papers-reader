@@ -1,0 +1,262 @@
+---
+// A paper to read: one language, or two of them side by side.
+//
+// Both are this one route because they are the same route shape and mostly
+// the same page. The view is a language, "vi", or a pair of them joined by
+// a plus, "en+vi". A plus is legal in a path segment and it is what the
+// spec's route table asks for.
+import type { GetStaticPaths } from "astro";
+
+import Blocks from "../../../components/Blocks.astro";
+import Colophon from "../../../components/Colophon.astro";
+import Provisional from "../../../components/Provisional.astro";
+import Shell from "../../../layouts/Shell.astro";
+import type { Lang, Page } from "../../../site";
+import {
+  LANG_NAMES,
+  frontBody,
+  href,
+  index,
+  langsOf,
+  page,
+  paper,
+} from "../../../site";
+
+export const getStaticPaths = (() => {
+  const paths: { params: { id: string; view: string }; props: { id: string; langs: Lang[] } }[] = [];
+  for (const p of index().papers) {
+    const langs = langsOf(p.id);
+    for (const l of langs) {
+      paths.push({ params: { id: p.id, view: l }, props: { id: p.id, langs: [l] } });
+    }
+    for (const a of langs) {
+      for (const b of langs) {
+        if (a === b || (a !== "en" && b !== "en")) continue;
+        paths.push({
+          params: { id: p.id, view: `${a}+${b}` },
+          props: { id: p.id, langs: [a, b] },
+        });
+      }
+    }
+  }
+  return paths;
+}) satisfies GetStaticPaths;
+
+const { id, langs } = Astro.props;
+const meta = paper(id);
+const pages = langs.map((l) => page(id, l));
+const left = pages[0] as Page;
+const right = pages[1];
+const draft = new Set(index().draft_langs);
+
+const title = left.front.title;
+const heading = meta.titles?.[left.lang] ?? title;
+
+// A row of the side by side view. The two languages have the same blocks in
+// the same order with the same indices, which rules L03, L04, L16 and L18
+// enforce, so this is an index and not a diff. A gap is drawn where one side
+// is short rather than being closed up, because a silently shorter column is
+// the one failure this view exists to make visible.
+function rowsOf(a: Page, b: Page, at: number) {
+  const sa = a.sections[at];
+  const sb = b.sections[at];
+  const n = Math.max(sa?.blocks.length ?? 0, sb?.blocks.length ?? 0);
+  return Array.from({ length: n }, (_, i) => ({
+    a: sa?.blocks[i],
+    b: sb?.blocks[i],
+  }));
+}
+
+const sections = Math.max(
+  left.sections.length,
+  right ? right.sections.length : 0,
+);
+
+const others = langsOf(id).filter((l) => !langs.includes(l));
+---
+
+<Shell
+  title={`${title} in ${langs.map((l) => LANG_NAMES[l]).join(" and ")}`}
+  lang={langs.length === 1 ? left.lang : undefined}
+  here="papers"
+>
+  <div class="masthead">
+    <h1>{heading}</h1>
+    <p class="byline">
+      {left.front.authors.join(", ")}
+      {left.front.year ? `, ${left.front.year}` : ""}
+      {left.front.venue ? `, ${left.front.venue}` : ""}
+    </p>
+    <p class="langs">
+      <a href={href("p", id)}>About this paper</a>
+      {
+        others.map((l) => (
+          <a href={href("p", id, l)}>
+            {LANG_NAMES[l]}
+            {draft.has(l) ? " (draft)" : ""}
+          </a>
+        ))
+      }
+      {
+        langs.length === 1 &&
+          others.map((l) => (
+            <a
+              href={href(
+                "p",
+                id,
+                left.lang === "en" ? `en+${l}` : `${left.lang}+${l}`,
+              )}
+            >
+              beside {LANG_NAMES[l]}
+            </a>
+          ))
+      }
+    </p>
+  </div>
+
+  {
+    pages.map((p) => (
+      <Provisional
+        small={p.provenance.small_model}
+        gateway={p.provenance.gateway}
+        draft={p.draft === true}
+        scope="page"
+      />
+    ))
+  }
+
+  {
+    meta.access === "restricted" && (
+      <p class="provisional">
+        This paper is under a licence that does not allow it to be reproduced,
+        so what is here is its front matter and a short abstract. Read it at{" "}
+        {meta.landing ? <a href={meta.landing}>the publisher's page</a> : "the publisher"}.
+      </p>
+    )
+  }
+
+  {
+    right === undefined ? (
+      <article class="prose">
+        <Blocks blocks={frontBody(left)} base={1} />
+        {left.sections.map((s) => {
+          const H = `h${Math.min(6, Math.max(2, s.level))}` as "h2";
+          return (
+            <section>
+              <H id={s.anchor} class="anchored">
+                {s.number ? `${s.number} ` : ""}
+                {s.title}
+              </H>
+              <Provisional
+                small={s.small_model === true}
+                gateway={s.gateway === true}
+                scope="section"
+              />
+              <Blocks blocks={s.blocks} base={s.level} />
+            </section>
+          );
+        })}
+      </article>
+    ) : (
+      <div class="pair">
+        <div class="head">{LANG_NAMES[left.lang]}</div>
+        <div class="head">{LANG_NAMES[right.lang]}</div>
+        <div class="row">
+          <div class="prose cell">
+            <Blocks blocks={frontBody(left)} base={1} />
+          </div>
+          <div class="prose cell">
+            <Blocks blocks={frontBody(right)} base={1} />
+          </div>
+        </div>
+        {Array.from({ length: sections }, (_, at) => {
+          const sa = left.sections[at];
+          const sb = right.sections[at];
+          const H = `h${Math.min(6, Math.max(2, sa?.level ?? sb?.level ?? 2))}` as "h2";
+          return (
+            <>
+              <div class="row">
+                <div class="prose cell">
+                  {sa ? (
+                    <H id={sa.anchor} class="anchored">
+                      {sa.number ? `${sa.number} ` : ""}
+                      {sa.title}
+                    </H>
+                  ) : (
+                    <p class="missing">This section is missing here.</p>
+                  )}
+                </div>
+                <div class="prose cell">
+                  {sb ? (
+                    <H id={sb.anchor} class="anchored">
+                      {sb.number ? `${sb.number} ` : ""}
+                      {sb.title}
+                    </H>
+                  ) : (
+                    <p class="missing">This section is missing here.</p>
+                  )}
+                </div>
+              </div>
+              {sa &&
+                sb &&
+                rowsOf(left, right, at).map((r) => (
+                  <div class="row">
+                    <div class="prose cell">
+                      {r.a ? (
+                        <Blocks blocks={[r.a]} base={sa.level} />
+                      ) : (
+                        <p class="missing">Nothing here.</p>
+                      )}
+                    </div>
+                    <div class="prose cell">
+                      {r.b ? (
+                        <Blocks blocks={[r.b]} base={sb.level} />
+                      ) : (
+                        <p class="missing">Nothing here.</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </>
+          );
+        })}
+      </div>
+    )
+  }
+
+  {
+    left.notes && left.notes.length > 0 && (
+      <section class="notes">
+        <h2>Notes</h2>
+        <ol>
+          {left.notes.map((n) => (
+            <li id={`note-${n.key}`} set:html={n.html} />
+          ))}
+        </ol>
+      </section>
+    )
+  }
+
+  {
+    left.refs.length > 0 && (
+      <section class="refs">
+        <h2>References</h2>
+        <ol>
+          {left.refs.map((r) => (
+            <li>
+              {r.raw}
+              {r.resolves_to && (
+                <>
+                  {" "}
+                  <a href={href("p", r.resolves_to)}>Read it here</a>
+                </>
+              )}
+            </li>
+          ))}
+        </ol>
+      </section>
+    )
+  }
+
+  {pages.map((p) => <Colophon page={p} />)}
+</Shell>

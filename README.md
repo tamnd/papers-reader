@@ -103,6 +103,14 @@ The shape of both is pinned by `schema/site.schema.json`, which the Go emitter a
 Audit rule P05 runs that validation over a build of the corpus on every audit, which is what makes the file a contract rather than documentation: a change to the shape has to move the schema, the emitter and the app in one commit or the build fails.
 Nothing it writes is committed, and a site directory can be deleted and built again from a checkout at any time.
 
+**The app is Astro over that build, and mostly no JavaScript.**
+`web/` is the reading app: the catalogue as a grid by field, a page per field and per reading list, a page per paper saying what is in it and what cites it, the paper itself in each language, and the same paper in two languages side by side.
+It reads the emitted JSON off `web/public` at build time and generates static pages, so there is no server and nothing is fetched to read a paper.
+The types it reads the build with are generated from the same schema the emitter validates against, committed so the app builds without a generator, and checked in CI so the committed copy cannot be an old one.
+Side by side is block i against block i, drawn as one grid so the two columns cannot drift, and a block that is in one language and not the other is drawn as a gap and said out loud rather than closed up.
+There is no CSS framework: the corpus is text and the typography is the design.
+`make site CORPUS=<papers>` builds the emit and then the app, and `npm run dev` in `web/` serves it against whatever was last emitted.
+
 **A draft says it is a draft.**
 A language whose glossary covers less than ninety per cent of the terms is emitted with `draft` against it, and the page says so.
 It is still offered, because hiding it would be the same corpus with less of it visible and no more of it true.

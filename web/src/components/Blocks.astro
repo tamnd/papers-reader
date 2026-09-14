@@ -1,0 +1,117 @@
+---
+// One run of blocks, drawn.
+//
+// The HTML in a block was built by the emitter out of escaped text and its
+// own tags, and audit rule P01 holds every run of it to an allowlist of
+// seventeen elements with nothing on it that can execute. That is what
+// makes set:html safe here, and it is the only reason it is: the check is
+// on the emitter's side, where a failure fails a build, rather than here,
+// where a filter would quietly swallow one.
+import type { Block } from "../site";
+import { href } from "../site";
+
+interface Props {
+  blocks: Block[];
+  /** The heading level the section itself sits at, so a heading inside it
+   * comes out one deeper and the document outline stays in order. */
+  base?: number;
+}
+
+const { blocks, base = 2 } = Astro.props;
+
+// A heading inside a body is relative to the section it is in. The corpus
+// counts hashes and this counts from the section, which is what keeps a
+// paper whose author started at h1 from putting an h1 in the middle of the
+// page.
+function level(b: Block): 1 | 2 | 3 | 4 | 5 | 6 {
+  const n = Math.min(6, Math.max(1, base + (b.level ?? 1)));
+  return n as 1 | 2 | 3 | 4 | 5 | 6;
+}
+---
+
+{
+  blocks.map((b) => {
+    if (b.kind === "heading") {
+      const Tag = `h${level(b)}` as "h2";
+      return (
+        <Tag id={b.anchor} class={b.anchor ? "anchored" : undefined}>
+          <Fragment set:html={b.html ?? ""} />
+        </Tag>
+      );
+    }
+    if (b.kind === "math") {
+      // The formula scrolls and the tag does not. A formula wider than the
+      // measure is common and the number the paper printed beside it is
+      // what the prose refers to, so the number has to stay where it can
+      // be read rather than being pushed off the end of the line.
+      return (
+        <div id={b.anchor} class:list={["math", b.anchor && "anchored"]}>
+          <div class="tex" set:html={b.html ?? ""} />
+          {b.number && <span class="n">({b.number})</span>}
+        </div>
+      );
+    }
+    if (b.kind === "figure") {
+      return (
+        <figure id={b.anchor} class={b.anchor ? "anchored" : undefined}>
+          <img
+            src={href(b.src ?? "")}
+            width={b.w}
+            height={b.h}
+            loading="lazy"
+            decoding="async"
+            alt={`Figure ${b.number ?? ""}`}
+          />
+          {b.caption_html && (
+            <figcaption>
+              <Fragment set:html={b.caption_html} />
+            </figcaption>
+          )}
+        </figure>
+      );
+    }
+    if (b.kind === "code") {
+      return (
+        <div id={b.anchor} class:list={["listing", b.anchor && "anchored"]}>
+          <pre>
+            <code class={b.lang ? `language-${b.lang}` : undefined}>
+              {b.text}
+            </code>
+          </pre>
+          {b.caption_html && (
+            <p class="caption" set:html={b.caption_html} />
+          )}
+        </div>
+      );
+    }
+    if (b.kind === "table") {
+      return (
+        <div id={b.anchor} class={b.anchor ? "anchored" : undefined}>
+          <Fragment set:html={b.html ?? ""} />
+          {b.caption_html && (
+            <p class="caption" set:html={b.caption_html} />
+          )}
+        </div>
+      );
+    }
+    // A paragraph is the text of the paragraph and not a p element, the
+    // same way a heading is the text of the heading: the emitter renders
+    // what is inside the block and leaves the element to whoever is
+    // drawing it. A list is a ul or an ol already, because there is no
+    // sensible way to write the inside of one without it.
+    if (b.kind === "p") {
+      return (
+        <p id={b.anchor} class={b.anchor ? "anchored" : undefined} set:html={b.html ?? ""} />
+      );
+    }
+    return (
+      <Fragment>
+        {b.anchor ? (
+          <div id={b.anchor} class="anchored" set:html={b.html ?? ""} />
+        ) : (
+          <Fragment set:html={b.html ?? ""} />
+        )}
+      </Fragment>
+    );
+  })
+}

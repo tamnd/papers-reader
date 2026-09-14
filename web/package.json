@@ -1,0 +1,25 @@
+{
+  "name": "papers-reader-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro check && astro build",
+    "preview": "astro preview",
+    "schema": "json2ts --input ../schema/site.schema.json --output src/types.gen.ts --additionalProperties false --unreachableDefinitions --bannerComment \"// Code generated from schema/site.schema.json by make schema. DO NOT EDIT.\""
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@astrojs/react": "^6.0.5",
+    "@types/node": "^24.13.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "astro": "^7.3.2",
+    "json-schema-to-typescript": "^16.0.0",
+    "typescript": "^6.0.3"
+  }
+}

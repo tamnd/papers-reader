@@ -1,0 +1,83 @@
+---
+// The page every page is inside: the head, the bar across the top and the
+// line along the bottom. Nothing here ships JavaScript, because most of
+// this site is text and text does not need any.
+import "@katex/katex.min.css";
+import "../styles/reader.css";
+import { href } from "../site";
+
+interface Props {
+  title: string;
+  description?: string;
+  /** The nav entry to mark as the one you are on. */
+  here?: "papers" | "graph" | "search" | "about";
+  /** A page of prose sets this to hold itself to one measure. */
+  narrow?: boolean;
+  /** The language of the page, which the hyphenation and the screen
+   * readers both need and which is not always English here. */
+  lang?: string;
+}
+
+const {
+  title,
+  description = "A hundred papers that built computing, read in four languages.",
+  here,
+  narrow = false,
+  lang = "en",
+} = Astro.props;
+
+// Search is not in here yet. It is a page that cannot work without
+// JavaScript and the island that does the work is the next change, so the
+// entry arrives with the thing it points at rather than before it.
+const nav = [
+  { key: "papers", to: href(""), label: "Papers" },
+  { key: "graph", to: href("graph"), label: "Graph" },
+  { key: "about", to: href("about"), label: "About" },
+] as const;
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+  </head>
+  <body>
+    <header class="bar">
+      <nav>
+        <a class="home" href={href("")}>papers</a>
+        {
+          nav.map((item) => (
+            <a
+              href={item.to}
+              aria-current={item.key === here ? "page" : undefined}
+            >
+              {item.label}
+            </a>
+          ))
+        }
+        <span class="right">
+          <a href="https://github.com/tamnd/papers">the corpus</a>
+        </span>
+      </nav>
+    </header>
+    <main class={narrow ? "narrow" : undefined}>
+      <slot />
+    </main>
+    <footer>
+      <div>
+        The papers are their authors' and their publishers'. The translations
+        and the extraction are machine written and are marked as such wherever
+        they are. Built from <a href="https://github.com/tamnd/papers"
+          >tamnd/papers</a
+        > by <a href="https://github.com/tamnd/papers-reader"
+          >tamnd/papers-reader</a
+        >. <a href={href("about")}>What this is</a>.
+      </div>
+    </footer>
+  </body>
+</html>

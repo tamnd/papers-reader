@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tamnd.github.io/papers/site.schema.json",
-  "title": "The reading app's input",
+  "title": "Site",
   "description": "The shape of the JSON that papers emit writes and the reading app consumes. The Go emitter and the TypeScript reader both validate against this file, and audit rule P05 runs it over a build of the corpus, so the two sides cannot drift apart without something saying so. A change to the shape bumps the version integer and updates both sides in one commit, which is the reason this file lives in the same repository as both. There is one file rather than one per document so that the shared definitions are shared and not copied: a paper identifier is the same string in index.json and in graph.json, and it should be impossible to tighten one and forget the other. A document is validated against the definition named after it, index.json against #/$defs/index, graph.json against #/$defs/graph, every p/<id>/<lang>.json against #/$defs/page and every search-<lang>.json against #/$defs/search.",
 
   "$defs": {
     "index": {
       "$anchor": "index",
-      "title": "index.json",
-      "description": "The catalogue: every paper, every field, every reading list. It is read on the first request of every visit, which is why it holds what a catalogue page needs and nothing a paper page would need.",
+      "title": "Index",
+      "description": "index.json is the catalogue: every paper, every field, every reading list. It is read on the first request of every visit, which is why it holds what a catalogue page needs and nothing a paper page would need.",
       "type": "object",
       "additionalProperties": false,
       "required": ["version", "generated", "langs", "draft_langs", "fields", "collections", "papers"],
@@ -139,8 +139,8 @@
 
     "graph": {
       "$anchor": "graph",
-      "title": "graph.json",
-      "description": "The citation graph as the app draws it: the same edges as reports/graph.md and built from the same place, in the shape a layout wants rather than the shape a table wants.",
+      "title": "Graph",
+      "description": "graph.json is the citation graph as the app draws it: the same edges as reports/graph.md and built from the same place, in the shape a layout wants rather than the shape a table wants.",
       "type": "object",
       "additionalProperties": false,
       "required": ["version", "nodes", "edges"],
@@ -191,8 +191,8 @@
 
     "page": {
       "$anchor": "page",
-      "title": "p/<id>/<lang>.json",
-      "description": "One paper in one language, whole. One file per paper per language rather than one per section, because a reader opens a paper and reads it and a request per section would be twenty requests to read one paper. Every language of a paper has the same sections in the same order with the same block indices, which is what makes the side by side view a matter of putting block i against block i, so a change here that could move an index in one language and not another is a change that breaks reading two languages together.",
+      "title": "Page",
+      "description": "p/<id>/<lang>.json is one paper in one language, whole. One file per paper per language rather than one per section, because a reader opens a paper and reads it and a request per section would be twenty requests to read one paper. Every language of a paper has the same sections in the same order with the same block indices, which is what makes the side by side view a matter of putting block i against block i, so a change here that could move an index in one language and not another is a change that breaks reading two languages together.",
       "type": "object",
       "additionalProperties": false,
       "required": ["version", "id", "lang", "provenance", "front", "sections", "refs"],
@@ -390,19 +390,13 @@
           "type": "array",
           "items": { "$ref": "#/$defs/post" }
         },
-        "terms": {
-          "description": "The prose: an ordinary word index over the text of the corpus. A term in more than a third of the blocks is dropped, which is a stopword list that does not have to be written four times in four languages.",
-          "$ref": "#/$defs/postings"
-        },
-        "symbols": {
-          "description": "The mathematics and the program text, indexed apart from the prose so that the app can rank a hit in a formula against a hit in a paragraph rather than having to guess which the reader wanted.",
-          "$ref": "#/$defs/postings"
-        }
+        "terms": { "$ref": "#/$defs/postings" },
+        "symbols": { "$ref": "#/$defs/postings" }
       }
     },
 
     "postings": {
-      "description": "A term to the positions in posts it occurs in, ascending and without repeats.",
+      "description": "A term to the positions in posts it occurs in, ascending and without repeats. There are two of these in an index. terms is the prose, an ordinary word index over the text of the corpus, with any term in more than a third of the blocks dropped, which is a stopword list that does not have to be written four times in four languages. symbols is the mathematics and the program text, indexed apart from the prose so that the app can rank a hit in a formula against a hit in a paragraph rather than having to guess which the reader wanted.",
       "type": "object",
       "propertyNames": { "minLength": 1 },
       "additionalProperties": {

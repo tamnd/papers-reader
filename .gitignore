@@ -22,6 +22,17 @@
 /web/dist/
 /web/.astro/
 
+# The emit the app is built from. papers emit writes it into web/public and
+# the deploy job writes it again from the corpus of the day, so a copy in
+# here would be a second corpus that nobody updates. The directory itself
+# stays, because Astro wants it and because the app's own static files, if
+# it ever has any, belong in it.
+/web/public/index.json
+/web/public/graph.json
+/web/public/search-*.json
+/web/public/p/
+/web/public/figures/
+
 # Coverage.
 *.out
 *.test

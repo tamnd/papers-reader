@@ -48,6 +48,21 @@ audit: build
 emit: build
 	$(BIN) emit -check
 
+# The TypeScript the app reads the build with, generated from the same
+# schema the Go emitter validates against. Committed, so the app builds
+# without a generator, and checked in CI, so nobody can hand edit an
+# interface out of agreement with the emitter.
+.PHONY: schema
+schema:
+	cd web && npm run schema
+
+# Builds the site into web/public and then builds the app over it. The
+# corpus is an argument because the app repository does not hold one.
+.PHONY: site
+site: build
+	$(BIN) emit -corpus $(CORPUS) -out web/public
+	cd web && npm run build
+
 .PHONY: clean
 clean:
-	rm -rf bin dist coverage.out
+	rm -rf bin dist coverage.out web/dist

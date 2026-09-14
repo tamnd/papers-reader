@@ -1,0 +1,35 @@
+---
+// The marker that says a piece of this page is provisional.
+//
+// It appears twice: once at the head of a page whose provenance says a
+// small model or a gateway was involved anywhere in it, and again on each
+// section that is the one, because a reader who has just read a paragraph
+// is owed the warning where the paragraph is rather than at the top of a
+// page they scrolled past ten minutes ago.
+interface Props {
+  /** A small model wrote it. */
+  small?: boolean;
+  /** A gateway wrote it, rather than the model that was asked for. */
+  gateway?: boolean;
+  /** The glossary of this language is under the coverage floor. */
+  draft?: boolean;
+  /** Where the marker is, which changes the wording. */
+  scope: "page" | "section";
+}
+
+const { small = false, gateway = false, draft = false, scope } = Astro.props;
+
+const what = scope === "page" ? "this page" : "this section";
+const reasons: string[] = [];
+if (small) reasons.push(`a model small enough that the result is provisional wrote ${what}`);
+if (gateway) reasons.push(`${what} went through a gateway rather than the model it was meant for`);
+if (draft) reasons.push("the glossary for this language is under the coverage floor, so the terminology is not yet settled");
+---
+
+{
+  reasons.length > 0 && (
+    <p class="provisional">
+      Provisional: {reasons.join(", and ")}. Read it against the English.
+    </p>
+  )
+}
