@@ -30,6 +30,10 @@ import (
 // things a reader does after it has read the page correctly, and a page
 // refused for any of them would be asked again and come back the same way.
 //
+// Delink runs after Unlink so that an image link is still an image link
+// when Unlink looks at it. Unlink matches a whole line and Delink would
+// leave it half a line, with the caption in the prose and the picture gone.
+//
 // Dollars runs before Untable so that a cell already written in TeX's own
 // delimiters is in this corpus's delimiters by the time the table is read.
 // Untable puts dollars round a cell that is bare TeX, and a cell it had
@@ -44,6 +48,7 @@ func Tidy(s string) string {
 	s = Dollars(s)
 	s = Untable(s)
 	s = Unlink(s)
+	s = Delink(s)
 	return strings.TrimSpace(s)
 }
 

@@ -74,6 +74,11 @@ func structureRules() []Rule {
 			What:  "no raw HTML markup is left in a body.",
 			Check: ruleT11,
 		},
+		{
+			ID: "T12", Hard: true,
+			What:  "no Markdown link is left in a body.",
+			Check: ruleT12,
+		},
 	}
 }
 
@@ -578,3 +583,55 @@ func ruleT11(in *Input) ([]Finding, error) {
 	}
 	return out, nil
 }
+
+// ruleT12 is the same rule as T11 for the other markup a reader adds by
+// habit, which is the link.
+//
+// The corpus has no links in it. A reference is a numbered entry, a cross
+// reference is an anchor, a paper is [[an id]], and a figure is a manifest
+// entry rather than an image. So a link in a body is always something a
+// model wrote that was not on the page, and it always arrives the same way:
+// the paper prints a web address as prose, "available at
+// http://research.microsoft.com/barc/SortBenchmark/", and a model that has
+// read a great deal of Markdown writes it back as a link.
+//
+// It was found three times over in one afternoon. All three translations of
+// the GAN introduction did it to the footnote that gives the address of the
+// code, and the second reading of the MapReduce bibliography did it to
+// reference 10, where it came with a retyped address as well. So it is one
+// rule over every file in every language rather than a comparison against
+// the English, which is what it was when only the translations had done it.
+//
+// Hard, because a link is the one piece of markup the reading app and the
+// book both render, so a wrong one is visible to a reader who has no way to
+// check it.
+func ruleT12(in *Input) ([]Finding, error) {
+	if !anyContent(in) {
+		return nil, ErrNotRun
+	}
+	var out []Finding
+	for _, f := range in.Content {
+		if f.Broken() {
+			continue
+		}
+		lines := strings.Split(f.Body, "\n")
+		safe := protectedLines(f.Body, len(lines))
+		for i, line := range lines {
+			if safe[i+1] {
+				continue
+			}
+			for _, m := range markdownLink.FindAllString(inlineCode.ReplaceAllString(line, " "), -1) {
+				out = append(out, Finding{
+					Rule: "T12", File: f.Path, Line: i + 1,
+					Message: fmt.Sprintf("%s is a link, and the corpus has no links in it", m),
+				})
+			}
+		}
+	}
+	return out, nil
+}
+
+// markdownLink is an inline link or an inline image. A reference style link
+// is not matched and does not need to be: nothing writes one, and the
+// definition it would need would be a finding of its own.
+var markdownLink = regexp.MustCompile(`!?\[[^\]\n]*\]\([^)\n]*\)`)

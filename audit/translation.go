@@ -205,11 +205,6 @@ func translationRules() []Rule {
 			What:  "the section title of a translation was translated too.",
 			Check: ruleL19,
 		},
-		{
-			ID: "L20", Hard: true,
-			What:  "a translation has no link the English does not have.",
-			Check: ruleL20,
-		},
 	}
 }
 
@@ -1212,50 +1207,6 @@ func ruleL19(in *Input) ([]Finding, error) {
 		}}
 	})
 }
-
-// ruleL20 catches a link in a translation, which is markup the English does
-// not have, because the corpus vocabulary has no links in it at all.
-//
-// The way this happens is not that a translator invents a link. It is that
-// the English writes an address as prose, "available at
-// http://www.github.com/goodfeli/adversarial", and a model that has read a
-// great deal of Markdown writes the address back as a link with the address
-// as both the text and the target. All three translations of the GAN paper
-// did it to the same footnote, and the translate prompt had already
-// forbidden it in so many words.
-
-// An address is a protected span now, so a translator that gets this wrong
-// again is a translator with a bug in it rather than a model taking a
-// liberty. The rule stays anyway: it is cheap, it is the only thing that
-// looks at the shape of the markup rather than the prose, and a file can
-// arrive by hand.
-//
-// Hard, because a link is the one piece of markup the reading app and the
-// book both render, so a wrong one is visible to a reader who cannot check
-// it.
-func ruleL20(in *Input) ([]Finding, error) {
-	return eachTranslation(in, func(p pair) []Finding {
-		var out []Finding
-		for _, link := range markdownLink.FindAllString(p.tr.Body, -1) {
-			// A listing is copied byte for byte by L18, so a link inside
-			// one is the English's own and is not this rule's business.
-			if strings.Contains(p.en.Body, link) {
-				continue
-			}
-			out = append(out, Finding{
-				Rule: "L20", File: p.tr.Path,
-				Message: fmt.Sprintf("%s is a link, and the English it was made from has none", link),
-			})
-		}
-		return out
-	})
-}
-
-// markdownLink is an inline link or an inline image. A reference style link
-// is not matched and does not need to be: nothing writes one, and the
-// definition it would need would be a finding of its own under the vocabulary
-// rules.
-var markdownLink = regexp.MustCompile(`!?\[[^\]\n]*\]\([^)\n]*\)`)
 
 // words says whether a title has anything in it a translator could have
 // changed: two runs of letters, or one of more than three.

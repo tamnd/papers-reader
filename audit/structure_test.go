@@ -547,3 +547,36 @@ func TestT11ReportsAFileOnceWithACount(t *testing.T) {
 		t.Errorf("the message is %q, want the tag count in it", res.Findings[0].Message)
 	}
 }
+
+// The corpus has no links in it, and a link in a body is always a model
+// writing back a web address that the paper printed as prose. Reference 10
+// of the MapReduce paper and the code footnote of the GAN introduction are
+// the two that were found, and the second one was found in three languages.
+func TestT12FindsAMarkdownLink(t *testing.T) {
+	long := strings.Repeat("a sentence of the paper. ", 12)
+	for _, tc := range []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{"clean", long + "\n", false},
+		{"an address written as prose", long + "\n\nthe page is at http://example.org/x.\n", false},
+		{"an address written as a link", long + "\n\nthe page is at [http://example.org/x](http://example.org/x).\n", true},
+		{"a link with words for its text", long + "\n\nsee [the sort benchmark](http://example.org/x).\n", true},
+		{"an image", long + "\n\n![Figure 1](figures/f1.png)\n", true},
+		{"a citation into the corpus", long + "\n\nthe method of [[dean-2004-mapreduce]] is faster.\n", false},
+		{"a numbered citation", long + "\n\nthe method of [3] is faster.\n", false},
+		{"a link inside a fence is a listing", long + "\n\n```text\n[a](b)\n```\n", false},
+		{"a link inside inline code is the markup itself", long + "\n\nthe form `[a](b)` is a link.\n", false},
+	} {
+		files := map[string]string{
+			"manifests/sources.yaml":                          openSources,
+			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), tc.body),
+		}
+		res := result(t, Run(in(t, files), true), "T12")
+		if res.Failed() != tc.fails {
+			t.Errorf("%s: T12 failed=%v, want %v (%v)", tc.name, res.Failed(), tc.fails, res.Findings)
+		}
+	}
+}
