@@ -3,6 +3,8 @@ package assemble
 import (
 	"strings"
 	"testing"
+
+	"github.com/tamnd/papers-reader/code"
 )
 
 func join(pages ...string) *Document {
@@ -360,11 +362,16 @@ func TestAListingWithNoFenceIsNotJoinedToTheOneAfterIt(t *testing.T) {
 		"    }\n" +
 		"}\n"
 	d := Join([]Page{{Number: 1, Text: page, Model: true}})
-	if len(d.Paragraphs) != 2 {
-		t.Fatalf("the two declarations came out as %d paragraph(s):\n%s", len(d.Paragraphs), d.Text())
-	}
 	if strings.Contains(d.Text(), "} header second {") {
 		t.Errorf("one declaration was run into the next:\n%s", d.Text())
+	}
+	// One fence with the blank line the page had inside it, because the two
+	// declarations were one listing on the page. See fenced.
+	if !strings.Contains(d.Text(), "}\n\nheader second {") {
+		t.Errorf("the blank line between the declarations is gone:\n%s", d.Text())
+	}
+	if len(d.Paragraphs) != 1 {
+		t.Fatalf("the listing came out as %d paragraph(s):\n%s", len(d.Paragraphs), d.Text())
 	}
 }
 
@@ -390,9 +397,118 @@ func TestAListingSplitAcrossAPageBreakIsPutBackTogether(t *testing.T) {
 func TestATwoLineListingIsNotProseEither(t *testing.T) {
 	page := "parser start{ ethernet;\n}\n\nparser ethernet {\n    switch(x) {\n        case 1: vlan;\n    }\n}\n"
 	d := Join([]Page{{Number: 1, Text: page, Model: true}})
-	if len(d.Paragraphs) != 2 {
-		t.Fatalf("the two parsers came out as %d paragraph(s):\n%s", len(d.Paragraphs), d.Text())
+	if !strings.Contains(d.Text(), "}\n\nparser ethernet {") {
+		t.Errorf("the two parsers were run together:\n%s", d.Text())
 	}
+}
+
+// A listing that came off the page without a fence gets one, because a
+// listing written as prose loses its indentation in every renderer and is
+// refused by every translator. This is the P4 paper's section 4, eighteen
+// times over.
+func TestAListingComesOutFenced(t *testing.T) {
+	d := model("The header is declared as follows:\n\n" +
+		"header mTag {\n    fields {\n        up1 : 8;\n        up2 : 8;\n    }\n}\n")
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("assembled %d paragraphs, want a sentence and a listing:\n%s", len(d.Paragraphs), d.Text())
+	}
+	got := d.Paragraphs[1].Text
+	if !strings.HasPrefix(got, "```\n") || !strings.HasSuffix(got, "\n```") {
+		t.Errorf("the listing is not in a fence:\n%s", got)
+	}
+	if !strings.Contains(got, "\n        up1 : 8;\n") {
+		t.Errorf("the indentation did not survive:\n%s", got)
+	}
+	if blocks, unclosed := code.Blocks(d.Text()); len(blocks) != 1 || unclosed != nil {
+		t.Errorf("the document holds %d blocks and %v unclosed, want one closed one", len(blocks), unclosed)
+	}
+}
+
+// The fence says nothing about the language, because naming one belongs to
+// code.Label, which papers split runs over every paragraph and which answers
+// `text` when it is not sure. A tag written here would be written twice.
+func TestTheFenceNamesNoLanguage(t *testing.T) {
+	d := model("header mTag {\n    fields {\n        up1 : 8;\n        up2 : 8;\n    }\n}\n")
+	if got := firstLineOf(d.Paragraphs[0].Text); got != "```" {
+		t.Errorf("the fence opens with %q, want ```", got)
+	}
+}
+
+// Prose stays prose. This is the whole risk of fencing anything at all: a
+// paragraph wrongly fenced is a paragraph a reader cannot read.
+func TestProseIsNotFenced(t *testing.T) {
+	for _, s := range []string{
+		"The scheduler has three parts; the first reads the queue.\n",
+		"We evaluate on ImageNet [12], CIFAR-10 [13] and MNIST [14].\n",
+		"Figure 3. Data transfer rate over time\n",
+		"| lanes | rate |\n| --- | --- |\n| 4 | 12 |\n",
+	} {
+		if got := model(s).Text(); strings.Contains(got, "```") {
+			t.Errorf("prose was fenced:\n%s", got)
+		}
+	}
+}
+
+// A paragraph that arrived fenced is left as it is. The layout path writes
+// its own fences and fencing one twice would put the opening fence inside
+// the listing.
+func TestAFencedListingIsNotFencedAgain(t *testing.T) {
+	page := "```p4\nheader mTag {\n    fields {\n        up1 : 8;\n    }\n}\n```\n"
+	d := Join([]Page{{Number: 1, Text: page, Model: true}})
+	if got := d.Text(); strings.Count(got, "```") != 2 {
+		t.Errorf("the listing was fenced twice:\n%s", got)
+	}
+}
+
+// A listing with a fence of its own in it needs a longer one round it, which
+// is what CommonMark says and what the shell examples of a paper that quotes
+// a Markdown file would need.
+func TestAListingHoldingAFenceGetsALongerOne(t *testing.T) {
+	page := "print(x);\nprint(y);\n// the fence below is ```\n"
+	d := Join([]Page{{Number: 1, Text: page, Model: true}})
+	if got := firstLineOf(d.Paragraphs[0].Text); got != "````" {
+		t.Errorf("the fence is %q, want one longer than the run inside it", got)
+	}
+	if blocks, unclosed := code.Blocks(d.Text()); len(blocks) != 1 || unclosed != nil {
+		t.Errorf("the document holds %d blocks and %v unclosed, want one closed one", len(blocks), unclosed)
+	}
+}
+
+// A break inside a block is the reader guessing at the foot of a column and
+// the halves go back together. A break between two declarations is a blank
+// line the paper set and it stays. The P4 paper has both.
+func TestABreakInsideABlockIsClosedUp(t *testing.T) {
+	inside := model("table mTag_table {\n\nreads {\n        vlan.vid : exact;\n    }\n    max_size : 20000;\n}\n")
+	if got := inside.Text(); strings.Contains(got, "{\n\nreads") {
+		t.Errorf("the column break inside the table is still a blank line:\n%s", got)
+	}
+	between := model("header first {\n    fields {\n        a : 8;\n    }\n}\n\n" +
+		"header second {\n    fields {\n        b : 8;\n    }\n}\n")
+	if got := between.Text(); !strings.Contains(got, "}\n\nheader second {") {
+		t.Errorf("the line the paper set between two declarations is gone:\n%s", got)
+	}
+}
+
+// A listing that ran over a page break is one listing, and the page count
+// says it crossed one. That is what sends a reader to the right page.
+func TestAFencedListingKeepsItsPages(t *testing.T) {
+	d := Join([]Page{
+		{Number: 4, Text: "parser start{\n", Model: true},
+		{Number: 5, Text: "ethernet;\n}\n", Model: true},
+	})
+	if len(d.Paragraphs) != 1 {
+		t.Fatalf("assembled %d paragraphs, want one listing:\n%s", len(d.Paragraphs), d.Text())
+	}
+	if p := d.Paragraphs[0]; p.Page != 4 || p.Pages != 2 {
+		t.Errorf("the listing begins on page %d and runs across %d, want page 4 across 2", p.Page, p.Pages)
+	}
+}
+
+func firstLineOf(s string) string {
+	if i := strings.Index(s, "\n"); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // The other side of the threshold. A paragraph of prose with a couple of

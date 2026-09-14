@@ -118,7 +118,120 @@ func Join(pages []Page) *Document {
 			d.Paragraphs = append(d.Paragraphs, Paragraph{Text: text, Page: p.Number, Pages: 1})
 		}
 	}
+	d.Paragraphs = fenced(d.Paragraphs)
 	return d
+}
+
+// fenced puts a fence round the listings that came off the page without one.
+//
+// The assembler already has to know which paragraphs are program text, or it
+// joins them into the prose around them. Knowing that and then writing them
+// out as prose anyway is half a job. It is the P4 paper that says so: its
+// section 4 is eighteen listings and not one of them was fenced, so the
+// declarations rendered as run-together prose with the indentation collapsed,
+// audit rule C08 reported all eighteen, and the Vietnamese translation of the
+// section was refused three times and given up on because the model quite
+// reasonably fenced the listings itself and the source had no fence to match.
+// Eighteen of the twenty C08 findings in the corpus are that one file.
+//
+// A run of program paragraphs goes into one fence rather than a fence each.
+// They were one listing on the page and what is between them is either a
+// blank line the paper set or a break the reader guessed at, and the braces
+// say which. A break with a brace still open is inside a block, so it is the
+// reader guessing at the foot of a column and the two halves go back together
+// with one newline, the same repair Join makes at a page break and for the
+// same reason. A break with the braces balanced is between one declaration
+// and the next and the blank line is the paper's. Both are in the P4 paper:
+// `table mTag_table {` and the `reads {` under it are one table, and `header
+// ethernet` and `header vlan` are two declarations with a line between them.
+//
+// Anything that is not program text ends the run, so two listings with a
+// sentence between them stay two listings.
+//
+// The fence carries no language, because naming one is not this package's
+// job. papers split runs code.Label over every paragraph it writes, which
+// puts a tag on a bare fence where the answer is not in doubt and `text`
+// where it is, and that is the same treatment a fence off the layout path
+// gets. The P4 listings come out `text`, which is right: nothing in the
+// signature list is P4 and colouring it as something else would be a lie
+// about what a reader is looking at.
+//
+// Nothing here fences a paragraph that arrived fenced. The layout path writes
+// its own fences and this is for the native path, which writes prose and
+// nothing else.
+func fenced(ps []Paragraph) []Paragraph {
+	out := make([]Paragraph, 0, len(ps))
+	for i := 0; i < len(ps); {
+		if !listing(ps[i].Text) {
+			out = append(out, ps[i])
+			i++
+			continue
+		}
+		j := i
+		for j < len(ps) && listing(ps[j].Text) {
+			j++
+		}
+		body := ps[i].Text
+		for _, p := range ps[i+1 : j] {
+			if open(body) > 0 {
+				body += "\n" + p.Text
+				continue
+			}
+			body += "\n\n" + p.Text
+		}
+		last := ps[j-1]
+		out = append(out, Paragraph{
+			Text:  mark(body) + "\n" + body + "\n" + mark(body),
+			Page:  ps[i].Page,
+			Pages: last.Page + last.Pages - ps[i].Page,
+		})
+		i = j
+	}
+	return out
+}
+
+// listing says whether a paragraph is program text that is not already in a
+// fence.
+func listing(s string) bool {
+	return opens(strings.TrimSpace(s)) == "" && program(s)
+}
+
+// open is how many braces the text has left unclosed, which says whether a
+// break in it falls inside a block. Braces and not brackets or parentheses,
+// because a brace is what a block is written with in every language a paper
+// in this corpus prints, and a stray parenthesis in a comment is far commoner
+// than a stray brace.
+func open(s string) int {
+	n := 0
+	for _, r := range s {
+		switch r {
+		case '{':
+			n++
+		case '}':
+			n--
+		}
+	}
+	return n
+}
+
+// mark is a backtick fence long enough to hold the text, which is three
+// unless the listing has a run of three or more backticks of its own in it.
+func mark(s string) string {
+	most, n := 0, 0
+	for _, r := range s {
+		if r == '`' {
+			n++
+			if n > most {
+				most = n
+			}
+			continue
+		}
+		n = 0
+	}
+	if most < 3 {
+		return "```"
+	}
+	return strings.Repeat("`", most+1)
 }
 
 // Text is the document as one string, a paragraph to a line.
