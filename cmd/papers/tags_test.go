@@ -136,6 +136,103 @@ func TestADryRunWritesNothing(t *testing.T) {
 	}
 }
 
+// vietnamese is the Vietnamese of section(""). The prose is different and the
+// numbers are the same, because a section number is printed by the paper and
+// a translator copies it.
+func vietnamese() string {
+	return `---
+paper: a-1970-paper
+title: Mot Bai Bao
+section: "1"
+section_title: Muc Thu Nhat
+kind: section
+lang: vi
+---
+
+Doan van thu nhat cua muc nay.
+
+#### 1.1 Mot Tieu Muc
+
+Doan van duoi tieu muc.
+`
+}
+
+func TestATranslationGetsTheTagsItsEnglishWasGiven(t *testing.T) {
+	root := tagsCorpus(t, section(""))
+	vi := filepath.Join(root, "content/vi/a-1970-paper/01_first.md")
+	if err := os.MkdirAll(filepath.Dir(vi), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vi, []byte(vietnamese()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+
+	en := read(t, filepath.Join(root, "content/en/a-1970-paper/01_first.md"))
+	got := read(t, vi)
+	// Rule L04 compares the tag in the front matter and rule L02 compares
+	// the attribute blocks span by span, so both have to match and the
+	// anchor has to match with them.
+	if want := "tag=" + tagOf(t, en, "tag="); !strings.Contains(got, want) {
+		t.Errorf("the subsection is missing %q:\n%s", want, got)
+	}
+	if want := tagOf(t, en, "tag: "); !strings.Contains(got, "tag: "+want) && !strings.Contains(got, `tag: "`+want+`"`) {
+		t.Errorf("the front matter is missing tag %s:\n%s", want, got)
+	}
+	if !strings.Contains(got, "a-1970-paper-s1-1") {
+		t.Errorf("the translation did not get the English anchor:\n%s", got)
+	}
+}
+
+func TestAHeadingOnlyTheTranslationHasIsGivenNothing(t *testing.T) {
+	// A heading that is in a translation and not in its English is a
+	// translation that went wrong. Handing it an identifier would write the
+	// mistake into the register for good, where nothing is ever taken back
+	// out, so the line is left as it was found and the audit reports it.
+	root := tagsCorpus(t, section(""))
+	vi := filepath.Join(root, "content/vi/a-1970-paper/01_first.md")
+	if err := os.MkdirAll(filepath.Dir(vi), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := vietnamese() + "\n#### 1.2 Mot Muc Khong Co Trong Ban Goc\n\nDoan van.\n"
+	if err := os.WriteFile(vi, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, vi); strings.Contains(got, "a-1970-paper-s1-2") {
+		t.Errorf("a heading the English does not have was given an anchor:\n%s", got)
+	}
+	// Two anchors in the register, the section and its one subsection, and
+	// nothing from the translation.
+	if n := lines(t, filepath.Join(root, "tags", "tags")); n != 2 {
+		t.Errorf("the register holds %d anchors, want 2", n)
+	}
+}
+
+// tagOf is the first tag in a file, written either way the corpus writes one:
+// `tag: 0001` in the front matter and `tag=0001` in an attribute block.
+func tagOf(t *testing.T, text, prefix string) string {
+	t.Helper()
+	for _, line := range strings.Split(text, "\n") {
+		i := strings.Index(line, prefix)
+		if i < 0 {
+			continue
+		}
+		tag := line[i+len(prefix):]
+		tag = strings.TrimRight(tag, "}")
+		tag = strings.Trim(strings.TrimSpace(tag), `"`)
+		if tag != "" {
+			return tag
+		}
+	}
+	t.Fatalf("no %q in:\n%s", prefix, text)
+	return ""
+}
+
 func read(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)

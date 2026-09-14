@@ -163,11 +163,43 @@ type assignment struct {
 	used map[string]int
 }
 
-// paper walks one paper's English content in file order, which is reading
-// order, and that is what makes the tags climb.
+// paper walks one paper, English first and then every translation of it.
+//
+// English first because that is where a tag is handed out. A tag is an
+// identifier and not prose, so the same one belongs on the same thing in
+// every language, and audit rules L02 and L04 say so: L02 compares the
+// attribute blocks of a translation against its English span by span, and
+// L04 compares the tag in its front matter.
+//
+// Without this pass they part company every time a paper is split after it
+// has been translated. The split takes the blocks off the English files, the
+// assigner puts them back, and the translations keep whatever they were
+// written with, which for a paper translated before it was ever tagged is
+// nothing at all. The MapReduce paper was the case and it failed both rules
+// in all three languages.
+//
+// A translation is only ever given a tag the register already holds against
+// the anchor. Nothing is handed out for one, because a thing that exists in
+// a translation and not in its English is a translation that went wrong and
+// giving it an identifier would be writing that mistake down for good.
 func (a *assignment) paper(id string) error {
+	for _, lang := range corpus.Langs {
+		if err := a.walk(id, lang); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walk is one paper in one language, in file order, which is reading order,
+// and that is what makes the tags climb.
+func (a *assignment) walk(id string, lang corpus.Lang) error {
+	// Emptied per language as well as per paper, because the count behind
+	// unique has to start from the same place in a translation as it did in
+	// the English or the second section of a repeated name gets the first
+	// one's key.
 	a.used = map[string]int{}
-	dir := a.corpus.Content(corpus.EN, id)
+	dir := a.corpus.Content(lang, id)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
 		return nil
@@ -183,14 +215,14 @@ func (a *assignment) paper(id string) error {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if err := a.file(id, filepath.Join(dir, name)); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+		if err := a.file(id, filepath.Join(dir, name), lang); err != nil {
+			return fmt.Errorf("%s/%s: %w", lang, name, err)
 		}
 	}
 	return nil
 }
 
-func (a *assignment) file(id, path string) error {
+func (a *assignment) file(id, path string, lang corpus.Lang) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -204,14 +236,16 @@ func (a *assignment) file(id, path string) error {
 	// The file's own section comes first, because it is the heading every
 	// heading inside the body sits under and reading order starts with it.
 	if key := tags.SectionKey(front.Section, front.Kind); key != "" {
-		t, err := a.tag(id, a.unique(key), "section")
+		t, known, err := a.tagFor(id, a.unique(key), "section", lang)
 		if err != nil {
 			return err
 		}
-		if front.Tag == "" {
+		switch {
+		case !known:
+		case front.Tag == "":
 			front.Tag = string(t)
 			handed++
-		} else {
+		default:
 			a.had++
 		}
 	}
@@ -228,9 +262,12 @@ func (a *assignment) file(id, path string) error {
 			a.had++
 			continue
 		}
-		t, err := a.tag(id, it.Key, it.Class)
+		t, known, err := a.tagFor(id, it.Key, it.Class, lang)
 		if err != nil {
 			return err
+		}
+		if !known {
+			continue
 		}
 		blocks[i] = tags.Format(tags.Attr{Anchor: tags.Anchor(id, it.Key), Classes: []string{it.Class}, Tag: t})
 		handed++
@@ -274,6 +311,21 @@ func (a *assignment) unique(key string) string {
 		return fmt.Sprintf("%s-%d", key, n)
 	}
 	return key
+}
+
+// tagFor is the tag one file gets for one anchor, and whether there is one.
+//
+// In English there always is: an anchor the register does not know is an
+// anchor it is given. In a translation there is only what the English has
+// already been given, so an anchor the register does not hold comes back
+// unknown and the caller leaves the line as it found it.
+func (a *assignment) tagFor(paper, key, class string, lang corpus.Lang) (tags.Tag, bool, error) {
+	if lang.Translated() {
+		t, ok := a.register.Tag(tags.Anchor(paper, key))
+		return t, ok, nil
+	}
+	t, err := a.tag(paper, key, class)
+	return t, err == nil, err
 }
 
 // tag is the tag for one anchor, handing out a new one if the register does
