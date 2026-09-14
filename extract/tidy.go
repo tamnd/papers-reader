@@ -103,10 +103,25 @@ var trailers = []string{
 	"shall i",
 }
 
-// dropTrailer takes the courtesies off the foot of the page, and keeps going
-// until the last line is not one. A reader that signs off twice, with "I hope
-// this helps." under "Would you like a summary?", is a reader whose page ends
-// two lines above where it looks like it ends.
+// chrome is not a courtesy. It is the relay's own user interface, which the
+// tool that read the page sometimes picks up along with the answer and hands
+// back as the last line of the transcription. Page 10 of the MapReduce paper
+// came back ending " Give feedback", and it cost the page its running head
+// as well: the furniture pass takes one folio and one head off an edge, the
+// chrome took the head's turn, and the conference line published inside the
+// experience section.
+//
+// Matched on the whole line and not as a prefix, and the list holds only
+// what has actually been seen, because these are two and three word phrases
+// and a paper will one day end a page on one of them.
+var chrome = []string{
+	"give feedback",
+}
+
+// dropTrailer takes the courtesies and the chrome off the foot of the page,
+// and keeps going until the last line is neither. A reader that signs off
+// twice, with "I hope this helps." under "Would you like a summary?", is a
+// reader whose page ends two lines above where it looks like it ends.
 func dropTrailer(s string) string {
 	for {
 		i := strings.LastIndex(s, "\n")
@@ -117,6 +132,12 @@ func dropTrailer(s string) string {
 		found := false
 		for _, t := range trailers {
 			if strings.HasPrefix(last, t) {
+				found = true
+				break
+			}
+		}
+		for _, c := range chrome {
+			if last == c {
 				found = true
 				break
 			}

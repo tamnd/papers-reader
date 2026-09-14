@@ -1,6 +1,9 @@
 package extract
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTidyTakesOffTheWrapping(t *testing.T) {
 	for _, c := range []struct {
@@ -162,5 +165,29 @@ func TestTidyKeepsAnOfferAPaperPrinted(t *testing.T) {
 	const page = "The system then asks the user: would you like to see the next ten results, or refine the query?"
 	if got := Tidy(page); got != page {
 		t.Errorf("a sentence of the paper was trimmed to %q", got)
+	}
+}
+
+// Page 10 of the MapReduce paper came back with the relay's own button on
+// the end of it. That is not a courtesy and it is not the page, and it cost
+// the page its running head, because the furniture pass takes one head off
+// an edge and the button took its turn.
+func TestTheRelaysOwnInterfaceComesOffTheFootOfThePage(t *testing.T) {
+	const page = "One of our most significant uses of MapReduce to date has been a\ncomplete rewrite of the production indexing system.\n\n146\n\n Give feedback\n"
+	got := Tidy(page)
+	if strings.Contains(got, "Give feedback") {
+		t.Errorf("the button is still on the page:\n%s", got)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(got), "146") {
+		t.Errorf("the folio is no longer the last line:\n%s", got)
+	}
+}
+
+// Matched whole and not as a prefix, because these are two words and a paper
+// about interfaces will one day write them.
+func TestASentenceThatStartsLikeTheInterfaceStays(t *testing.T) {
+	const page = "A paragraph about what the system does.\n\nGive feedback to the user before the request completes.\n"
+	if got := Tidy(page); !strings.Contains(got, "Give feedback to the user") {
+		t.Errorf("a sentence of the paper came off:\n%s", got)
 	}
 }
