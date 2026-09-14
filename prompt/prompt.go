@@ -86,6 +86,31 @@ func Lang(l corpus.Lang) (Prompt, error) {
 	return Get("lang_" + string(l))
 }
 
+// TranslationSHA is the hash that goes in the front matter of a translated
+// page: the body prompt and the language rules together.
+//
+// Both, because a translated page was produced by both and is stale when
+// either moves. The Vietnamese rules once said to give the English in
+// parentheses the first time a term appears, which the model read as every
+// term, so an eight sentence abstract came back with seven parentheses in
+// it. Tightening that sentence is a rule the files on disk were never held
+// to, in exactly the way a change to translate.md is, and with the hash of
+// translate.md alone none of them would have been asked again.
+//
+// The glossary hash is separate and stays separate. It is per field and per
+// language and moves for a different reason.
+func TranslationSHA(l corpus.Lang) (string, error) {
+	body, err := Get(Translate)
+	if err != nil {
+		return "", err
+	}
+	rules, err := Lang(l)
+	if err != nil {
+		return "", err
+	}
+	return SHA256(body.Text + "\n" + rules.Text), nil
+}
+
 //go:embed notes
 var notes embed.FS
 

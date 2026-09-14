@@ -254,14 +254,15 @@ func TestATranslationMadeAgainstARenderingThatMovedIsAskedAgain(t *testing.T) {
 }
 
 // translatePrompt is the hash of the prompt this build carries, which is what
-// a file has to record to count as current.
+// a Vietnamese file has to record to count as current. The language rules
+// are part of it, which is why it takes a language.
 func translatePrompt(t *testing.T) string {
 	t.Helper()
-	p, err := prompt.Get(prompt.Translate)
+	sha, err := prompt.TranslationSHA(corpus.VI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return p.SHA
+	return sha
 }
 
 func TestATranslationOfAnEnglishFileThatMovedIsPlannedAgain(t *testing.T) {

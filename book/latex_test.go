@@ -127,6 +127,20 @@ func TestTheFigureNameIsReadOffTheCaption(t *testing.T) {
 	}
 }
 
+// Off the body and not off figures.yaml. The manifest holds the caption the
+// English page printed, in every language, so reading the word from there
+// set "Figure 2:" over a Japanese caption that said 図 2.
+func TestTheFigureNameIsTheTranslatedWord(t *testing.T) {
+	b := testBook(t)
+	b.Lang = corpus.VI
+	b.Sections[0].Body = strings.Replace(b.Sections[0].Body,
+		"Figure 1: the margin, to scale.", "Hình 1: lề, theo tỷ lệ.", 1)
+
+	if got := b.FigureName(); got != "Hình" {
+		t.Errorf("the figure name is %q, and the manifest caption is the English one", got)
+	}
+}
+
 func TestAnAttributeBlockNeverReachesThePage(t *testing.T) {
 	tex, _ := set(t)
 

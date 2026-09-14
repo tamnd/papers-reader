@@ -320,7 +320,7 @@ func current(c *corpus.Corpus, g *glossary.Glossary, l corpus.Lang, id string, f
 	if front.Roundtrip == string(roundtrip.Material) {
 		return false
 	}
-	if p, err := prompt.Get(prompt.Translate); err == nil && front.PromptSHA256 != p.SHA {
+	if sha, err := prompt.TranslationSHA(l); err == nil && front.PromptSHA256 != sha {
 		return false
 	}
 	// A page translated against a rendering that has since changed is owed
@@ -393,11 +393,11 @@ func translated(ctx context.Context, c *corpus.Corpus, t *translate.Translator, 
 	front.GlossaryVersion = g.Version
 	front.GlossaryTermsSHA256 = glossary.TermsSHA(g, j.front.Field, j.lang)
 	front.ContentSHA256 = corpus.ContentSHA([]byte(body))
-	p, err := prompt.Get(prompt.Translate)
+	sha, err := prompt.TranslationSHA(j.lang)
 	if err != nil {
 		return res, err
 	}
-	front.PromptSHA256 = p.SHA
+	front.PromptSHA256 = sha
 
 	out, err := corpus.Render(front, []byte(body))
 	if err != nil {

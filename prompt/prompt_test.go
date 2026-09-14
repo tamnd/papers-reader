@@ -156,3 +156,27 @@ func TestNotedListsPaperIds(t *testing.T) {
 		t.Error("a paper id climbed out of the notes directory")
 	}
 }
+
+// The hash a translated page records has to move when either half of the
+// prompt that produced it moves, and it has to be a different hash for each
+// language, or a change to the Vietnamese rules would requeue the Japanese.
+func TestTheTranslationHashCoversTheLanguageRules(t *testing.T) {
+	body := MustGet(Translate)
+	seen := map[string]corpus.Lang{}
+	for _, l := range []corpus.Lang{corpus.VI, corpus.ZH, corpus.JA} {
+		sha, err := TranslationSHA(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sha == body.SHA {
+			t.Errorf("%s records the body prompt's own hash, so its language rules are not in it", l)
+		}
+		if was, ok := seen[sha]; ok {
+			t.Errorf("%s and %s record the same hash", l, was)
+		}
+		seen[sha] = l
+	}
+	if _, err := TranslationSHA(corpus.EN); err == nil {
+		t.Error("English has a translation hash and nothing is translated into English")
+	}
+}

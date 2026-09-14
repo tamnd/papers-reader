@@ -3,7 +3,6 @@ package book
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -661,16 +660,30 @@ func escape(s string) string { return specials.Replace(s) }
 
 // FigureName is the word the paper prints in front of a figure number, which
 // in a translation is the translated word. It is read off the first caption
-// that has one, and is empty when the paper has no figures.
+// in the body, and is empty when the paper has no captioned figure.
+//
+// Off the body and not off figures.yaml, which is where it used to be read
+// and where it is wrong. The manifest holds one caption per figure, taken
+// off the English page, so every translated book got \figurename{Figure} and
+// the Japanese one printed "Figure 2:" over a Japanese caption that said 図
+// 2. The body is the only place the translated word exists.
+//
+// The first one wins and the rest are not looked at. A paper prints the same
+// word over all of its figures, and a caption that disagrees with the others
+// is a reading mistake rather than a second convention.
 func (b *Book) FigureName() string {
-	keys := make([]string, 0, len(b.Figures))
-	for k := range b.Figures {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		if m := captionPrefix.FindStringSubmatch(b.Figures[k].Caption); m != nil {
-			return m[1]
+	for _, s := range b.Sections {
+		for _, line := range strings.Split(s.Body, "\n") {
+			attrs := tags.ParseAttrs(line)
+			if len(attrs) == 0 {
+				continue
+			}
+			if _, ok := b.Figures[attrs[0].Anchor]; !ok {
+				continue
+			}
+			if m := captionPrefix.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+				return m[1]
+			}
 		}
 	}
 	return ""
