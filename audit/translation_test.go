@@ -227,10 +227,24 @@ func glossaryPair(t *testing.T, en, tr string) *Report {
 
 func TestL06SaysWhenARenderingIsNowhereInTheTranslation(t *testing.T) {
 	en := "The attention mechanism is what this section is about and it is described at length below.\n"
-	tr := "Cơ chế attention là nội dung của mục này và nó được mô tả chi tiết bên dưới đây.\n"
+	tr := "Cơ chế tập trung là nội dung của mục này và nó được mô tả chi tiết ở bên dưới đây.\n"
 	res := result(t, glossaryPair(t, en, tr), "L06")
 	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "attention") {
 		t.Fatalf("L06 said %v about a page that ignored the glossary", res.Findings)
+	}
+}
+
+// A page that wrote the English term itself is L10's, not L06's. L10 is
+// hard and decides whether the term was kept on purpose, and two rules
+// reporting one page do not even agree about what is wrong with it.
+func TestL06LeavesATermTheTranslationKeptInEnglishToL10(t *testing.T) {
+	en := "The attention mechanism is what this section is about and it is described at length below.\n"
+	tr := "Cơ chế attention là nội dung của mục này và nó được mô tả chi tiết bên dưới đây.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L06"); res.Failed() {
+		t.Errorf("L06 reported a term L10 is the judge of: %v", res.Findings)
+	}
+	if res := result(t, glossaryPair(t, en, tr), "L10"); !res.Failed() {
+		t.Error("L10 did not pick up the term L06 handed to it")
 	}
 }
 

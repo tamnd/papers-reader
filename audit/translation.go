@@ -394,7 +394,7 @@ func ruleL06(in *Input) ([]Finding, error) {
 		whole := handled(terms, rs, tr)
 		var missed []string
 		for _, t := range terms {
-			if t.as == t.en || t.rendered(tr) {
+			if t.as == t.en || t.rendered(tr) || kept(tr, t.en) {
 				continue
 			}
 			if !missing(rs, tr, t.en, whole) {
@@ -532,6 +532,23 @@ func spans(rs []rune, term string) [][2]int {
 		out = append(out, [2]int{at, end})
 	}
 	return out
+}
+
+// kept says whether the translation wrote the English term itself.
+//
+// A page that did that made a decision, and L10 is the rule that judges it:
+// it asks whether an English term left standing was kept on purpose, and it
+// is hard, so nothing gets past it by being reported here instead. L06
+// reporting the same page as well is one mistake counted twice, and the two
+// findings do not even agree about what is wrong with it.
+//
+// Japanese writes "Markov chain" in English, the way a Japanese paper does,
+// and the glossary renders it マルコフ連鎖. Two pages of the first paper
+// translated were reported by L06 for having no マルコフ連鎖 in them, on top
+// of L10 having already looked at the same words and decided they were kept
+// on purpose.
+func kept(tr, term string) bool {
+	return len(spans([]rune(tr), term)) > 0
 }
 
 // missing says whether the English uses this term somewhere the translation
