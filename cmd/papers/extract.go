@@ -36,6 +36,7 @@ func runExtract(args []string) error {
 	retidy := fs.Bool("retidy", false, "run the tidier over the pages on disk and ask no model")
 	recheck := fs.Bool("recheck", false, "run the acceptance rules over the pages on disk and ask no model")
 	dry := fs.Bool("dry-run", false, "print what would be extracted and write nothing")
+	atOnce := fs.Int("jobs", 0, "how many papers to read at once, or 0 for one per lane in the fleet")
 	long := fs.Bool("v", false, "print every page and every refusal")
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `usage: papers extract [flags]
@@ -83,6 +84,13 @@ left alone.
 
 A page that is already extracted is left alone, so running this twice costs
 one read of the file and no writes. Pass --again to do the work over.
+
+Papers are read several at a time, one per lane the fleet has for a page
+image, and the pages of one paper still go in order because each page
+teaches the next one what a page of this paper looks like. A machine with
+no routing table reads one paper at a time. Use --jobs for a run that
+should be gentler than the routing table says, or to hold a layout run down
+to one heavy process.
 
 --retidy rewrites the pages on disk through the tidier and asks no model at
 all. It is for the day the tidier learns something new: when Untable was
@@ -186,9 +194,20 @@ papers doctor to see what is installed.
 		return asker, fleet
 	}
 
+	lanes := *atOnce
+	if lanes < 1 {
+		lanes = readers(*routes)
+	}
+	if lanes > len(todo) {
+		lanes = len(todo)
+	}
+	if lanes > 1 {
+		fmt.Printf("%d papers at once\n", lanes)
+	}
+
 	ctx := context.Background()
 	var done, refused, skipped int
-	for _, p := range todo {
+	for r := range together(ctx, lanes, todo, func(p corpus.Paper) (count, error) {
 		rec, _ := recorded.ByID(p.ID)
 		run := extraction{
 			corpus: c, paper: p, source: rec, math: math,
@@ -197,16 +216,17 @@ papers doctor to see what is installed.
 			first: first, last: last,
 			again: *again, dry: *dry, long: *long,
 		}
-		n, err := run.do(ctx)
+		return run.do(ctx)
+	}) {
 		switch {
-		case err != nil:
-			fmt.Printf("  %-34s %v\n", p.ID, err)
+		case r.err != nil:
+			fmt.Printf("  %-34s %v\n", r.paper.ID, r.err)
 			skipped++
 		default:
-			done += n.written
-			refused += n.refused
-			if n.written+n.refused > 0 || *long {
-				fmt.Printf("  %-34s %s\n", p.ID, n)
+			done += r.n.written
+			refused += r.n.refused
+			if r.n.written+r.n.refused > 0 || *long {
+				fmt.Printf("  %-34s %s\n", r.paper.ID, r.n)
 			}
 		}
 	}
@@ -218,6 +238,90 @@ papers doctor to see what is installed.
 		return fmt.Errorf("%d pages did not pass the acceptance rules", refused)
 	}
 	return nil
+}
+
+// readers is how many papers to read at once when nobody said.
+//
+// One per lane the fleet has for a page image, which is the same answer
+// papers translate settled on for the same reason: the run is waiting on
+// somebody else's machine and the number of things it may wait on at once is
+// written in the routing table. A machine with no route file, or one whose
+// table has nothing that will take a picture, reads one paper at a time,
+// which is what a native run wants anyway.
+//
+// The route file is parsed and nothing is asked. That is the whole reason
+// this can happen before the fleet is built: Fleet opens the ledger and
+// wires the pool and talks to no host, but it fails on a table with no
+// vision route, and a native run on a machine with no table at all has to
+// keep working.
+func readers(path string) int {
+	registry, _, err := work.Routes(path)
+	if err != nil {
+		return 1
+	}
+	pool := work.Vision(registry)
+	if pool.Empty() {
+		return 1
+	}
+	if n := pool.Lanes(); n > 1 {
+		return n
+	}
+	return 1
+}
+
+// finished is one paper's run, done with.
+type finished struct {
+	paper corpus.Paper
+	n     count
+	err   error
+}
+
+// together runs the papers, lanes of them at a time, and sends each one on
+// as it finishes.
+//
+// Across papers and never within one. The pages of a paper are read in
+// order because each one teaches the next: acceptance rule A5 is about how
+// long this paper's pages usually are, rule A6 is about where its printed
+// numbering starts, and the folio learner is fed page by page as the answers
+// come back. Reading page 9 before page 8 would judge it against a paper
+// the run has not met yet.
+//
+// Order here is completion order, so the summary line of a paper that took
+// forty pages arrives after the summary of one that took three. Every line
+// printed along the way names the paper it is about, which is what makes an
+// interleaved log readable.
+func together(ctx context.Context, lanes int, papers []corpus.Paper, do func(corpus.Paper) (count, error)) <-chan finished {
+	if lanes < 1 {
+		lanes = 1
+	}
+	queue := make(chan corpus.Paper)
+	done := make(chan finished)
+	var wg sync.WaitGroup
+	for range lanes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for p := range queue {
+				n, err := do(p)
+				done <- finished{paper: p, n: n, err: err}
+			}
+		}()
+	}
+	go func() {
+		defer close(queue)
+		for _, p := range papers {
+			select {
+			case queue <- p:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	return done
 }
 
 // count is what one paper's run came to.

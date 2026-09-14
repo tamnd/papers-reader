@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
@@ -312,5 +316,85 @@ func TestAgainRedoesOnlyTheRangeItWasGiven(t *testing.T) {
 	}
 	if got := pagesToDo(store, 4, 5, false); got != nil {
 		t.Errorf("without again it asked for %v, and every page is there", got)
+	}
+}
+
+func TestPapersAreReadSeveralAtOnce(t *testing.T) {
+	papers := make([]corpus.Paper, 12)
+	for i := range papers {
+		papers[i] = corpus.Paper{ID: fmt.Sprintf("p%02d", i)}
+	}
+	var mu sync.Mutex
+	var at, most int
+	for range together(context.Background(), 4, papers, func(corpus.Paper) (count, error) {
+		mu.Lock()
+		at++
+		if at > most {
+			most = at
+		}
+		mu.Unlock()
+		time.Sleep(5 * time.Millisecond)
+		mu.Lock()
+		at--
+		mu.Unlock()
+		return count{written: 1}, nil
+	}) {
+	}
+	if most < 2 {
+		t.Errorf("never more than %d papers were being read, and four lanes were asked for", most)
+	}
+	if most > 4 {
+		t.Errorf("%d papers were being read at once and four lanes were asked for", most)
+	}
+}
+
+func TestEveryPaperIsReportedOnce(t *testing.T) {
+	papers := make([]corpus.Paper, 20)
+	for i := range papers {
+		papers[i] = corpus.Paper{ID: fmt.Sprintf("p%02d", i)}
+	}
+	seen := map[string]int{}
+	for r := range together(context.Background(), 5, papers, func(p corpus.Paper) (count, error) {
+		if p.ID == "p07" {
+			return count{}, fmt.Errorf("no")
+		}
+		return count{written: 3}, nil
+	}) {
+		seen[r.paper.ID]++
+		if r.paper.ID == "p07" && r.err == nil {
+			t.Error("the paper that failed came back without its error")
+		}
+	}
+	if len(seen) != len(papers) {
+		t.Errorf("%d papers came back and %d went in", len(seen), len(papers))
+	}
+	for id, n := range seen {
+		if n != 1 {
+			t.Errorf("%s came back %d times", id, n)
+		}
+	}
+}
+
+func TestAStoppedRunHandsOutNoMorePapers(t *testing.T) {
+	papers := make([]corpus.Paper, 50)
+	for i := range papers {
+		papers[i] = corpus.Paper{ID: fmt.Sprintf("p%02d", i)}
+	}
+	ctx, stop := context.WithCancel(context.Background())
+	defer stop()
+	n := 0
+	for range together(ctx, 2, papers, func(corpus.Paper) (count, error) {
+		return count{}, nil
+	}) {
+		n++
+		if n == 3 {
+			stop()
+		}
+	}
+	// The channel closing is the point. A run stopped part way leaves the
+	// caller's range, and it used to be possible to write this so that it
+	// blocked on a run that had just been told to stop.
+	if n == len(papers) {
+		t.Error("the run was stopped and every paper was handed out anyway")
 	}
 }
