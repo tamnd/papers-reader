@@ -48,7 +48,7 @@ func runTranslate(args []string) error {
 	floor := fs.Int("floor", Floor, "the glossary coverage a language needs, as a percentage")
 	force := fs.Bool("force", false, "translate again even where the English has not changed")
 	atOnce := fs.Int("jobs", 0, "how many files to translate at once, or 0 for one per lane in the fleet")
-	every := fs.Int("publish", 0, "push what has been written to the corpus and merge it, every so many files")
+	every := fs.Int("publish", 0, "push the papers the run has finished to the corpus and merge them, once so many files are ready")
 	dry := fs.Bool("dry-run", false, "say what would be asked and ask nothing")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `usage: papers translate [flags]
@@ -85,6 +85,13 @@ is work that has to be done twice. Run papers glossary translate first.
 The bibliography is copied through and not translated. Author names, the
 titles of cited works and venue names stand as printed, which is rule L14,
 and a references file has nothing else in it.
+
+With -publish the run pushes as it goes, and it pushes whole papers only. A
+paper goes out when every English file of it has a counterpart in every
+language being written, so the paper the run is halfway through stays in the
+working tree until it is finished. A paper with a section that could not be
+written is held back entire and reported at the end, and the next run is
+owed the one section it is missing.
 
 `)
 		fs.PrintDefaults()
@@ -166,6 +173,7 @@ and a references file has nothing else in it.
 	written, asks, refused, skipped := 0, 0, 0, 0
 	var failed []string
 	inARow, stopping, batch := 0, false, 0
+	ship := newShipment(c, want, jobs)
 	for o := range spread(ctx, lanes, jobs, func(j job) (translate.Result, error) {
 		return translated(ctx, c, t, g, j, run, free)
 	}) {
@@ -173,6 +181,7 @@ and a references file has nothing else in it.
 		asks += o.res.Asks
 		refused += len(o.res.Refused)
 		if o.err != nil {
+			ship.done(o.job.front.Paper, false)
 			// A file the cancellation killed is not a file that failed.
 			// Saying so would report nine failures for one bad fleet and
 			// hide the three that are the actual evidence.
@@ -194,13 +203,20 @@ and a references file has nothing else in it.
 		written++
 		fmt.Printf("%s %s %s: %d chunks, %d asks, %s\n",
 			o.job.lang, o.job.front.Paper, o.job.name, o.res.Chunks, o.res.Asks, strings.Join(o.res.Models, " and "))
-		if *every > 0 && written%*every == 0 {
+		ship.done(o.job.front.Paper, true)
+		if *every > 0 && ship.pending() >= *every {
 			batch++
-			pushed(c, run, batch, false)
+			pushed(c, run, batch, false, ship.take())
 		}
 	}
 	if *every > 0 {
-		pushed(c, run, batch+1, true)
+		pushed(c, run, batch+1, true, ship.take())
+	}
+	if len(ship.held) > 0 {
+		fmt.Printf("%d papers are not whole and were left in the working tree rather than published:\n", len(ship.held))
+		for _, id := range ship.held {
+			fmt.Printf("  %s\n", id)
+		}
 	}
 	fmt.Printf("%d files written, %d asks of which %d were refused, %d input and %d output tokens\n",
 		written, asks, refused, total.InputTokens, total.OutputTokens)
@@ -229,7 +245,14 @@ and a references file has nothing else in it.
 // The opening says which run and whether it is over, because a person
 // looking at a merged pull request three days later wants to know whether
 // there is more coming and whether anybody has read it yet.
-func pushed(c *corpus.Corpus, run string, batch int, last bool) {
+//
+// paths is the paper directories the shipment says are whole, and is empty
+// when nothing has finished, which is a batch that does not happen rather
+// than a batch that pushes everything in the tree.
+func pushed(c *corpus.Corpus, run string, batch int, last bool, paths []string) {
+	if len(paths) == 0 {
+		return
+	}
 	opening := fmt.Sprintf("This is translation run %s pushing out what it has finished so far.\n", run)
 	if last {
 		opening += "That is the run finished, so this is the last batch of it.\n"
@@ -237,7 +260,7 @@ func pushed(c *corpus.Corpus, run string, batch int, last bool) {
 		opening += "The run is still going and the next batch will look like this one.\n"
 	}
 	opening += "Nothing here has been through the audit yet, because the raw translations go in first and the rules are written against what the models actually write rather than against what they were asked for.\n"
-	res, err := push(context.Background(), c, "main", publish.Branch(run, batch), opening, true, false)
+	res, err := push(context.Background(), c, "main", publish.Branch(run, batch), opening, paths, true, false)
 	switch {
 	case errors.Is(err, publish.Nothing):
 		return

@@ -57,7 +57,7 @@ No PDF and no EPUB is ever staged, whatever .gitignore says.
 	if name == "" {
 		name = publish.Branch("", 0)
 	}
-	res, err := push(context.Background(), c, *base, name, opening, !*hold, *dry)
+	res, err := push(context.Background(), c, *base, name, opening, nil, !*hold, *dry)
 	if err != nil {
 		if errors.Is(err, publish.Nothing) {
 			fmt.Println("nothing has been written that is not already in the corpus")
@@ -82,8 +82,15 @@ No PDF and no EPUB is ever staged, whatever .gitignore says.
 // count in the message can therefore be one or two short of the commit. That
 // is the right way round: a pull request that claims less than it holds is a
 // pull request somebody reads carefully.
-func push(ctx context.Context, c *corpus.Corpus, base, branch, opening string, merge, dry bool) (*publish.Result, error) {
-	changes, err := publish.Changed(ctx, publish.Exec, c.Root, publish.Roots)
+//
+// paths narrows the batch to a list of directories, which is how a
+// translation run pushes the papers it has finished and leaves the one it is
+// halfway through where it is. Empty is every root.
+func push(ctx context.Context, c *corpus.Corpus, base, branch, opening string, paths []string, merge, dry bool) (*publish.Result, error) {
+	if len(paths) == 0 {
+		paths = publish.Roots
+	}
+	changes, err := publish.Changed(ctx, publish.Exec, c.Root, paths)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +110,7 @@ func push(ctx context.Context, c *corpus.Corpus, base, branch, opening string, m
 		Dir:    c.Root,
 		Base:   base,
 		Branch: branch,
+		Paths:  paths,
 		Title:  title,
 		Body:   body,
 		Merge:  merge,
