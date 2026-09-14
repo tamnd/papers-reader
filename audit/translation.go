@@ -790,13 +790,77 @@ func start(p pair) int {
 // sometimes a paragraph of its own and sometimes not there at all. Forty
 // words is split.AbstractParagraph, which is the same measure the splitter
 // used to decide this page was a front page in the first place.
+//
+// Length alone is not enough, though, and the System R paper is why. Its
+// byline is fourteen authors set as initials and surnames, which is over
+// forty words, so the byline was taken for the abstract and the masthead
+// was declared to have ended above it. L07 then read the byline as the
+// first paragraph it was owed a translation of and reported a translator
+// for not translating IBM's research division into Vietnamese. So the
+// paragraph has to read like prose as well as run long enough, and being
+// reading like a sentence is what an abstract does and a masthead does not.
+//
+// The blocks here are always the English ones. See start.
 func masthead(blocks []string) int {
 	for i, b := range blocks {
-		if corpus.Words(plainProse(b)) >= split.AbstractParagraph {
+		b = plainProse(b)
+		if corpus.Words(b) >= split.AbstractParagraph && !byline(b) {
 			return i
 		}
 	}
 	return len(blocks)
+}
+
+// byline says whether a paragraph is a list of names rather than a sentence.
+//
+// The test is function words. A sentence cannot get through forty words
+// without the, of, a, is, that, and a byline has none of them, because a
+// byline is nothing but names and initials and the commas between them.
+// Capitalisation would be the obvious test and it is the wrong one: the
+// System R byline is set in capitals but Spanner's and the TPU paper's are
+// set in title case, and masthead reads the text after plainProse has
+// lowered it anyway.
+//
+// Three is the line, and it is measured. Over the ninety eight English
+// front pages in the corpus, the first paragraph of forty words or more
+// scores like this:
+//
+//	spanner   0   james c. corbett, jeffrey dean, michael epstein, ...
+//	tpu       0   norman p. jouppi, cliff young, nishant patil, ...
+//	system r  1   m. m. astrahan, m. w. blasgen, d. d. chamberlin, ...
+//	gamma     5   this research was partially supported by ...
+//	lenet     8   hal is a multi-disciplinary open access archive ...
+//	median   28
+//
+// Three of them are bylines and they are the three at the bottom, and the
+// gap between the last of them and the first real paragraph is four clear
+// points. Nothing in the list needs tuning to a paper.
+//
+// The words below are the two dozen commonest in English and the list is
+// not meant to be exhaustive. It does not need to be: a paragraph of
+// ordinary prose long enough for this to be asked of it will hit several of
+// them several times over, and one that hits three is already past the line.
+func byline(paragraph string) bool {
+	n := 0
+	for _, f := range strings.Fields(paragraph) {
+		if function[strings.Trim(f, ".,;:()[]")] {
+			n++
+		}
+	}
+	return n <= proseFunctionWords
+}
+
+// proseFunctionWords is how many function words a long paragraph has to hold
+// before it reads as a sentence. See byline for where the number comes from.
+const proseFunctionWords = 3
+
+// function is the commonest English words, for byline. Lowercase, because
+// that is how plainProse leaves the text.
+var function = map[string]bool{
+	"the": true, "a": true, "an": true, "of": true, "we": true,
+	"is": true, "are": true, "that": true, "to": true, "in": true,
+	"for": true, "this": true, "it": true, "be": true, "which": true,
+	"with": true, "on": true, "as": true,
 }
 
 // blocksOf cuts a body into the blocks the rest of the toolchain sees.

@@ -33,7 +33,7 @@ func TestACeilingTravelsIntoTheLanguageItIsChecking(t *testing.T) {
 	for _, c := range []struct {
 		Lang
 		want int
-	}{{VI, 437}, {ZH, 500}, {JA, 750}} {
+	}{{VI, 500}, {ZH, 562}, {JA, 875}} {
 		if got := Limit(250, c.Lang); got != c.want {
 			t.Errorf("Limit(250, %s) = %d, want %d", c.Lang, got, c.want)
 		}
@@ -44,7 +44,7 @@ func TestACeilingTravelsIntoTheLanguageItIsChecking(t *testing.T) {
 	for _, c := range []struct {
 		Lang
 		ratio float64
-	}{{VI, 1.58}, {ZH, 1.85}, {JA, 2.81}} {
+	}{{VI, 1.86}, {ZH, 1.95}, {JA, 3.13}} {
 		if at := int(250 * c.ratio); at > Limit(250, c.Lang) {
 			t.Errorf("the widest %s translation of a 250 word passage counts %d and the limit is %d",
 				c.Lang, at, Limit(250, c.Lang))
@@ -54,10 +54,26 @@ func TestACeilingTravelsIntoTheLanguageItIsChecking(t *testing.T) {
 
 // A file that has grown a whole section it was never given still has to be
 // caught, which is the only reason the limit is a limit.
+//
+// Twice the median translation, and not a multiple of the English, because
+// the English number is the wrong yardstick for what this is guarding. A
+// doubled Japanese file is twice what Japanese normally runs to, and
+// Japanese normally runs to nearly two and a half times the English, so a
+// ceiling written as four abstracts is nearly no ceiling at all there while
+// being a tight one in Vietnamese. The medians are from the doc comment on
+// Limit and move with it.
 func TestACeilingIsStillACeiling(t *testing.T) {
-	for _, l := range []Lang{EN, VI, ZH, JA} {
-		if Limit(250, l) >= 250*4 {
-			t.Errorf("the %s limit is %d, which is four abstracts", l, Limit(250, l))
+	if Limit(250, EN) >= 250*2 {
+		t.Errorf("the en limit is %d, which is two abstracts", Limit(250, EN))
+	}
+	for _, c := range []struct {
+		Lang
+		median float64
+	}{{VI, 1.44}, {ZH, 1.66}, {JA, 2.40}} {
+		grown := int(250 * c.median * 2)
+		if got := Limit(250, c.Lang); got >= grown {
+			t.Errorf("the %s limit is %d, and a %s file of twice the usual length is %d, so the limit would not catch it",
+				c.Lang, got, c.Lang, grown)
 		}
 	}
 }

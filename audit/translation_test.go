@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/split"
 )
 
 // Nothing in this file is a sentence of anybody's paper. The English is
@@ -558,6 +559,72 @@ func TestL07StillReadsTheAbstractOfAFrontPage(t *testing.T) {
 	res := result(t, frontPair(t, enFront, tr), "L07")
 	if len(res.Findings) != 1 {
 		t.Fatalf("L07 found %d on an untranslated abstract, want 1: %v", len(res.Findings), res.Findings)
+	}
+}
+
+// A byline long enough to be mistaken for the abstract, which is the shape
+// the System R front page has: fourteen authors as initials and surnames,
+// comfortably over the forty words that say a paragraph is the abstract.
+// The masthead was declared to have ended above it and the byline was then
+// the first thing L07 read.
+const enManyAuthors = `A Bound On Sorting
+
+A. LOVELACE, G. HOPPER, E. W. DIJKSTRA, B. LISKOV, A. M. TURING,
+J. VON NEUMANN, K. ZUSE, C. E. SHANNON, D. E. KNUTH, J. MCCARTHY,
+N. WIRTH, T. HOARE, R. MILNER, M. O. RABIN, D. S. SCOTT,
+A. J. PERLIS, AND P. NAUR
+
+Department of Computing
+
+Abstract
+
+We give a lower bound on the number of comparisons a sorting method needs,
+and we show that the bound is reached by a method that is simple enough to
+write out in full, which is what the rest of this paper does.
+`
+
+func TestL07LeavesALongBylineAlone(t *testing.T) {
+	blocks := blocksOf(enManyAuthors)
+	// The fixture only tests anything if the byline really is long enough
+	// to be taken for the abstract, so check that before checking the rule.
+	if n := corpus.Words(plainProse(blocks[1])); n < split.AbstractParagraph {
+		t.Fatalf("the byline is %d words, which is under the %d that makes this the trap it is testing", n, split.AbstractParagraph)
+	}
+	tr := strings.Replace(enManyAuthors, "A Bound On Sorting", "Một Cận Dưới Cho Sắp Xếp", 1)
+	tr = strings.Replace(tr, "Abstract\n\nWe give a lower bound on the number of comparisons a sorting method needs,\nand we show that the bound is reached by a method that is simple enough to\nwrite out in full, which is what the rest of this paper does.",
+		"Tóm tắt\n\nChúng tôi đưa ra một cận dưới cho số phép so sánh mà một phương pháp sắp xếp\ncần đến, và chúng tôi chỉ ra rằng cận này đạt được bởi một phương pháp đơn\ngiản đến mức có thể viết ra đầy đủ, và đó là việc phần còn lại của bài báo\nnày làm.", 1)
+	res := result(t, frontPair(t, enManyAuthors, tr), "L07")
+	if res.Failed() {
+		t.Errorf("L07 asked for the byline to be translated: %v", res.Findings)
+	}
+}
+
+// And the abstract under a byline that long is still read, or the fix for
+// the byline would be a hole the size of the whole front page.
+func TestL07StillReadsTheAbstractUnderALongByline(t *testing.T) {
+	tr := strings.Replace(enManyAuthors, "A Bound On Sorting", "Một Cận Dưới Cho Sắp Xếp", 1)
+	res := result(t, frontPair(t, enManyAuthors, tr), "L07")
+	if len(res.Findings) != 1 {
+		t.Fatalf("L07 found %d on an untranslated abstract, want 1: %v", len(res.Findings), res.Findings)
+	}
+}
+
+func TestABylineIsToldFromAnAbstract(t *testing.T) {
+	for _, c := range []struct {
+		text string
+		want bool
+	}{
+		{"m. m. astrahan, m. w. blasgen, d. d. chamberlin, k. p. eswaran, j. n. gray, p. p. griffiths, w. f. king, r. a. lorie, p. r. mcjones, j. w. mehl, g. r. putzolu, i. l. traiger, b. w. wade, and v. watson", true},
+		{"james c. corbett, jeffrey dean, michael epstein, andrew fikes, christopher frost, jj furman, sanjay ghemawat, andrey gubarev, christopher heiser, peter hochschild, wilson hsieh", true},
+		// A funding note is the thinnest real paragraph in the corpus and
+		// it is still clear of the line. It is only asked about paragraphs
+		// of forty words or more, so the fixtures are that long.
+		{"this research was partially supported by the defense advanced research projects agency under a contract with the office of naval research, and by a grant from the national science foundation that is administered through the university", false},
+		{"we give a lower bound on the number of comparisons a sorting method needs, and we show that the bound is reached by a method that is simple enough to write out in full, which is what the rest of this paper does", false},
+	} {
+		if got := byline(c.text); got != c.want {
+			t.Errorf("byline(%.40q) = %v, want %v", c.text, got, c.want)
+		}
 	}
 }
 

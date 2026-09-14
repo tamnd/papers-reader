@@ -59,25 +59,36 @@ func Words(s string) int {
 // translated files in the corpus with more than thirty words in them, the
 // translation counts this many times what the English counts:
 //
-//	vi  median 1.38, largest 1.58
-//	zh  median 1.64, largest 1.85
-//	ja  median 2.39, largest 2.81
+//	vi  n=73  median 1.44  p95 1.66  largest 1.86
+//	zh  n=36  median 1.66  p95 1.93  largest 1.95
+//	ja  n=37  median 2.40  p95 2.95  largest 3.13
 //
-// The numbers below are the next round figure above the largest of each,
-// so an ordinary translation is nowhere near the ceiling and a file that
-// has grown a section it was never given still hits it. Japanese stretches
-// furthest because kana spell out what English spells with one word and
-// Words counts every one of them.
+// The numbers below are the next quarter above the largest of each, which
+// leaves the same tenth of headroom the first set of them had. An ordinary
+// translation is nowhere near the ceiling, and a file that has grown a
+// section it was never given is at twice its language's median and hits it
+// with room to spare. Japanese stretches furthest because kana spell out
+// what English spells with one word and Words counts every one of them.
+//
+// These are the second measurement and not the first. The first was taken
+// over twenty three pairs and put the widest Vietnamese at 1.58, and three
+// dozen translations later the widest is 1.86 and the ceiling it was under
+// had become a ceiling it was over. The file that moved it is the Volcano
+// abstract, which is the densest two hundred and fifty words in the corpus:
+// terminology is what stretches, an abstract is nothing but terminology,
+// and the one file S07 ever reads is an abstract. So expect to take this
+// measurement again. The corpus is a third translated and the tail has
+// further to travel.
 //
 // English is one because English is what the ceiling was written in.
 func Limit(n int, l Lang) int {
 	switch l {
 	case VI:
-		return n * 7 / 4
-	case ZH:
 		return n * 2
+	case ZH:
+		return n * 9 / 4
 	case JA:
-		return n * 3
+		return n * 7 / 2
 	}
 	return n
 }
