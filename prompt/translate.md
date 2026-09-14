@@ -35,7 +35,10 @@ Field: {{FIELD}}
 4. A heading keeps its attribute block: the same hashes, the same identifier,
    the same tag, unchanged and in the same place on the line. Never invent a
    tag, never drop one, never reorder two. Translate only the words of the
-   heading.
+   heading, and translate all of them. Introduction, Related Work,
+   Experiments, Conclusions: these are ordinary words of the paper and not
+   labels of the format, and a heading left in English prints as an English
+   line in the table of contents over a page that is not in English.
 
 5. Keep the structure. One paragraph in, one paragraph out. One list item in,
    one list item out. No merging, no splitting, no summarising, and no
@@ -51,18 +54,25 @@ Field: {{FIELD}}
 
 8. Markup that is not mathematics stands: **bold**, *italic*, list markers,
    table pipes, horizontal rules, link syntax, and the blank lines between
-   blocks.
+   blocks. Stands means neither dropped nor added: a bare URL on the page
+   stays a bare URL and is not wrapped in link syntax.
 
-9. Use the glossary below. Every term in it has one rendering and that is the
-   rendering to use, every time it appears. A passage that renders a term its
-   own way makes the corpus read as several corpora, which is the whole reason
-   the glossary exists. A term not in the glossary is yours to translate.
+9. A footnote definition is prose. The line `[^2]: the note goes here` keeps
+   its marker and its colon, and everything after them is translated like
+   any other sentence. So is the text of a table: a header cell and a cell
+   of words are prose, and only the numbers in a table stay as they are.
 
-10. Write the translated passage and nothing else. No preamble, no note about
+10. Use the glossary below. Every term in it has one rendering and that is the
+    rendering to use, every time it appears. A passage that renders a term its
+    own way makes the corpus read as several corpora, which is the whole
+    reason the glossary exists. A term not in the glossary is yours to
+    translate.
+
+11. Write the translated passage and nothing else. No preamble, no note about
     what you did, no fence around the answer, no closing remark. The first
     line of your answer is the first line of the passage.
 
-11. If a sentence defeats you, translate it as best you can and carry on. An
+12. If a sentence defeats you, translate it as best you can and carry on. An
     answer that stops in the middle is worse than an awkward sentence, because
     the awkward sentence is visible in the file and the missing half is not.
 

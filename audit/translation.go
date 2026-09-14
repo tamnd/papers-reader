@@ -11,6 +11,7 @@ import (
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/glossary"
+	"github.com/tamnd/papers-reader/split"
 	"github.com/tamnd/papers-reader/translate"
 )
 
@@ -393,7 +394,7 @@ func ruleL06(in *Input) ([]Finding, error) {
 			if t.as == t.en {
 				continue
 			}
-			if !word(en, t.en) || strings.Contains(tr, strings.ToLower(t.as)) {
+			if !alone(en, tr, t.en) || t.rendered(tr) {
 				continue
 			}
 			missed = append(missed, fmt.Sprintf("%q as %q", t.en, t.as))
@@ -409,16 +410,54 @@ func ruleL06(in *Input) ([]Finding, error) {
 }
 
 // a rendering is one glossary term in one language, flattened.
-type rendering struct{ en, as string }
+//
+// Senses is the renderings of the other entries for the same English term,
+// the ones this paper's field was not offered. The glossary holds two
+// entries for "feature", one for the input variable of a model and one for
+// the capability of a program, and the acknowledgements of a paper about
+// generative models thank somebody for sharing a Theano feature. The field
+// says which sense a paper is about and is right nearly everywhere, so it
+// still decides which rendering the rule names; but a page that wrote the
+// other sense did write the term, and calling that unrendered is a finding
+// on a page that did nothing wrong.
+type rendering struct {
+	en, as string
+	senses []string
+}
+
+// rendered says whether a translation wrote this term, in the sense its
+// field is about or in one of the others.
+func (r rendering) rendered(tr string) bool {
+	if strings.Contains(tr, strings.ToLower(r.as)) {
+		return true
+	}
+	for _, as := range r.senses {
+		if strings.Contains(tr, strings.ToLower(as)) {
+			return true
+		}
+	}
+	return false
+}
 
 func renderings(g *glossary.Glossary, f corpus.Field, l corpus.Lang) []rendering {
+	senses := map[string][]string{}
+	for _, t := range g.Terms {
+		if t.Offered(f) {
+			continue
+		}
+		if as, ok := t.Rendering(l); ok {
+			en := strings.ToLower(strings.TrimSpace(t.En))
+			senses[en] = append(senses[en], strings.TrimSpace(as))
+		}
+	}
 	var out []rendering
 	for _, t := range g.For(f) {
 		as, ok := t.Rendering(l)
 		if !ok {
 			continue
 		}
-		out = append(out, rendering{en: strings.ToLower(strings.TrimSpace(t.En)), as: strings.TrimSpace(as)})
+		en := strings.ToLower(strings.TrimSpace(t.En))
+		out = append(out, rendering{en: en, as: strings.TrimSpace(as), senses: senses[en]})
 	}
 	return out
 }
@@ -433,25 +472,110 @@ func cap5(list []string) []string {
 	return append(list[:most:most], fmt.Sprintf("and %d more", len(list)-most))
 }
 
-// word says whether a term appears in a text on its own, rather than inside
-// a longer word. Both sides are already lowercased.
-func word(text, term string) bool {
-	at := 0
-	for {
-		i := strings.Index(text[at:], term)
-		if i < 0 {
-			return false
+// alone says whether a term stands by itself somewhere in text, rather than
+// always inside a longer English name that other has a word for word copy
+// of. Both sides are already lowercased.
+//
+// The two glossary rules ask it in opposite directions. L06 asks whether the
+// English uses the term, with the translation as other. L10 asks whether the
+// term is left standing in the translation, with the English as other. The
+// question underneath is the same one: is this the word the glossary is
+// about, or is it a syllable of somebody's name for a method.
+//
+// Two things make an occurrence not the word the glossary is about.
+//
+// A hyphen, first. The corpus writes "log-likelihood" and "auto-encoder" and
+// neither of them is the glossary's "log" or its "encoder", so a hyphen
+// counts as a letter when the boundary is worked out.
+//
+// A neighbour the other side wrote the same way, second. Japanese keeps
+// "Markov chain" and "score matching" and "deep belief networks" in English
+// because that is how a Japanese paper writes them, and reporting the
+// "chain", the "score" and the "network" inside them as untranslated words
+// gives the rule three findings on a page that did nothing wrong. So the
+// term is taken together with the Latin word before it and with the Latin
+// word after it, and an occurrence whose pair the other side wrote too is
+// an English name that was kept on purpose. A whole English sentence left
+// standing is not this rule's business: L11 has it, and L07 has a whole
+// English paragraph.
+func alone(text, other, term string) bool {
+	rs, ts := []rune(text), []rune(term)
+	for at := 0; at+len(ts) <= len(rs); at++ {
+		if string(rs[at:at+len(ts)]) != term {
+			continue
 		}
-		i += at
-		before := i == 0 || !letter(rune(text[i-1]))
-		end := i + len(term)
-		after := end == len(text) || !letter(rune(text[end]))
-		if before && after {
+		if at > 0 && wordRune(rs[at-1]) {
+			continue
+		}
+		end := at + len(ts)
+		if end < len(rs) && wordRune(rs[end]) {
+			continue
+		}
+		if copied(rs, other, at, end) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// copied says whether the term at [at,end) sits in a two word English phrase
+// that other wrote as well.
+func copied(rs []rune, other string, at, end int) bool {
+	for _, p := range []string{
+		string(rs[back(rs, at):end]),
+		string(rs[at:forward(rs, end)]),
+	} {
+		if len([]rune(p)) > end-at && strings.Contains(other, p) {
 			return true
 		}
-		at = i + 1
 	}
+	return false
 }
+
+// back is where the word before at starts, and at itself when the term
+// opens the text or has punctuation rather than a word in front of it.
+func back(rs []rune, at int) int {
+	i := at
+	for i > 0 && rs[i-1] == ' ' {
+		i--
+	}
+	if i == at {
+		return at
+	}
+	j := i
+	for j > 0 && wordRune(rs[j-1]) {
+		j--
+	}
+	if j == i {
+		return at
+	}
+	return j
+}
+
+// forward is where the word after end finishes, and end itself when there
+// is no word after it.
+func forward(rs []rune, end int) int {
+	i := end
+	for i < len(rs) && rs[i] == ' ' {
+		i++
+	}
+	if i == end {
+		return end
+	}
+	j := i
+	for j < len(rs) && wordRune(rs[j]) {
+		j++
+	}
+	if j == i {
+		return end
+	}
+	return j
+}
+
+// wordRune is what a term may not be joined to and still be that term. The
+// hyphen is in it, and the reasoning is in alone.
+func wordRune(r rune) bool { return letter(r) || r == '-' }
 
 func letter(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' }
 
@@ -465,6 +589,8 @@ func letter(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r
 // Short paragraphs are skipped, and the threshold is words of prose rather
 // than characters. A line like "Figure 3" or "where" is a paragraph in the
 // corpus and is the same in every language.
+//
+// The masthead of a front file is skipped too. See masthead.
 func ruleL07(in *Input) ([]Finding, error) {
 	return eachTranslation(in, func(p pair) []Finding {
 		if p.tr.Front.Kind == "references" {
@@ -498,7 +624,7 @@ func untranslated(p pair) []int {
 		return nil
 	}
 	var out []int
-	for i := range want {
+	for i := start(p); i < len(want); i++ {
 		a, b := plainProse(want[i]), plainProse(got[i])
 		if a == "" || len(strings.Fields(a)) < prosePerParagraph {
 			continue
@@ -508,6 +634,41 @@ func untranslated(p pair) []int {
 		}
 	}
 	return out
+}
+
+// start is the first paragraph a translation of this page was meant to
+// translate: the top of the file, or the abstract of a front page.
+func start(p pair) int {
+	if p.tr.Front.Kind != "front" {
+		return 0
+	}
+	return masthead(blocksOf(p.en.Body))
+}
+
+// masthead is where the masthead of a front file ends: the index of the
+// first paragraph long enough to be the abstract, or the end of the file if
+// there is none.
+//
+// Everything above the abstract is the title, the byline, the affiliation
+// and the arXiv stamp, and a translation is right to leave all of it. The
+// byline of this corpus's first paper is eight names and runs well past the
+// eight words L07 needs to speak up, and the affiliation under it is three
+// lines of a Montréal address, so both were reported on every front file in
+// all three languages. Names and the names of institutions stand as printed,
+// the same way a bibliography entry does under rule 7 of the prompt.
+//
+// The abstract is found by length rather than by looking for the word
+// Abstract, because the word is translated and the heading above it is
+// sometimes a paragraph of its own and sometimes not there at all. Forty
+// words is split.AbstractParagraph, which is the same measure the splitter
+// used to decide this page was a front page in the first place.
+func masthead(blocks []string) int {
+	for i, b := range blocks {
+		if corpus.Words(plainProse(b)) >= split.AbstractParagraph {
+			return i
+		}
+	}
+	return len(blocks)
 }
 
 // blocksOf cuts a body at blank lines, which is the same cut the chunker
@@ -631,10 +792,11 @@ func ruleL10(in *Input) ([]Finding, error) {
 		if p.tr.Front.Kind == "references" {
 			return nil
 		}
+		en := strings.ToLower(translate.Prose(p.en.Body))
 		tr := strings.ToLower(translate.Prose(p.tr.Body))
 		var left []string
 		for _, t := range renderings(in.Glossary, p.en.Front.Field, p.tr.Lang) {
-			if t.as == t.en || !word(tr, t.en) || strings.Contains(tr, strings.ToLower(t.as)) {
+			if t.as == t.en || !alone(tr, en, t.en) || t.rendered(tr) {
 				continue
 			}
 			left = append(left, fmt.Sprintf("%q, which is %q", t.en, t.as))
@@ -657,6 +819,9 @@ func ruleL10(in *Input) ([]Finding, error) {
 // left is the case rule 11 of the prompt is about: a model that met a
 // sentence it could not do, left it, and carried on. That is the right thing
 // for it to do and the wrong thing to publish.
+//
+// The masthead of a front page is skipped, the same way L07 skips it and
+// for the same reason. See masthead.
 func ruleL11(in *Input) ([]Finding, error) {
 	return eachTranslation(in, func(p pair) []Finding {
 		if p.tr.Front.Kind == "references" {
@@ -671,7 +836,7 @@ func ruleL11(in *Input) ([]Finding, error) {
 			whole[i] = true
 		}
 		var out []Finding
-		for i := range want {
+		for i := start(p); i < len(want); i++ {
 			if whole[i] {
 				continue
 			}

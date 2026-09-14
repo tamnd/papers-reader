@@ -241,6 +241,32 @@ func TestT06CountsInEnglish(t *testing.T) {
 	}
 }
 
+// A language without spaces in it has words all the same. The Japanese
+// front matter of the GAN paper failed this rule as a title block on the
+// day it was written, with an abstract of eight sentences in it.
+func TestT06CountsAParagraphWithNoSpacesInIt(t *testing.T) {
+	cases := []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{"a Japanese abstract", strings.Repeat("敵対的プロセスを介して生成モデルを推定する枠組みを提案する。", 3) + "\n", false},
+		{"a Chinese abstract", strings.Repeat("我们提出了一个通过对抗过程估计生成模型的新框架。", 3) + "\n", false},
+		{"a Japanese title", "生成的敵対ネットワーク\n", true},
+		{"a Chinese title", "生成对抗网络\n", true},
+	}
+	for _, tc := range cases {
+		files := map[string]string{
+			"manifests/sources.yaml":                        openSources,
+			"content/en/vaswani-2017-attention/00_front.md": file(section("front"), tc.body),
+		}
+		res := result(t, Run(in(t, files), true), "T06")
+		if res.Failed() != tc.fails {
+			t.Errorf("%s: T06 failed=%v, want %v (%v)", tc.name, res.Failed(), tc.fails, res.Findings)
+		}
+	}
+}
+
 func TestT07PutsTheBibliographyLast(t *testing.T) {
 	long := strings.Repeat("a sentence of the paper. ", 12) + "\n"
 	cases := []struct {

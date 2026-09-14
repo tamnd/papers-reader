@@ -153,7 +153,12 @@ func preamble(w *strings.Builder, b *Book, o Options) {
 
 func titlePage(w *strings.Builder, b *Book, r *Renderer) {
 	w.WriteString("\\begin{center}\n")
-	fmt.Fprintf(w, "{\\LARGE\\bfseries %s\\par}\n", r.Inline(b.Title))
+	if b.TitleAs != "" {
+		fmt.Fprintf(w, "{\\LARGE\\bfseries %s\\par}\n", r.Inline(b.TitleAs))
+		fmt.Fprintf(w, "\\vspace{0.5em}\n{\\large %s\\par}\n", r.Inline(b.Title))
+	} else {
+		fmt.Fprintf(w, "{\\LARGE\\bfseries %s\\par}\n", r.Inline(b.Title))
+	}
 	if len(b.Authors) > 0 {
 		fmt.Fprintf(w, "\\vspace{1em}\n{\\large %s\\par}\n", escape(strings.Join(b.Authors, ", ")))
 	}

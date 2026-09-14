@@ -37,9 +37,15 @@ func (s Section) Numbered() bool { return s.Number != "" }
 // A Book is one paper in one language, everything needed to set it and
 // nothing that came from outside the corpus.
 type Book struct {
-	ID      string
-	Lang    corpus.Lang
-	Title   string
+	ID    string
+	Lang  corpus.Lang
+	Title string
+	// TitleAs is the title in the language of the book, and empty for an
+	// English book or for a translation that left the title alone. The title
+	// page prints it above the English one, because a reader of the Japanese
+	// edition wants the Japanese title and a reader looking the paper up
+	// wants the name it is catalogued under.
+	TitleAs string
 	Authors []string
 	Year    int
 	Venue   string
@@ -138,7 +144,9 @@ func Load(c *corpus.Corpus, id string, l corpus.Lang) (*Book, error) {
 		switch front.Kind {
 		case "front":
 			b.title(front)
-			b.Masthead, b.Abstract = masthead(text)
+			var printed string
+			printed, b.Masthead, b.Abstract = masthead(text)
+			b.TitleAs = translated(printed, b.Title, l)
 		case "references":
 			b.Bibliography = entries(text)
 		default:
@@ -250,38 +258,70 @@ func notes(body string, into map[string]string) string {
 // words. It holds in the three translations as well, where every one of those
 // parts is translated and the shape is not.
 //
+// Longest is corpus.Words and not strings.Fields, because the Japanese
+// abstract has no spaces in it and the author line has seven. Measured with
+// spaces, the byline is the longest paragraph of the Japanese front page, so
+// the setting printed the eight authors twice and set the abstract as part of
+// the masthead.
+//
 // What comes back as the masthead is the paragraphs before it that the title
 // page does not already print: not the title, not the author line, and not the
 // bare word Abstract, which is a heading in the source and becomes one in the
 // setting.
-func masthead(body string) ([]string, string) {
+// The first paragraph comes back on its own, because on a translated front
+// page it is the title as the translator wrote it and the title page wants it.
+func masthead(body string) (string, []string, string) {
 	paras := split(body)
 	at := -1
 	for i, p := range paras {
-		if at < 0 || len(strings.Fields(p)) > len(strings.Fields(paras[at])) {
+		if at < 0 || corpus.Words(p) > corpus.Words(paras[at]) {
 			at = i
 		}
 	}
 	if at < 0 {
-		return nil, ""
+		return "", nil, ""
 	}
+	var title string
 	var keep []string
 	for i, p := range paras[:at] {
 		if i == 0 {
 			// The title, which the title page sets.
+			title = p
 			continue
 		}
 		if strings.HasPrefix(p, "**") && strings.HasSuffix(strings.TrimSpace(p), "**") {
 			// The author line, which the title page sets.
 			continue
 		}
-		if len(strings.Fields(p)) < 3 {
+		if corpus.Words(p) < 3 {
 			// The word Abstract, in whichever language.
 			continue
 		}
 		keep = append(keep, p)
 	}
-	return keep, strings.Join(paras[at:], "\n\n")
+	return title, keep, strings.Join(paras[at:], "\n\n")
+}
+
+// translated is the paper's title in the language of the book, and empty
+// where there is nothing to print beside the English one.
+//
+// It comes off the front page rather than out of papers.yaml. The spec asks
+// for a title_<lang> field there, and that field is for the reading app,
+// which lists papers it has not loaded and so cannot read a front page. The
+// setter has the front page open, and the first paragraph of a translated
+// 00_front.md is the title as the translator wrote it, which is the same
+// string a person would have to copy into papers.yaml by hand.
+//
+// English gets nothing, since the title page already prints it. Neither does
+// a translation that left the title alone, which is the right answer for a
+// paper named after a person or an algorithm and which would otherwise set
+// the same line twice.
+func translated(printed, english string, l corpus.Lang) string {
+	printed = strings.TrimSpace(printed)
+	if l == corpus.EN || printed == strings.TrimSpace(english) {
+		return ""
+	}
+	return printed
 }
 
 // entries cuts a bibliography into its entries.

@@ -163,7 +163,12 @@ func chapters(b *Book, p *Page) []chapter {
 func titleBody(b *Book, p *Page) string {
 	var w strings.Builder
 	w.WriteString(`<section class="titlepage" epub:type="titlepage">` + "\n")
-	fmt.Fprintf(&w, "<h1>%s</h1>\n", p.Inline(b.Title))
+	if b.TitleAs != "" {
+		fmt.Fprintf(&w, "<h1>%s</h1>\n", p.Inline(b.TitleAs))
+		fmt.Fprintf(&w, `<p class="title-en">%s</p>`+"\n", p.Inline(b.Title))
+	} else {
+		fmt.Fprintf(&w, "<h1>%s</h1>\n", p.Inline(b.Title))
+	}
 	if len(b.Authors) > 0 {
 		fmt.Fprintf(&w, `<p class="authors">%s</p>`+"\n", html.EscapeString(strings.Join(b.Authors, ", ")))
 	}
@@ -410,6 +415,7 @@ h3, h4 { font-size: 1.05em; }
 p { margin: 0.6em 0; text-align: justify; }
 .titlepage { text-align: center; }
 .titlepage h1 { margin-bottom: 0.6em; }
+.title-en { font-size: 1.15em; margin-top: 0; }
 .authors { font-size: 1.05em; }
 .masthead, .imprint { font-size: 0.85em; color: #444; }
 .abstract { margin: 1.5em 1em; font-size: 0.95em; }

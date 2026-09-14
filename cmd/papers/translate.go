@@ -108,7 +108,7 @@ and a references file has nothing else in it.
 		}
 	}
 
-	jobs, err := plan(c, todo, want, *force)
+	jobs, err := plan(c, g, todo, want, *force)
 	if err != nil {
 		return err
 	}
@@ -149,23 +149,54 @@ and a references file has nothing else in it.
 	ctx := context.Background()
 	var total llm.Usage
 	written, asks, refused := 0, 0, 0
+	var failed []string
+	inARow := 0
 	for _, j := range jobs {
 		res, err := translated(ctx, c, t, g, j, run, free)
 		total = sum(total, res.Usage)
 		asks += res.Asks
 		refused += len(res.Refused)
 		if err != nil {
-			fmt.Printf("%d files written before the run stopped\n", written)
-			return err
+			failed = append(failed, fmt.Sprintf("%s %s %s: %v", j.lang, j.front.Paper, j.name, err))
+			fmt.Printf("%s %s %s: given up on, %v\n", j.lang, j.front.Paper, j.name, err)
+			inARow++
+			if inARow >= giveUp {
+				fmt.Printf("%d files in a row could not be written, so the rest of the run is skipped\n", inARow)
+				break
+			}
+			continue
 		}
+		inARow = 0
 		written++
 		fmt.Printf("%s %s %s: %d chunks, %d asks, %s\n",
 			j.lang, j.front.Paper, j.name, res.Chunks, res.Asks, strings.Join(res.Models, " and "))
 	}
 	fmt.Printf("%d files written, %d asks of which %d were refused, %d input and %d output tokens\n",
 		written, asks, refused, total.InputTokens, total.OutputTokens)
+	if len(failed) > 0 {
+		fmt.Printf("%d files were not written:\n", len(failed))
+		for _, f := range failed {
+			fmt.Printf("  %s\n", f)
+		}
+		return fmt.Errorf("%d of %d files were not written", len(failed), len(jobs))
+	}
 	return nil
 }
+
+// giveUp is how many files in a row may fail before the run stops.
+//
+// A file the model will not write correctly is not a reason to abandon the
+// other three hundred, and it used to be. The first Japanese of the GAN
+// paper stopped four files short because one section came back with a space
+// inside a pair of dollar signs six times running, and the nine files after
+// it in the queue were never asked for. A page that cannot be written is
+// reported at the end and the run carries on.
+//
+// The count is here because the other thing that makes a file fail is the
+// fleet being down, and then every file fails, slowly, and a run left alone
+// overnight spends a subscription on nothing. Three in a row is a fleet and
+// not a page.
+const giveUp = 3
 
 // A job is one English file to be written in one language.
 type job struct {
@@ -199,7 +230,7 @@ func (j job) chunks() int {
 // plan reads the English side and works out what is owed, in paper then
 // section then language order, which is the order somebody reading a
 // half-finished corpus would want it done in.
-func plan(c *corpus.Corpus, papers []corpus.Paper, langs []corpus.Lang, force bool) ([]job, error) {
+func plan(c *corpus.Corpus, g *glossary.Glossary, papers []corpus.Paper, langs []corpus.Lang, force bool) ([]job, error) {
 	var out []job
 	for _, p := range papers {
 		dir := c.Content(corpus.EN, p.ID)
@@ -237,7 +268,7 @@ func plan(c *corpus.Corpus, papers []corpus.Paper, langs []corpus.Lang, force bo
 		for _, f := range files {
 			f.abstract = abstract
 			for _, l := range langs {
-				if !force && current(c, l, p.ID, f) {
+				if !force && current(c, g, l, p.ID, f) {
 					continue
 				}
 				f.lang = l
@@ -271,7 +302,7 @@ const abstractWords = 250
 // the translation prompt puts every translated page in the queue, which is
 // the cost of the rules being one set of rules rather than whichever set
 // happened to be in the build that ran.
-func current(c *corpus.Corpus, l corpus.Lang, id string, f job) bool {
+func current(c *corpus.Corpus, g *glossary.Glossary, l corpus.Lang, id string, f job) bool {
 	b, err := os.ReadFile(filepath.Join(c.Content(l, id), f.name))
 	if err != nil {
 		return false
@@ -290,6 +321,15 @@ func current(c *corpus.Corpus, l corpus.Lang, id string, f job) bool {
 		return false
 	}
 	if p, err := prompt.Get(prompt.Translate); err == nil && front.PromptSHA256 != p.SHA {
+		return false
+	}
+	// A page translated against a rendering that has since changed is owed
+	// again. The hash and not the version, which is the whole reason the
+	// hash is written down: a version bump that added a databases term has
+	// not moved anything under a paper about generative models, and queuing
+	// the corpus every time the glossary is edited is how a corpus of four
+	// hundred translated files never gets finished.
+	if g != nil && front.GlossaryTermsSHA256 != glossary.TermsSHA(g, f.front.Field, l) {
 		return false
 	}
 	was := f.front.ContentSHA256

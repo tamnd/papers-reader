@@ -247,13 +247,13 @@ const AbstractWords = 250
 // a single line of prose, and every one of those is a separate thing a reader
 // is looking for.
 func Abstract(body string, words int) string {
-	if len(strings.Fields(body)) <= words {
+	if corpus.Words(body) <= words {
 		return strings.TrimRight(body, "\n")
 	}
 	var out []string
 	left := words
 	for _, p := range paragraphs(body) {
-		n := len(strings.Fields(p))
+		n := corpus.Words(p)
 		if n <= left {
 			out = append(out, p)
 			left -= n
@@ -424,7 +424,7 @@ func firstParagraph(files []File) (string, File) {
 	for _, f := range files {
 		for _, p := range strings.Split(string(f.Body), "\n") {
 			p = strings.TrimSpace(p)
-			if len(strings.Fields(p)) >= AbstractParagraph {
+			if corpus.Words(p) >= AbstractParagraph {
 				return p, f
 			}
 		}
@@ -470,7 +470,7 @@ func pageRange(s string) (first, last int) {
 func longestParagraph(body string) int {
 	most := 0
 	for _, p := range paragraphs(body) {
-		if n := len(strings.Fields(p)); n > most {
+		if n := corpus.Words(p); n > most {
 			most = n
 		}
 	}

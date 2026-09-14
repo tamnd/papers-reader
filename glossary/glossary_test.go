@@ -38,8 +38,8 @@ func TestAScopedTermIsOnlyOfferedToItsField(t *testing.T) {
 	// compilers. A rendering offered to the wrong paper is worse than none,
 	// because the translator will take it.
 	g := &Glossary{Terms: []Term{
-		{En: "reduction", Field: corpus.Theory},
-		{En: "reduction", Field: corpus.Languages},
+		{En: "reduction", Fields: []corpus.Field{corpus.Theory}},
+		{En: "reduction", Fields: []corpus.Field{corpus.Languages}},
 		{En: "throughput"},
 	}}
 	got := g.For(corpus.Theory)
@@ -47,7 +47,7 @@ func TestAScopedTermIsOnlyOfferedToItsField(t *testing.T) {
 		t.Fatalf("%d terms offered to theory, want the global one and its own", len(got))
 	}
 	for _, term := range got {
-		if term.Field == corpus.Languages {
+		if !term.Offered(corpus.Theory) {
 			t.Errorf("a compilers term was offered to a theory paper")
 		}
 	}
@@ -90,13 +90,35 @@ func TestAGlossaryThatIsNotThereIsEmptyAndNotAnError(t *testing.T) {
 	}
 }
 
+// A sense usually spans a few fields. "log" is the append only record in
+// systems and in databases, and the logarithm in a paper about generative
+// models, where offering the record's rendering is how a translator ends up
+// writing the Vietnamese for a log file into a likelihood.
+func TestASenseThatSpansAFewFieldsIsOneTerm(t *testing.T) {
+	g := &Glossary{Terms: []Term{
+		{En: "log", Vi: "nhật ký", Fields: []corpus.Field{corpus.Systems, corpus.Databases}},
+		{En: "throughput", Vi: "thông lượng"},
+	}}
+	for _, f := range []corpus.Field{corpus.Systems, corpus.Databases} {
+		if len(g.For(f)) != 2 {
+			t.Errorf("%s was offered %d terms, want both", f, len(g.For(f)))
+		}
+	}
+	if got := g.For(corpus.AIML); len(got) != 1 || got[0].En != "throughput" {
+		t.Errorf("an ai-ml paper was offered %v", got)
+	}
+	if TermsSHA(g, corpus.Systems, corpus.VI) == TermsSHA(g, corpus.AIML, corpus.VI) {
+		t.Error("two fields offered different terms and hashed the same")
+	}
+}
+
 func TestAGlossaryIsReadFromTheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "glossary.yaml")
 	const text = `version: 3
 terms:
   - en: attention
     vi: cơ chế chú ý
-    field: ai-ml
+    fields: [ai-ml]
     note: the mechanism, not the ordinary word
   - en: MapReduce
     keep: true
@@ -111,7 +133,7 @@ terms:
 	if g.Version != 3 || len(g.Terms) != 2 {
 		t.Fatalf("read version %d and %d terms", g.Version, len(g.Terms))
 	}
-	if g.Terms[0].Field != corpus.AIML || g.Terms[0].Vi != "cơ chế chú ý" {
+	if !g.Terms[0].Offered(corpus.AIML) || g.Terms[0].Offered(corpus.Theory) || g.Terms[0].Vi != "cơ chế chú ý" {
 		t.Errorf("the first term is %+v", g.Terms[0])
 	}
 	if !g.Terms[1].Keep {
@@ -127,8 +149,8 @@ func TestTheTermsHashTracksWhatAPaperWasTranslatedAgainst(t *testing.T) {
 	// this paper's feet, and without it every version bump queues the whole
 	// corpus for translating again.
 	g := &Glossary{Version: 1, Terms: []Term{
-		{En: "attention", Vi: "cơ chế chú ý", Field: corpus.AIML},
-		{En: "reduction", Vi: "phép rút gọn", Field: corpus.Languages},
+		{En: "attention", Vi: "cơ chế chú ý", Fields: []corpus.Field{corpus.AIML}},
+		{En: "reduction", Vi: "phép rút gọn", Fields: []corpus.Field{corpus.Languages}},
 		{En: "graph", Vi: "đồ thị"},
 	}}
 	ml := TermsSHA(g, corpus.AIML, corpus.VI)

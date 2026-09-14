@@ -26,8 +26,8 @@ type Term struct {
 	Zh   string `yaml:"zh,omitempty"`
 	Ja   string `yaml:"ja,omitempty"`
 	Keep bool   `yaml:"keep,omitempty"`
-	// Field scopes a term to one field of the corpus. A term with no field
-	// is offered to every paper.
+	// Fields scopes a term to the fields of the corpus it means this in. A
+	// term with no fields is offered to every paper.
 	//
 	// Bourbaki is one subject and its glossary is global. This corpus is
 	// twelve fields, and "reduction" means one thing in complexity theory
@@ -35,8 +35,28 @@ type Term struct {
 	// another in networks, and "model" four things. A rendering offered to
 	// the wrong paper is worse than no rendering, because the translator
 	// will take it.
-	Field corpus.Field `yaml:"field,omitempty"`
-	Note  string       `yaml:"note,omitempty"`
+	//
+	// It is a list and not one field because a sense usually spans a few of
+	// them and never all twelve. "log" is the append only record in systems
+	// and in databases and the logarithm everywhere else, and writing that
+	// as two entries with the same rendering is a duplicate that will drift.
+	// The candidate list the extractor writes has counted fields per term
+	// since it was written, so this is the shape the data already had.
+	Fields []corpus.Field `yaml:"fields,omitempty"`
+	Note   string         `yaml:"note,omitempty"`
+}
+
+// Offered says whether a paper in this field is shown this term.
+func (t Term) Offered(f corpus.Field) bool {
+	if len(t.Fields) == 0 {
+		return true
+	}
+	for _, want := range t.Fields {
+		if want == f {
+			return true
+		}
+	}
+	return false
 }
 
 // Rendering is the term in one language, and false where there is none yet.
@@ -156,7 +176,7 @@ func header(path string) (string, error) {
 func (g *Glossary) For(f corpus.Field) []Term {
 	var out []Term
 	for _, t := range g.Terms {
-		if t.Field == "" || t.Field == f {
+		if t.Offered(f) {
 			out = append(out, t)
 		}
 	}

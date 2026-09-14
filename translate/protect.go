@@ -292,17 +292,44 @@ func compare(want, got []Span, base int) []Difference {
 
 // same compares two spans of the same kind.
 //
-// Byte for byte, with one exception. Inside mathematics a word set with
-// \text{...} is prose put in a formula because TeX has no other way of
-// writing a word in one, and "$(\text{not } A) \text{ or } B$" has two words
-// in it that become Vietnamese. So the argument of a \text is masked before
-// the comparison, unless the name inside it is one of the upright names that
-// is not prose.
+// Byte for byte, with two exceptions, both of them inside mathematics. A
+// word set with \text{...} is prose put in a formula because TeX has no
+// other way of writing a word in one, and "$(\text{not } A) \text{ or } B$"
+// has two words in it that become Vietnamese. So the argument of a \text is
+// masked before the comparison, unless the name inside it is one of the
+// upright names that is not prose. And the whitespace of a formula is
+// normalised, because TeX ignores it.
 func same(want, got Span) bool {
 	if want.Kind != Math {
 		return want.Text == got.Text
 	}
-	return maskText(want.Text) == maskText(got.Text)
+	return spacing(maskText(want.Text)) == spacing(maskText(got.Text))
+}
+
+// blanks is a run of whitespace.
+var blanks = regexp.MustCompile(`\s+`)
+
+// spacing normalises the whitespace of a formula.
+//
+// TeX ignores it: "$p_g$" and "$ p_g$" set the same thing, so a run that
+// refuses the second is throwing away an answer that copied the formula
+// correctly and then breathed on it. That is not a hypothetical. The first
+// Japanese of the GAN paper died on it. Six answers in a row were refused
+// because one of them had written "$ p_g$" for "$p_g$", and the sixth
+// refusal gave up on the file and stopped the run, four files short.
+//
+// Runs of whitespace collapse to one space, and the space beside a
+// delimiter goes. What does not go is the single space between a control
+// word and what follows it: "\alpha x" and "\alphax" are not the same
+// formula, and only one of them is a formula at all.
+func spacing(s string) string {
+	s = blanks.ReplaceAllString(s, " ")
+	open := len(s) - len(strings.TrimLeft(s, "$"))
+	shut := len(s) - len(strings.TrimRight(s, "$"))
+	if open+shut >= len(s) {
+		return s
+	}
+	return s[:open] + strings.TrimSpace(s[open:len(s)-shut]) + s[len(s)-shut:]
 }
 
 // textCommand is a TeX command whose argument is set upright, which is how a

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/glossary"
 	"github.com/tamnd/papers-reader/prompt"
 	"github.com/tamnd/papers-reader/roundtrip"
 	"github.com/tamnd/papers-reader/translate"
@@ -72,7 +73,7 @@ func TestEveryEnglishFileIsPlannedForEveryLanguage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI, corpus.ZH}, false)
+	jobs, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI, corpus.ZH}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +92,7 @@ func TestTheBibliographyIsCopiedAndNotAsked(t *testing.T) {
 	// printed, which is rule L14, and a references file is nothing else.
 	c := translateCorpus(t)
 	papers, _ := c.LoadPapers()
-	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	jobs, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestAFileWhoseEnglishHasNotMovedIsNotAskedAgain(t *testing.T) {
 		PromptSHA256:        translatePrompt(t),
 	}, "Đoạn thứ nhất.")
 
-	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	jobs, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestAFileWhoseEnglishHasNotMovedIsNotAskedAgain(t *testing.T) {
 			t.Error("a translation that is already an answer to its English was planned again")
 		}
 	}
-	again, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, true)
+	again, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +170,7 @@ func TestATranslationMadeWithAnOlderPromptIsAskedAgain(t *testing.T) {
 		PromptSHA256:        "0000000000000000000000000000000000000000000000000000000000000000",
 	}, "Đoạn thứ nhất.")
 
-	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	jobs, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +182,74 @@ func TestATranslationMadeWithAnOlderPromptIsAskedAgain(t *testing.T) {
 	}
 	if !found {
 		t.Error("a translation written to an older prompt was left as it was")
+	}
+}
+
+// The glossary is the other half of what produced a file, and the terms
+// hash was written into every translated file for months before anything
+// read it. Editing a rendering left the pages made from the old one on disk
+// and current.
+func TestATranslationMadeAgainstARenderingThatMovedIsAskedAgain(t *testing.T) {
+	c := translateCorpus(t)
+	papers, _ := c.LoadPapers()
+
+	english, err := os.ReadFile(filepath.Join(c.Content(corpus.EN, "a-1970-paper"), "01_first.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	was, _, err := corpus.ParseFront(english)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The paper is in theory, so the databases term is not offered to it
+	// and the reduction is.
+	before := &glossary.Glossary{Version: 1, Terms: []glossary.Term{
+		{En: "reduction", Vi: "phép rút gọn"},
+		{En: "commit", Vi: "xác nhận", Fields: []corpus.Field{corpus.Databases}},
+	}}
+	put(t, c, "01_first.md", corpus.Front{
+		Paper: "a-1970-paper", Title: "A Paper", Kind: "section", Lang: corpus.VI,
+		SourceContentSHA256: was.ContentSHA256,
+		PromptSHA256:        translatePrompt(t),
+		GlossaryVersion:     1,
+		GlossaryTermsSHA256: glossary.TermsSHA(before, corpus.Theory, corpus.VI),
+	}, "Đoạn thứ nhất.")
+
+	planned := func(g *glossary.Glossary) bool {
+		t.Helper()
+		jobs, err := plan(c, g, papers.Papers, []corpus.Lang{corpus.VI}, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, j := range jobs {
+			if j.name == "01_first.md" {
+				return true
+			}
+		}
+		return false
+	}
+
+	if planned(before) {
+		t.Error("a page translated against this very glossary was planned again")
+	}
+
+	// A version bump that added a term the paper is not offered has not
+	// moved anything under it.
+	elsewhere := &glossary.Glossary{Version: 2, Terms: append(append([]glossary.Term{},
+		before.Terms...), glossary.Term{En: "schema", Vi: "lược đồ", Fields: []corpus.Field{corpus.Databases}})}
+	if planned(elsewhere) {
+		t.Error("a databases term was added and a theory paper was queued for it")
+	}
+
+	// A rendering this paper was offered has changed, and the page is an
+	// answer to a question that has moved.
+	moved := &glossary.Glossary{Version: 2, Terms: []glossary.Term{
+		{En: "reduction", Vi: "phép quy dẫn"},
+		{En: "commit", Vi: "xác nhận", Fields: []corpus.Field{corpus.Databases}},
+	}}
+	if !planned(moved) {
+		t.Error("a rendering the page was translated against changed and the page was left alone")
 	}
 }
 
@@ -203,7 +272,7 @@ func TestATranslationOfAnEnglishFileThatMovedIsPlannedAgain(t *testing.T) {
 		SourceContentSHA256: corpus.ContentSHA([]byte("something else entirely")),
 	}, "Đoạn thứ nhất.")
 
-	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	jobs, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +292,7 @@ func TestAHandEditedTranslationIsLeftAlone(t *testing.T) {
 		Edited:              true,
 	}, "Đoạn thứ nhất, sửa bằng tay.")
 
-	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	jobs, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +326,7 @@ func TestAPageTheBackTranslationDisagreedWithIsAskedAgain(t *testing.T) {
 		Roundtrip:           string(roundtrip.Material),
 	}, "Đoạn thứ nhất.")
 
-	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	jobs, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +363,7 @@ func TestAPageTheBackTranslationOnlyQuibbledWithIsLeftAlone(t *testing.T) {
 		Roundtrip:           string(roundtrip.Wording),
 	}, "Đoạn thứ nhất.")
 
-	jobs, err := plan(c, papers.Papers, []corpus.Lang{corpus.VI}, false)
+	jobs, err := plan(c, nil, papers.Papers, []corpus.Lang{corpus.VI}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

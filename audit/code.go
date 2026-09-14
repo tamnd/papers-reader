@@ -7,6 +7,7 @@ import (
 
 	"github.com/tamnd/papers-reader/code"
 	"github.com/tamnd/papers-reader/mathtex"
+	"github.com/tamnd/papers-reader/tags"
 )
 
 // The C group is about program text, which this corpus carries more of than a
@@ -365,14 +366,118 @@ func protectedLines(body string, n int) []bool {
 	return out
 }
 
-// codeRules is the C group.
+// listingCaption matches the caption a paper prints over a numbered
+// listing, which is the same shape as a figure caption and is read by the
+// same pattern in the tags package.
+var listingCaption = regexp.MustCompile(`^\*?\*?(?:Algorithm|Listing)\s+\d+(?:\.\d+)*\*?\*?\s*[.:]`)
+
+// ruleC06 wants a numbered listing to carry its attribute block.
 //
-// C06 and C07 are not here. C06 wants a numbered listing to carry an
-// attribute block with a `.code` class, and the corpus has no numbered
-// listings yet because nothing writes the attribute blocks. C07 compares the
-// fenced regions of a translation with those of its source byte for byte, and
-// there are no translations. Both arrive with the milestone that produces the
-// files they read, which is how every other group in this audit has grown.
+// A paper that numbers a listing refers to it: "the loop of Algorithm 2".
+// The reading app turns that into a link and the book into a page reference,
+// and both of them need the anchor, which is what the attribute block
+// carries. A figure and a table get one because papers tags writes one over
+// every caption it recognises, and Algorithm and Listing are in its table of
+// captions for exactly this reason.
+//
+// The caption is what is checked rather than the fence, because the caption
+// is where the number is and where papers tags puts the block. A caption
+// whose block has some other class is a finding too: the class is what the
+// reader filters on and a listing filed under .figure is a listing the
+// figure gallery will try to draw.
+//
+// Hard. A cross reference to an anchor that is not there is a dead link in
+// every format the corpus is published in, and this is the one rule that
+// sees it before the link is made.
+func ruleC06(in *Input) ([]Finding, error) {
+	return eachCodeFile(in, "C06", func(f *File) []Finding {
+		var out []Finding
+		lines := strings.Split(f.Body, "\n")
+		inside := code.Inside(f.Body)
+		for i, line := range lines {
+			if i+1 < len(inside) && inside[i+1] {
+				continue
+			}
+			trimmed := strings.TrimSpace(line)
+			if !listingCaption.MatchString(trimmed) {
+				continue
+			}
+			attrs := tags.ParseAttrs(line)
+			if len(attrs) == 0 {
+				out = append(out, Finding{
+					Rule: "C06", File: f.Path, Line: i + 1,
+					Message: fmt.Sprintf("the listing captioned %q carries no attribute block, so nothing can refer to it", shorten(trimmed)),
+				})
+				continue
+			}
+			if !classed(attrs[0], "code") {
+				out = append(out, Finding{
+					Rule: "C06", File: f.Path, Line: i + 1,
+					Message: fmt.Sprintf("the listing captioned %q is filed under .%s and not .code", shorten(trimmed), strings.Join(attrs[0].Classes, " .")),
+				})
+			}
+		}
+		return out
+	})
+}
+
+// classed says whether an attribute block carries a class.
+func classed(a tags.Attr, want string) bool {
+	for _, c := range a.Classes {
+		if c == want {
+			return true
+		}
+	}
+	return false
+}
+
+// ruleC07 compares the fenced regions of a translation with those of its
+// English, byte for byte and including the spaces.
+//
+// This is what makes code a protected kind, and it looks like a second copy
+// of L18. It is not, and the difference is the point. L18 asks the
+// translator's own Protect for the spans on both sides, so a bug in Protect
+// is invisible to it: the same wrong answer is compared with itself. This
+// reads the fences with the code package, which is an independent parser
+// written for the other rules of this group, and it compares the whole
+// region rather than the span, so an opening line whose language tag changed
+// is caught here and not there.
+//
+// Byte for byte means the trailing spaces too. A published listing is a
+// published listing, a translator that tidied the right hand edge of an
+// ALGOL program has changed the program, and nothing downstream will ever
+// tell you, because trailing space is the one difference a diff viewer
+// hides.
+func ruleC07(in *Input) ([]Finding, error) {
+	return eachTranslation(in, func(p pair) []Finding {
+		want, _ := code.Blocks(p.en.Body)
+		got, _ := code.Blocks(p.tr.Body)
+		if len(want) != len(got) {
+			return []Finding{{
+				Rule: "C07", File: p.tr.Path,
+				Message: fmt.Sprintf("the English has %d listings and this has %d", len(want), len(got)),
+			}}
+		}
+		var out []Finding
+		for i := range want {
+			switch {
+			case want[i].Lang != got[i].Lang:
+				out = append(out, Finding{
+					Rule: "C07", File: p.tr.Path, Line: got[i].Line,
+					Message: fmt.Sprintf("listing %d is tagged %q and the English tags it %q", i+1, got[i].Lang, want[i].Lang),
+				})
+			case want[i].Text != got[i].Text:
+				out = append(out, Finding{
+					Rule: "C07", File: p.tr.Path, Line: got[i].Line,
+					Message: fmt.Sprintf("listing %d is not the English listing byte for byte", i+1),
+				})
+			}
+		}
+		return out
+	})
+}
+
+// codeRules is the C group.
 func codeRules() []Rule {
 	return []Rule{
 		{
@@ -399,6 +504,16 @@ func codeRules() []Rule {
 			ID:    "C05",
 			What:  "no listing runs past 120 lines.",
 			Check: ruleC05,
+		},
+		{
+			ID: "C06", Hard: true,
+			What:  "a numbered listing carries an attribute block with a .code class.",
+			Check: ruleC06,
+		},
+		{
+			ID: "C07", Hard: true,
+			What:  "the fenced regions of a translation are its English ones, byte for byte.",
+			Check: ruleC07,
 		},
 		{
 			ID:    "C08",

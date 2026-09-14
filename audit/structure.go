@@ -379,7 +379,7 @@ func plural(n int, noun string) string {
 func longestParagraph(body string) int {
 	most := 0
 	for _, line := range prose(body) {
-		if n := len(strings.Fields(line)); n > most {
+		if n := corpus.Words(line); n > most {
 			most = n
 		}
 	}

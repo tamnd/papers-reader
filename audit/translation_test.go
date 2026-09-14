@@ -248,6 +248,55 @@ func TestL06IgnoresATermInsideAProtectedSpan(t *testing.T) {
 	}
 }
 
+// twoSenses is a term the glossary holds twice, once per sense, the way it
+// holds "feature".
+const twoSenses = `version: 1
+terms:
+  - en: feature
+    vi: đặc trưng
+    fields: [ai-ml]
+  - en: feature
+    vi: tính năng
+    fields: [software]
+`
+
+// sensePair is glossaryPair with the two sense glossary and a paper whose
+// field picks the first of them.
+func sensePair(t *testing.T, en, tr string) *Report {
+	t.Helper()
+	front := "paper: vaswani-2017-attention\ntitle: Attention Is All You Need\nfield: ai-ml\nkind: section\nlang: en\n"
+	return Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"manifests/glossary.yaml":                         twoSenses,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(front, en),
+		"content/vi/vaswani-2017-attention/01_section.md": file(answer(corpus.VI, "section", en), tr),
+	}), false)
+}
+
+// A paper about models says "feature" in the software sense once, in its
+// acknowledgements, and the translation is right to write the software
+// sense of it. The field picked the other entry, so the rule has to look at
+// both before it says the term was not rendered.
+func TestTheGlossaryRulesAcceptTheOtherSenseOfATerm(t *testing.T) {
+	en := "We thank the developer who shared a compiler feature with us, and the rest of this sentence is here so the rules have something to read.\n"
+	tr := "Chúng tôi cảm ơn nhà phát triển đã chia sẻ một tính năng của trình biên dịch, và phần còn lại của câu này ở đây để các quy tắc có cái để đọc.\n"
+	rep := sensePair(t, en, tr)
+	for _, id := range []string{"L06", "L10"} {
+		if res := result(t, rep, id); res.Failed() {
+			t.Errorf("%s reported the other sense of a term: %v", id, res.Findings)
+		}
+	}
+}
+
+func TestATermLeftInEnglishIsAFindingInEitherSense(t *testing.T) {
+	en := "We thank the developer who shared a compiler feature with us, and the rest of this sentence is here so the rules have something to read.\n"
+	tr := "Chúng tôi cảm ơn nhà phát triển đã chia sẻ một feature của trình biên dịch, và phần còn lại của câu này ở đây để các quy tắc có cái để đọc.\n"
+	if res := result(t, sensePair(t, en, tr), "L10"); !res.Failed() {
+		t.Error("L10 passed a term left standing in English")
+	}
+}
+
 func TestL07FindsAParagraphThatCameBackInEnglish(t *testing.T) {
 	tr := strings.Replace(viBody, "Giới hạn là $n$ và phương pháp của [3] đạt tới nó. Một đoạn dài hơn\nnằm ở đây để các quy tắc có ngưỡng độ dài có cái để xem xét và không đứng\nxuống trước một mục chỉ có hai từ.",
 		"The bound is $n$ and the method of [3] reaches it. A longer paragraph\nsits here so that the rules with a length floor have something to look at\nand do not stand down on a two word section.", 1)
@@ -265,6 +314,78 @@ func TestL07FindsAParagraphThatCameBackInEnglish(t *testing.T) {
 func TestL07LeavesAParagraphWithNoProseAlone(t *testing.T) {
 	if res := result(t, pairOf(t, corpus.VI, englishBody, viBody), "L07"); res.Failed() {
 		t.Errorf("L07 reported the display and the listing: %v", res.Findings)
+	}
+}
+
+// enFront is the masthead of a front page and its abstract: a title, a
+// byline, an affiliation and a paragraph long enough to be an abstract.
+const enFront = `A Bound On Sorting
+
+**Ada Lovelace, Grace Hopper, Edsger Dijkstra, Barbara Liskov, Alan Turing**
+
+Department of Computing
+The University of Somewhere
+Somewhere, SW1 2AB
+
+Abstract
+
+We give a lower bound on the number of comparisons a sorting method needs,
+and we show that the bound is reached by a method that is simple enough to
+write out in full, which is what the rest of this paper does.
+`
+
+// viFront is the same page translated the way a front page is meant to
+// come back: the title and the abstract in Vietnamese, the names and the
+// address exactly as they were printed.
+const viFront = `Một Cận Dưới Cho Sắp Xếp
+
+**Ada Lovelace, Grace Hopper, Edsger Dijkstra, Barbara Liskov, Alan Turing**
+
+Department of Computing
+The University of Somewhere
+Somewhere, SW1 2AB
+
+Tóm tắt
+
+Chúng tôi đưa ra một cận dưới cho số phép so sánh mà một phương pháp sắp xếp
+cần đến, và chúng tôi chỉ ra rằng cận này đạt được bởi một phương pháp đơn
+giản đến mức có thể viết ra đầy đủ, và đó là việc phần còn lại của bài báo
+này làm.
+`
+
+// frontPair writes one English front page and its translation.
+func frontPair(t *testing.T, en, tr string) *Report {
+	t.Helper()
+	front := "paper: vaswani-2017-attention\ntitle: Attention Is All You Need\n" +
+		"kind: front\nlang: vi\ntranslated_from: content/en/vaswani-2017-attention/00_front.md\n" +
+		"source_content_sha256: " + corpus.ContentSHA([]byte(en)) + "\n" +
+		"glossary_version: 1\nglossary_terms_sha256: aaaa\n"
+	return Run(build(t, map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), en),
+		"content/vi/vaswani-2017-attention/00_front.md": file(front, tr),
+	}), false)
+}
+
+// The byline and the affiliation of a front page are the same in every
+// language and a translation that leaves them is right, so the two rules
+// that read a paragraph against its English have to read past them to the
+// abstract.
+func TestTheMastheadOfAFrontPageIsNotAFinding(t *testing.T) {
+	rep := frontPair(t, enFront, viFront)
+	for _, id := range []string{"L07", "L11"} {
+		if res := result(t, rep, id); res.Failed() {
+			t.Errorf("%s reported the names and the address: %v", id, res.Findings)
+		}
+	}
+}
+
+func TestL07StillReadsTheAbstractOfAFrontPage(t *testing.T) {
+	tr := strings.Replace(viFront, "Chúng tôi đưa ra một cận dưới cho số phép so sánh mà một phương pháp sắp xếp\ncần đến, và chúng tôi chỉ ra rằng cận này đạt được bởi một phương pháp đơn\ngiản đến mức có thể viết ra đầy đủ, và đó là việc phần còn lại của bài báo\nnày làm.",
+		"We give a lower bound on the number of comparisons a sorting method needs,\nand we show that the bound is reached by a method that is simple enough to\nwrite out in full, which is what the rest of this paper does.", 1)
+	res := result(t, frontPair(t, enFront, tr), "L07")
+	if len(res.Findings) != 1 {
+		t.Fatalf("L07 found %d on an untranslated abstract, want 1: %v", len(res.Findings), res.Findings)
 	}
 }
 
@@ -336,6 +457,48 @@ func TestL10FindsAnEnglishTermLeftStanding(t *testing.T) {
 
 // A gloss is good practice on a term's first appearance, and the rendering
 // is right there in the file.
+// Twenty of the twenty-three L06 and L10 findings on the first translated
+// paper in the corpus were this, and every one of them was a page that had
+// done exactly the right thing.
+func TestTheGlossaryRulesLeaveALongerEnglishNameAlone(t *testing.T) {
+	for _, tc := range []struct {
+		name, en, tr string
+	}{
+		{
+			name: "a hyphenated compound",
+			en:   "The encoder-decoder bound is derived here and this paragraph is long enough for every length floor in the group.\n",
+			tr:   "Cận encoder-decoder được suy ra ở đây và đoạn này đủ dài cho mọi ngưỡng độ dài trong nhóm quy tắc.\n",
+		},
+		{
+			name: "an English name of a method the translation kept",
+			en:   "Both have training rules that resemble encoder matching applied to the model, and this paragraph is long enough.\n",
+			tr:   "Cả hai đều có quy tắc huấn luyện giống encoder matching được áp dụng cho mô hình, và đoạn này đủ dài rồi.\n",
+		},
+		{
+			name: "the name with the term at the end of it",
+			en:   "The work extends the denoising encoder of the earlier paper, and this paragraph is long enough for the floors.\n",
+			tr:   "Công trình mở rộng denoising encoder của bài báo trước đó, và đoạn này đủ dài cho mọi ngưỡng độ dài.\n",
+		},
+	} {
+		for _, rule := range []string{"L06", "L10"} {
+			if res := result(t, glossaryPair(t, tc.en, tc.tr), rule); res.Failed() {
+				t.Errorf("%s: %s reported %v", tc.name, rule, res.Findings)
+			}
+		}
+	}
+}
+
+// The other side of it. A name the translation invented is not a name the
+// paper wrote, and the term inside it is still standing in English.
+func TestAnEnglishNameTheSourceNeverWroteIsStillAFinding(t *testing.T) {
+	en := "The encoder is described here and the paragraph is long enough for every length floor in the group.\n"
+	tr := "Phần encoder này được mô tả ở đây và đoạn này đủ dài cho mọi ngưỡng độ dài trong nhóm quy tắc.\n"
+	res := result(t, glossaryPair(t, en, tr), "L10")
+	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "encoder") {
+		t.Fatalf("L10 said %v about a term standing between two Vietnamese words", res.Findings)
+	}
+}
+
 func TestL10AllowsAGloss(t *testing.T) {
 	en := "The encoder is described here and the paragraph is long enough for every length floor in the group.\n"
 	tr := "Bộ mã hóa (encoder) được mô tả ở đây và đoạn này đủ dài cho mọi ngưỡng độ dài trong nhóm.\n"

@@ -269,6 +269,29 @@ func TestAnInlineTurnedIntoADisplayIsRefused(t *testing.T) {
 	}
 }
 
+func TestASpaceInsideTheDollarSignsIsNotAChange(t *testing.T) {
+	source := "The generator distribution $p_g$ over $\\boldsymbol{x}$.\n"
+	for _, answer := range []string{
+		"$ p_g$ の上の $\\boldsymbol{x}$ 上の生成器分布。\n",
+		"$p_g $ の上の $\\boldsymbol{x}$ 上の生成器分布。\n",
+		"$ p_g $ の上の $ \\boldsymbol{x} $ 上の生成器分布。\n",
+		"$p_g$ の上の $\\boldsymbol{x}$ 上の生成器分布。\n",
+	} {
+		if d := Compare(source, answer); len(d) != 0 {
+			t.Errorf("Compare refused %q with %v and TeX ignores the space", answer, d)
+		}
+	}
+}
+
+func TestASpaceThatHoldsAControlWordApartStillCounts(t *testing.T) {
+	source := "The angle $\\alpha x$ is small.\n"
+	answer := "Góc $\\alphax$ nhỏ.\n"
+
+	if d := Compare(source, answer); len(d) != 1 {
+		t.Fatalf("Compare found %v and \\alphax is not a formula at all", d)
+	}
+}
+
 func TestProseInsideATextCommandMayBeTranslated(t *testing.T) {
 	source := "$p(y = 1 \\mid x) = \\text{probability that } x \\text{ is real}$\n"
 	answer := "$p(y = 1 \\mid x) = \\text{xác suất rằng } x \\text{ là thật}$\n"

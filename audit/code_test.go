@@ -3,6 +3,8 @@ package audit
 import (
 	"strings"
 	"testing"
+
+	"github.com/tamnd/papers-reader/corpus"
 )
 
 // Every listing in this file was written for the test. None of it is copied
@@ -91,6 +93,53 @@ func TestC05PassesAListingOfOrdinaryLength(t *testing.T) {
 	body := "```c\n" + strings.Repeat("int x = 1;\n", 20) + "```" + pad
 	if res := result(t, onePaper(t, body), "C05"); res.Failed() {
 		t.Errorf("C05 reported a listing of 20 lines: %v", res.Findings)
+	}
+}
+
+func TestC06WantsAnAnchorOnANumberedListing(t *testing.T) {
+	const listing = "```c\nint x = 1;\n```\n\n"
+	for _, c := range []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{"a caption with its block", listing + "Algorithm 1: the routine. {#a-1970-paper-alg-1 .code tag=00B2}" + pad, false},
+		{"a caption with no block at all", listing + "Algorithm 1: the routine." + pad, true},
+		{"a caption filed under the wrong class", listing + "Listing 2: the routine. {#a-1970-paper-lst-2 .figure tag=00B3}" + pad, true},
+		{"a listing nobody numbered", listing + "The routine above is the whole of it." + pad, false},
+		{"a sentence that mentions one", listing + "The loop of Algorithm 1 runs until the queue is empty." + pad, false},
+		{"a caption printed inside a fence", "```text\nAlgorithm 1: the routine.\n```" + pad, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := result(t, onePaper(t, c.body), "C06")
+			if res.Failed() != c.fails {
+				t.Errorf("C06 failed=%v, want %v: %v", res.Failed(), c.fails, res.Findings)
+			}
+		})
+	}
+}
+
+// C07 reads the fences with the code package rather than with the
+// translator's own Protect, which is what makes it worth having beside L18.
+func TestC07ComparesTheFencesOfATranslationWithItsEnglish(t *testing.T) {
+	en := "The routine is this.\n\n```c\nint x = 1;  \n```\n"
+	for _, c := range []struct {
+		name  string
+		tr    string
+		fails bool
+	}{
+		{"the same listing", "Thủ tục là thế này.\n\n```c\nint x = 1;  \n```\n", false},
+		{"the trailing spaces tidied", "Thủ tục là thế này.\n\n```c\nint x = 1;\n```\n", true},
+		{"a word of the program translated", "Thủ tục là thế này.\n\n```c\nint y = 1;  \n```\n", true},
+		{"the language tag changed", "Thủ tục là thế này.\n\n```cpp\nint x = 1;  \n```\n", true},
+		{"the listing dropped", "Thủ tục là thế này.\n", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := result(t, pairOf(t, corpus.VI, en, c.tr), "C07")
+			if res.Failed() != c.fails {
+				t.Errorf("C07 failed=%v, want %v: %v", res.Failed(), c.fails, res.Findings)
+			}
+		})
 	}
 }
 

@@ -239,6 +239,62 @@ func TestTheAbstractIsFoundAndTheMastheadIsWhatIsAboveIt(t *testing.T) {
 	if len(b.Masthead) != 1 || !strings.HasPrefix(b.Masthead[0], "Faculty of Mathematics") {
 		t.Errorf("the masthead is %v and the title and the author line are not part of it", b.Masthead)
 	}
+	if b.TitleAs != "" {
+		t.Errorf("the English book carries a translated title %q", b.TitleAs)
+	}
+}
+
+// The title as the translator wrote it, which is the first paragraph of a
+// translated front matter file and is nowhere else in the corpus.
+func TestATranslatedBookCarriesTheTitleTheTranslatorWrote(t *testing.T) {
+	const titled = "Một Nhận Xét Bên Lề"
+	for _, c := range []struct {
+		name    string
+		printed string
+		want    string
+	}{
+		{"a title the translator translated", titled, titled},
+		{"a title the translator left alone", "A Remark in the Margin", ""},
+		{"a title with the spacing tidied", "  " + titled + "  ", titled},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b := viBook(t, c.printed)
+			if b.TitleAs != c.want {
+				t.Errorf("the translated title is %q, want %q", b.TitleAs, c.want)
+			}
+			if b.Title != "A Remark in the Margin" {
+				t.Errorf("the English title is %q and the front matter is the same in every language", b.Title)
+			}
+			if len(b.Masthead) != 1 {
+				t.Errorf("the masthead is %v and the title is not part of it", b.Masthead)
+			}
+		})
+	}
+}
+
+// viBook writes a Vietnamese tree beside the English one and loads it. The
+// front matter is what the translator writes: the same bibliographic facts,
+// lang set to the language, and the body in Vietnamese.
+func viBook(t *testing.T, printed string) *Book {
+	t.Helper()
+	c := testCorpus(t)
+	page := strings.Replace(front, "lang: en", "lang: vi", 1)
+	page = strings.Replace(page, "\nA Remark in the Margin\n", "\n"+printed+"\n", 1)
+	page = strings.Replace(page, "Faculty of Mathematics, Toulouse", "Khoa Toán, Toulouse", 1)
+	page = strings.Replace(page, "We show that the margin is too narrow to hold the proof, and that this is the\ncase for every exponent above two.",
+		"Chúng tôi chỉ ra rằng lề quá hẹp để chứa chứng minh, và điều đó đúng với mọi\nsố mũ lớn hơn hai.", 1)
+	dir := filepath.Join(c.Root, "content", "vi", paper)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "00_front.md"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Load(c, paper, corpus.VI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 // A marker on the front page regularly has its definition in a later file,

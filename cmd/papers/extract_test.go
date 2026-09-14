@@ -1,6 +1,7 @@
 package main
 
 import (
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -269,5 +270,47 @@ func TestNoPageRangeReadsTheWholePaper(t *testing.T) {
 	}
 	if e.first != 1 || e.last != 14 {
 		t.Errorf("read pages %d to %d, want 1 to 14", e.first, e.last)
+	}
+}
+
+// A batch that is interrupted has to carry on where it stopped. This is the
+// piece that decides that, and the failure it guards against is a run that
+// starts at page one every time and never reaches the end of the corpus.
+func TestAnInterruptedBatchPicksUpTheRest(t *testing.T) {
+	store := extract.Store{Dir: t.TempDir()}
+	for _, p := range []int{1, 2, 3, 6} {
+		if err := store.Write(p, "the text of a page"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := pagesToDo(store, 1, 8, false)
+	if !reflect.DeepEqual(got, []int{4, 5, 7, 8}) {
+		t.Errorf("the work left is %v, want the four pages that are not there", got)
+	}
+
+	// A blank page is an answer and not a gap. Asking for it again on every
+	// run is asking for it forever.
+	if err := store.Write(4, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := pagesToDo(store, 1, 8, false); !reflect.DeepEqual(got, []int{5, 7, 8}) {
+		t.Errorf("the work left is %v, and page 4 came back blank", got)
+	}
+}
+
+// -again redoes the range it was asked for and nothing else, which is what
+// somebody wants after fixing the prompt for one bad page.
+func TestAgainRedoesOnlyTheRangeItWasGiven(t *testing.T) {
+	store := extract.Store{Dir: t.TempDir()}
+	for p := 1; p <= 8; p++ {
+		if err := store.Write(p, "the text of a page"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := pagesToDo(store, 4, 5, true); !reflect.DeepEqual(got, []int{4, 5}) {
+		t.Errorf("again asked for %v", got)
+	}
+	if got := pagesToDo(store, 4, 5, false); got != nil {
+		t.Errorf("without again it asked for %v, and every page is there", got)
 	}
 }

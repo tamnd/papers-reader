@@ -350,7 +350,7 @@ func ruleS07(in *Input) ([]Finding, error) {
 			continue
 		}
 		restricted++
-		if n := len(strings.Fields(f.Body)); n > split.AbstractWords {
+		if n := corpus.Words(f.Body); n > split.AbstractWords {
 			out = append(out, Finding{
 				Rule: "S07", File: f.Path,
 				Message: fmt.Sprintf("%d words quoted from a restricted paper, and the limit is %d", n, split.AbstractWords),

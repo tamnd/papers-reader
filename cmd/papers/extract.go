@@ -517,6 +517,31 @@ func retidyPages(c *corpus.Corpus, todo []corpus.Paper, first, last int, dry, lo
 	return nil
 }
 
+// pagesToDo is the work a run has left: the pages of the range that are not
+// in the store already.
+//
+// This is the whole of what makes a batch resumable, and a batch has to be
+// resumable. A hundred papers at a hundred and fifty seconds a page is days
+// of wall clock over machines that get rebooted, a fleet that drops out and
+// a laptop that goes to sleep, and a run that started at page one every time
+// would never reach the end of the corpus. A page that is on disk is a page
+// that was written whole, because the store renames it into place.
+//
+// -again is the other half of it and is not the same as deleting the
+// directory: it redoes the range that was asked for and leaves every other
+// page of the paper where it is, which is what somebody wants after fixing
+// the prompt for one bad page.
+func pagesToDo(store extract.Store, first, last int, again bool) []int {
+	if !again {
+		return store.Missing(first, last)
+	}
+	var out []int
+	for page := first; page <= last; page++ {
+		out = append(out, page)
+	}
+	return out
+}
+
 func (e *extraction) do(ctx context.Context) (count, error) {
 	var n count
 	if e.source == nil {
@@ -546,13 +571,7 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 	}
 
 	store := extract.Store{Dir: e.corpus.Work(e.paper.ID, "pages")}
-	todo := store.Missing(e.first, e.last)
-	if e.again {
-		todo = nil
-		for page := e.first; page <= e.last; page++ {
-			todo = append(todo, page)
-		}
-	}
+	todo := pagesToDo(store, e.first, e.last, e.again)
 	n.already = e.last - e.first + 1 - len(todo)
 	if len(todo) == 0 {
 		return n, nil
