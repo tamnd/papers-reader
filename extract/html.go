@@ -185,6 +185,115 @@ func pipeTable(html string) (string, bool) {
 	return grid.Pipe(out), true
 }
 
+// Fence writes the tables Untable would not touch as the text fences the
+// prompt asks for when the cells do not form a grid.
+//
+// This is the last resort and it runs only when the resolution ladder is out
+// of rungs. Untable refuses a table it cannot read as a rectangle, acceptance
+// rule A10 sees the markup that is left and the page is asked again higher
+// up, and most of the time that is the end of it. A second sample from the
+// model is a different sample: the Hoare paper's fourth page came back with
+// 108 tags on it at 300 dpi and came back clean at 400.
+//
+// Some tables never come back right. The Transformer paper's third table
+// groups five rows under one label and spells a row of blanks as a single
+// cell seven columns wide, and it came back the same way at 300, 400 and 600,
+// because the picture is the same picture and the model reads it the same way
+// every time. A fourth ask costs another page of quota and returns the same
+// answer.
+//
+// So the table is written the other way the prompt allows, which is not a
+// compromise invented here but the instruction the reader was given and did
+// not follow. Nothing is lost: every cell is there, in reading order, one row
+// to a line. What is given up is the claim that the third cell of one row is
+// in the same column as the third cell of the next, and that claim is the one
+// this table cannot support. A pipe table is better than a fence for the
+// renderer, the translator and the M rules alike, which is why a page that
+// might still convert on the next attempt gets the next attempt, and why
+// none of this is in Tidy.
+func Fence(s string) string {
+	lines := strings.Split(s, "\n")
+	fenced := code.Inside(s)
+	out := make([]string, 0, len(lines))
+	for i := 0; i < len(lines); i++ {
+		if fenced[i+1] || !opensTable(lines[i]) {
+			out = append(out, lines[i])
+			continue
+		}
+		end := closesTable(lines, i, fenced)
+		if end < 0 {
+			out = append(out, lines[i])
+			continue
+		}
+		block, ok := fenceTable(strings.Join(lines[i:end+1], "\n"))
+		if !ok {
+			out = append(out, lines[i:end+1]...)
+			i = end
+			continue
+		}
+		out = append(out, block...)
+		i = end
+	}
+	return strings.Join(out, "\n")
+}
+
+// fenceTable is the rows of an HTML table as the lines of a text fence, two
+// spaces between the cells of a row.
+//
+// The spans are dropped rather than expanded. Expanding them is what Untable
+// already tried and what the rectangle test already refused, and a fence full
+// of padding it invented would be the same wrong table with a different set
+// of delimiters round it.
+func fenceTable(html string) ([]string, bool) {
+	rows := rowTag.FindAllStringSubmatch(html, -1)
+	if len(rows) == 0 {
+		return nil, false
+	}
+	out := []string{"```text"}
+	for _, r := range rows {
+		cells := cellTag.FindAllStringSubmatch(r[1], -1)
+		if len(cells) == 0 {
+			return nil, false
+		}
+		row := make([]string, 0, len(cells))
+		for _, c := range cells {
+			row = append(row, plain(c[3]))
+		}
+		out = append(out, strings.TrimRight(strings.Join(row, "  "), " "))
+	}
+	return append(out, "```"), true
+}
+
+// plain is one cell as the words in it and nothing else.
+//
+// A subscript comes out the way a person types one at a terminal rather than
+// as mathematics, because dollars inside a fence are four characters the
+// renderer prints as themselves, and because mathtex reads a fence as a
+// listing and would never see them anyway. Everything else in angle brackets
+// goes: a fence carries no markup, and bold in a table of numbers was
+// presentation to begin with.
+func plain(s string) string {
+	s = linebreak.ReplaceAllString(s, " ")
+	s = script.ReplaceAllStringFunc(s, func(m string) string {
+		p := script.FindStringSubmatch(m)
+		mark := "_"
+		if strings.EqualFold(p[2], "sup") {
+			mark = "^"
+		}
+		return p[1] + mark + strings.TrimSpace(p[3])
+	})
+	s = bareScript.ReplaceAllStringFunc(s, func(m string) string {
+		p := bareScript.FindStringSubmatch(m)
+		mark := "_"
+		if strings.EqualFold(p[1], "sup") {
+			mark = "^"
+		}
+		return mark + strings.TrimSpace(p[2])
+	})
+	s = leftover.ReplaceAllString(s, "")
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // spans reads rowspan and colspan off a cell's attributes. Anything else on
 // them is ignored: an align or a style is presentation and this corpus does
 // not carry presentation.

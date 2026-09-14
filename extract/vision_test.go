@@ -259,3 +259,54 @@ func TestTheNotedPaperIsAskedItsOwnQuestion(t *testing.T) {
 		t.Error("Codd's pages were read without Codd's note")
 	}
 }
+
+// A table that comes back the same three times is written as a fence on the
+// way out rather than thrown away. The page is otherwise fine and the cells
+// are all there, and a fourth ask would buy the same answer again.
+func TestATableThatNeverConvertsIsFencedAtTheTopOfTheLadder(t *testing.T) {
+	table := "<table>\n" +
+		"<tr><th>Run</th><th>Depth</th><th>Score</th></tr>\n" +
+		"<tr><td rowspan=\"4\">(A)</td><td colspan=\"7\">3</td><td>27.3</td></tr>\n" +
+		"</table>"
+	r := &reader{says: []string{"### Results\n\n" + table}}
+	v := testVision(t, r)
+	var checker Checker
+	v.Check = checker.Check
+
+	got, err := v.Page(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.OK() {
+		t.Fatalf("the page was thrown away for %v", got.Faults)
+	}
+	if got.Attempts != len(render.Ladder) {
+		t.Errorf("it was fenced after %d attempts and should have climbed first", got.Attempts)
+	}
+	want := "### Results\n\n```text\nRun  Depth  Score\n(A)  3  27.3\n```"
+	if got.Text != want {
+		t.Errorf("the page reads:\n%s\nand should read:\n%s", got.Text, want)
+	}
+}
+
+// The fence is the last resort for one thing only. A page the reader could
+// not read is still a page nobody can publish, and writing its tables out
+// differently does not change that.
+func TestAFenceDoesNotRescueAPageThatIsWrongForOtherReasons(t *testing.T) {
+	table := "<table>\n<tr><td rowspan=\"4\">(A)</td><td colspan=\"7\">3</td></tr>\n</table>"
+	r := &reader{says: []string{"the page is $ unfinished\n\n" + table}}
+	v := testVision(t, r)
+	var checker Checker
+	v.Check = checker.Check
+
+	got, err := v.Page(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OK() {
+		t.Fatal("a page with an unclosed formula on it was accepted")
+	}
+	if strings.Contains(got.Text, "```text") {
+		t.Error("the page that came back is not the one the reader gave")
+	}
+}

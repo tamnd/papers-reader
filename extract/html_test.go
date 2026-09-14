@@ -341,3 +341,84 @@ func TestAPageWithNoScriptsIsUntouched(t *testing.T) {
 		t.Errorf("Unscript changed a page with nothing to do: %q", got)
 	}
 }
+
+func TestATableWhoseSpansDoNotAddUpBecomesAFence(t *testing.T) {
+	in := "Before.\n\n" +
+		"<table>\n" +
+		"<tr><th>Run</th><th>Depth</th><th>Score</th></tr>\n" +
+		"<tr><td rowspan=\"4\">(A)</td><td colspan=\"7\">3</td><td>27.3</td></tr>\n" +
+		"</table>\n\n" +
+		"After."
+	want := "Before.\n\n" +
+		"```text\n" +
+		"Run  Depth  Score\n" +
+		"(A)  3  27.3\n" +
+		"```\n\n" +
+		"After."
+	if got := Untable(in); got != in {
+		t.Fatalf("Untable should have left this table alone, and gave:\n%s", got)
+	}
+	if got := Fence(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestAFenceKeepsASubscriptAsSomethingAPersonWouldType(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><th>d<sub>model</sub></th><th>params &times;10<sup>6</sup></th></tr>\n" +
+		"<tr><td rowspan=\"3\">512</td><td>65</td></tr>\n" +
+		"</table>"
+	want := "```text\n" +
+		"d_model  params &times;10^6\n" +
+		"512  65\n" +
+		"```"
+	if got := Fence(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestAFenceDropsTheMarkupInsideACell(t *testing.T) {
+	in := "<table>\n" +
+		"<tr><td><b>base</b></td><td>a<br/>b</td><td><span class=\"x\">7</span></td></tr>\n" +
+		"<tr><td colspan=\"9\">only one</td></tr>\n" +
+		"</table>"
+	want := "```text\n" +
+		"base  a b  7\n" +
+		"only one\n" +
+		"```"
+	if got := Fence(in); got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A table Untable can read is a table Fence never sees, because the page it
+// was on passed the acceptance rules and never reached the end of the ladder.
+// This says so anyway, because the two run over the same pages in the tests
+// above and a fence where a pipe table belongs would be a silent loss.
+func TestAFenceLeavesAPipeTableAlone(t *testing.T) {
+	in := "| Model | Score |\n| --- | --- |\n| base | 27.3 |\n"
+	if got := Fence(in); got != in {
+		t.Errorf("Fence touched a table that was already a table: %q", got)
+	}
+}
+
+func TestAFenceLeavesATableInsideAListingAlone(t *testing.T) {
+	in := "```html\n<table>\n<tr><td>a</td></tr>\n</table>\n```\n"
+	if got := Fence(in); got != in {
+		t.Errorf("Fence rewrote a listing: %q", got)
+	}
+}
+
+func TestAnUnclosedTableIsNotFenced(t *testing.T) {
+	in := "<table>\n<tr><td>a</td></tr>\n"
+	if got := Fence(in); got != in {
+		t.Errorf("Fence guessed where a table ended: %q", got)
+	}
+}
+
+func TestATableWithNoRowsIsNotFenced(t *testing.T) {
+	in := "<table>\n<caption>Nothing here</caption>\n</table>"
+	if got := Fence(in); got != in {
+		t.Errorf("Fence wrote an empty fence: %q", got)
+	}
+}

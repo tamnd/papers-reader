@@ -183,6 +183,14 @@ func (v *Vision) Page(ctx context.Context, page int) (Scan, error) {
 
 		next, ok := profile.Next()
 		if !ok {
+			// Out of rungs. The one thing left worth trying costs nothing
+			// and asks nobody: a table the reader would not spell as a grid
+			// is written as the fence the prompt asked for. See Fence.
+			if text := Fence(text); len(v.check(page, text)) == 0 {
+				out.Text = text
+				out.Faults = nil
+				v.logf("%s page %d was refused at %s (%s), and its tables are written as fences", v.Paper, page, profile, faults[0])
+			}
 			return out, nil
 		}
 		v.logf("%s page %d was refused at %s (%s), asking again at %s", v.Paper, page, profile, faults[0], next)
