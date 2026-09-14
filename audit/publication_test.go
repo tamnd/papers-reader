@@ -113,3 +113,136 @@ func messages(res Result) []string {
 	}
 	return out
 }
+
+// page writes one content file with a body in it, for the three rules that
+// are about what a built page refers to.
+func page(paper, number, text string) string {
+	return "---\npaper: " + paper + "\ntitle: Attention Is All You Need\nkind: section\nlang: en\n" +
+		"section: \"" + number + "\"\nsection_title: A section\n---\n\n" + text
+}
+
+// The three fault rules stand down on a corpus with no content, because a
+// build with no pages in it is a corpus nobody has extracted yet and not a
+// corpus with nothing wrong with it.
+func TestTheFaultRulesStandDownWithNoPages(t *testing.T) {
+	rep := Run(build(t, nil), true)
+	for _, id := range []string{"P01", "P02", "P03"} {
+		if !result(t, rep, id).NotRun {
+			t.Errorf("%s claimed a result on a corpus with no pages", id)
+		}
+	}
+}
+
+func TestTheFaultRulesPassOnAPageThatIsAllThere(t *testing.T) {
+	in := build(t, map[string]string{
+		"content/en/vaswani-2017-attention/01_method.md": page("vaswani-2017-attention", "1",
+			"The rule is\n\n$$E = \\tfrac{1}{2}\\sum_j (y_j - d_j)^2$$\n\nand it holds [^1].\n\n[^1]: Under the usual conditions.\n"),
+	})
+	rep := Run(in, true)
+	for _, id := range []string{"P01", "P02", "P03"} {
+		if res := result(t, rep, id); res.Failed() {
+			t.Errorf("%s failed on a page with nothing wrong with it: %v", id, res.Findings)
+		}
+	}
+}
+
+// P01 is the formulas and the markup. A formula KaTeX will not take is not
+// a failed build, because a paper with one unreadable formula is worth
+// reading, but it is a hard audit failure, because a corpus whose point is
+// that the mathematics came through intact cannot ship it as a warning.
+func TestP01FindsAFormulaThatWillNotRender(t *testing.T) {
+	in := build(t, map[string]string{
+		"content/en/vaswani-2017-attention/01_method.md": page("vaswani-2017-attention", "1",
+			"$$\\notacommand{x}$$\n"),
+	})
+	res := result(t, Run(in, true), "P01")
+	if !res.Failed() {
+		t.Fatal("P01 passed a formula KaTeX refuses")
+	}
+	if !strings.Contains(strings.Join(messages(res), " "), "KaTeX refused") {
+		t.Errorf("the finding does not say what happened: %v", res.Findings)
+	}
+	if res.Findings[0].File != "p/vaswani-2017-attention/en.json" {
+		t.Errorf("the finding names %q", res.Findings[0].File)
+	}
+}
+
+// P02 is the links. A footnote marker with no definition anywhere in the
+// paper is set as a bare number rather than as a link to nowhere, and this
+// is the rule that says the paper is missing a footnote.
+func TestP02FindsALinkWithNothingAtTheOtherEnd(t *testing.T) {
+	in := build(t, map[string]string{
+		"content/en/vaswani-2017-attention/01_method.md": page("vaswani-2017-attention", "1",
+			"The result holds [^4], as shown in [[nobody-1999-nothing]].\n"),
+	})
+	res := result(t, Run(in, true), "P02")
+	if !res.Failed() {
+		t.Fatal("P02 passed a page full of links to nowhere")
+	}
+	joined := strings.Join(messages(res), " ")
+	if !strings.Contains(joined, "footnote marker 4") || !strings.Contains(joined, "nobody-1999-nothing") {
+		t.Errorf("the findings are %v", res.Findings)
+	}
+	// The same page's formulas and figures are fine, so the other two rules
+	// have nothing to say. Three rules over one list is only worth it if
+	// each one reports its own pile.
+	if result(t, Run(in, true), "P01").Failed() {
+		t.Error("P01 reported a broken link")
+	}
+}
+
+// P03 is the pictures a page actually shows. A caption the figures pass has
+// not reached yet degrades to a paragraph and is rule F09's business, so
+// what this rule is about is the other case: the manifest says the picture
+// exists and it is not there, which is the one thing that would render as a
+// broken image in a browser.
+func TestP03PassesACaptionTheFiguresPassHasNotReached(t *testing.T) {
+	const caption = "Figure 1: The architecture.\n{#vaswani-2017-attention-fig-1 .figure tag=00a1}\n"
+	in := build(t, map[string]string{
+		"content/en/vaswani-2017-attention/01_method.md": page("vaswani-2017-attention", "1", caption),
+	})
+	if res := result(t, Run(in, true), "P03"); res.Failed() {
+		t.Errorf("P03 failed a paper part way through the figures pass: %v", res.Findings)
+	}
+}
+
+func TestP03FindsAFigureThatIsNotInTheBuild(t *testing.T) {
+	const caption = "Figure 1: The architecture.\n{#vaswani-2017-attention-fig-1 .figure tag=00a1}\n"
+	listed := build(t, map[string]string{
+		"content/en/vaswani-2017-attention/01_method.md": page("vaswani-2017-attention", "1", caption),
+		"manifests/figures.yaml": `figures:
+  - paper: vaswani-2017-attention
+    figure: fig-1
+    number: "1"
+    page: 3
+    bbox: [10, 10, 200, 120]
+    caption: The architecture.
+    sha256: 0000000000000000000000000000000000000000000000000000000000000000
+    method: crop
+    page_fraction: 0.2
+    width: 760
+    height: 480
+    bytes: 40960
+`,
+	})
+	res := result(t, Run(listed, true), "P03")
+	if !res.Failed() {
+		t.Fatal("P03 passed a figure the manifest lists and nobody rendered")
+	}
+	if !strings.Contains(strings.Join(messages(res), " "), "is not in the corpus") {
+		t.Errorf("the findings are %v", res.Findings)
+	}
+}
+
+// All three are hard, because a page that refers to something that is not
+// there renders as a gap in a paper.
+func TestTheFaultRulesAreHard(t *testing.T) {
+	for _, r := range Rules() {
+		switch r.ID {
+		case "P01", "P02", "P03":
+			if !r.Hard {
+				t.Errorf("%s is soft", r.ID)
+			}
+		}
+	}
+}

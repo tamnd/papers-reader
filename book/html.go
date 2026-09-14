@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tamnd/papers-reader/katex"
+	"github.com/tamnd/papers-reader/markdown"
 	"github.com/tamnd/papers-reader/mathtex"
 	"github.com/tamnd/papers-reader/tags"
 )
@@ -44,7 +45,7 @@ type Page struct {
 // XHTML writes one Markdown body as the body of a page.
 func (p *Page) XHTML(body string) string {
 	var out []string
-	for _, b := range blocks(body) {
+	for _, b := range markdown.Blocks(body) {
 		if s := p.block(b); s != "" {
 			out = append(out, s)
 		}
@@ -53,45 +54,31 @@ func (p *Page) XHTML(body string) string {
 }
 
 func (p *Page) block(b string) string {
-	text, attr, labelled := takeAttr(b)
+	text, attr, labelled := markdown.TakeAttr(b)
 	id := ""
 	if labelled {
 		id = fmt.Sprintf(" id=%q", attr.Anchor)
 	}
 	switch {
 	case strings.HasPrefix(text, "```") || strings.HasPrefix(text, "~~~"):
-		return "<pre" + id + "><code>" + html.EscapeString(fenced(text)) + "</code></pre>"
-	case headingLine.MatchString(text):
-		m := headingLine.FindStringSubmatch(strings.SplitN(text, "\n", 2)[0])
+		return "<pre" + id + "><code>" + html.EscapeString(markdown.Fenced(text)) + "</code></pre>"
+	case markdown.IsHeading(text):
+		depth, title, _ := markdown.Heading(text)
 		tag := "h3"
-		if len(m[1]) > 3 {
+		if depth > 3 {
 			tag = "h4"
 		}
-		return fmt.Sprintf("<%s%s>%s</%s>", tag, id, p.Inline(m[2]), tag)
-	case isTable(text):
+		return fmt.Sprintf("<%s%s>%s</%s>", tag, id, p.Inline(title), tag)
+	case markdown.IsTable(text):
 		return p.table(text, id)
-	case isDisplay(text):
+	case markdown.IsDisplay(text):
 		return p.display(text, id)
-	case labelled && has(attr.Classes, "figure"):
+	case labelled && markdown.Has(attr.Classes, "figure"):
 		return p.figure(text, attr)
-	case isList(text):
+	case markdown.IsList(text):
 		return p.list(text, id)
 	}
 	return "<p" + id + ">" + p.Inline(text) + "</p>"
-}
-
-// fenced strips the two fence lines off a code block.
-func fenced(text string) string {
-	lines := strings.Split(text, "\n")
-	if len(lines) > 1 {
-		lines = lines[1:]
-	}
-	if n := len(lines); n > 0 {
-		if t := strings.TrimSpace(lines[n-1]); strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			lines = lines[:n-1]
-		}
-	}
-	return strings.Join(lines, "\n")
 }
 
 func (p *Page) display(text, id string) string {
@@ -122,14 +109,14 @@ func plainCaption(s string) string {
 
 func (p *Page) list(text, id string) string {
 	tag := "ul"
-	if ordinal.MatchString(strings.Split(text, "\n")[0]) {
+	if markdown.Ordinal.MatchString(strings.Split(text, "\n")[0]) {
 		tag = "ol"
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "<%s%s>\n", tag, id)
 	for _, l := range strings.Split(text, "\n") {
-		item := bullet.ReplaceAllString(l, "")
-		item = ordinal.ReplaceAllString(item, "")
+		item := markdown.Bullet.ReplaceAllString(l, "")
+		item = markdown.Ordinal.ReplaceAllString(item, "")
 		fmt.Fprintf(&b, "<li>%s</li>\n", p.Inline(item))
 	}
 	fmt.Fprintf(&b, "</%s>", tag)
@@ -149,7 +136,7 @@ func (p *Page) table(text, id string) string {
 			cell = "th"
 		}
 		fmt.Fprintf(&b, "<%s>", row)
-		for _, c := range cells(l) {
+		for _, c := range markdown.Cells(l) {
 			fmt.Fprintf(&b, "<%s>%s</%s>", cell, p.Inline(c), cell)
 		}
 		fmt.Fprintf(&b, "</%s>\n", row)
@@ -250,7 +237,7 @@ func (p *Page) holdMath(s string) string {
 }
 
 func (p *Page) holdCode(s string) string {
-	return code.ReplaceAllStringFunc(s, func(m string) string {
+	return markdown.Code.ReplaceAllStringFunc(s, func(m string) string {
 		return p.mark("<code>" + html.EscapeString(strings.Trim(m, "`")) + "</code>")
 	})
 }
@@ -262,9 +249,9 @@ func (p *Page) holdCode(s string) string {
 // chapter and back. The note itself is written at the foot of the same page
 // by Chapter, so a reader that does not support popups still works.
 func (p *Page) holdNotes(s string) string {
-	s = loose.ReplaceAllString(s, "$1")
-	return notePattern2.ReplaceAllStringFunc(s, func(m string) string {
-		key := notePattern2.FindStringSubmatch(m)[1]
+	s = markdown.LooseNote.ReplaceAllString(s, "$1")
+	return markdown.Note.ReplaceAllStringFunc(s, func(m string) string {
+		key := markdown.Note.FindStringSubmatch(m)[1]
 		if _, ok := p.Book.Notes[key]; !ok {
 			p.Orphans = append(p.Orphans, key)
 			return p.mark("<sup>" + html.EscapeString(key) + "</sup>")
@@ -277,8 +264,8 @@ func (p *Page) holdNotes(s string) string {
 }
 
 func (p *Page) holdPapers(s string) string {
-	return paperCite.ReplaceAllStringFunc(s, func(m string) string {
-		id := paperCite.FindStringSubmatch(m)[1]
+	return markdown.PaperCite.ReplaceAllStringFunc(s, func(m string) string {
+		id := markdown.PaperCite.FindStringSubmatch(m)[1]
 		n, ok := p.Book.Cite(id)
 		if !ok {
 			p.Unlinked = append(p.Unlinked, id)
@@ -296,12 +283,12 @@ func (p *Page) holdCites(s string) string {
 	if len(p.Book.Bibliography) == 0 {
 		return s
 	}
-	return numCite.ReplaceAllStringFunc(s, func(m string) string {
+	return markdown.NumCite.ReplaceAllStringFunc(s, func(m string) string {
 		inner := m[1 : len(m)-1]
 		var b strings.Builder
 		b.WriteString("[")
 		at := 0
-		for _, loc := range digits.FindAllStringIndex(inner, -1) {
+		for _, loc := range markdown.Digits.FindAllStringIndex(inner, -1) {
 			b.WriteString(html.EscapeString(inner[at:loc[0]]))
 			n := inner[loc[0]:loc[1]]
 			fmt.Fprintf(&b, `<a class="cite" href="refs.xhtml#bib-%s">%s</a>`, n, n)
@@ -314,11 +301,11 @@ func (p *Page) holdCites(s string) string {
 }
 
 func (p *Page) holdEmphasis(s string) string {
-	s = strong.ReplaceAllStringFunc(s, func(m string) string {
-		return p.mark("<strong>") + strong.FindStringSubmatch(m)[1] + p.mark("</strong>")
+	s = markdown.Strong.ReplaceAllStringFunc(s, func(m string) string {
+		return p.mark("<strong>") + markdown.Strong.FindStringSubmatch(m)[1] + p.mark("</strong>")
 	})
-	return emph.ReplaceAllStringFunc(s, func(m string) string {
-		q := emph.FindStringSubmatch(m)
+	return markdown.Emph.ReplaceAllStringFunc(s, func(m string) string {
+		q := markdown.Emph.FindStringSubmatch(m)
 		return q[1] + p.mark("<em>") + q[2] + p.mark("</em>")
 	})
 }

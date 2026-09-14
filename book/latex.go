@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tamnd/papers-reader/markdown"
 	"github.com/tamnd/papers-reader/mathtex"
 	"github.com/tamnd/papers-reader/tags"
 )
@@ -49,7 +50,7 @@ type Renderer struct {
 // below it is one kind of block.
 func (r *Renderer) LaTeX(body string) string {
 	var out []string
-	for _, b := range blocks(body) {
+	for _, b := range markdown.Blocks(body) {
 		if s := r.block(b); s != "" {
 			out = append(out, s)
 		}
@@ -58,19 +59,19 @@ func (r *Renderer) LaTeX(body string) string {
 }
 
 func (r *Renderer) block(b string) string {
-	text, attr, labelled := takeAttr(b)
+	text, attr, labelled := markdown.TakeAttr(b)
 	switch {
 	case strings.HasPrefix(text, "```") || strings.HasPrefix(text, "~~~"):
 		return r.code(text)
-	case headingLine.MatchString(text):
+	case markdown.IsHeading(text):
 		return r.heading(text, attr, labelled)
-	case isTable(text):
+	case markdown.IsTable(text):
 		return r.table(text, attr, labelled)
-	case isDisplay(text):
+	case markdown.IsDisplay(text):
 		return r.display(text, attr, labelled)
-	case labelled && has(attr.Classes, "figure"):
+	case labelled && markdown.Has(attr.Classes, "figure"):
 		return r.figure(text, attr)
-	case isList(text):
+	case markdown.IsList(text):
 		return r.list(text, attr, labelled)
 	}
 	return r.paragraph(text, attr, labelled)
@@ -85,26 +86,24 @@ func (r *Renderer) paragraph(text string, attr tags.Attr, labelled bool) string 
 	return s
 }
 
-var headingLine = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
-
 // heading sets a heading inside a section file. The file's own heading is not
 // here: the splitter lifted it into the front matter, and the document sets it
 // as the \section. So the shallowest heading a body can hold is one below
 // that, whatever number of hashes it was written with.
 func (r *Renderer) heading(text string, attr tags.Attr, labelled bool) string {
-	m := headingLine.FindStringSubmatch(strings.SplitN(text, "\n", 2)[0])
+	depth, title, _ := markdown.Heading(text)
 	cmd := "subsection"
-	if len(m[1]) > 3 {
+	if depth > 3 {
 		cmd = "subsubsection"
 	}
-	s := fmt.Sprintf("\\%s*{%s}", cmd, r.Inline(m[2]))
+	s := fmt.Sprintf("\\%s*{%s}", cmd, r.Inline(title))
 	if labelled {
 		s += "\n" + strings.TrimSpace(label(attr))
 	}
 	// A heading that is starred is not in the table of contents by itself.
 	// Numbering is the paper's and not LaTeX's, so the heading text already
 	// carries its number and \addcontentsline is what puts it in the contents.
-	return s + fmt.Sprintf("\n\\addcontentsline{toc}{%s}{%s}", cmd, Contents(r.Inline(m[2]), m[2]))
+	return s + fmt.Sprintf("\n\\addcontentsline{toc}{%s}{%s}", cmd, Contents(r.Inline(title), title))
 }
 
 // code sets a fenced block verbatim.
@@ -129,18 +128,6 @@ func (r *Renderer) code(text string) string {
 		strings.Join(body, "\n") + "\n\\end{Verbatim}"
 }
 
-// isDisplay says the block is one displayed equation and nothing else.
-func isDisplay(text string) bool {
-	t := strings.TrimSpace(text)
-	if !strings.HasPrefix(t, "$$") || !strings.HasSuffix(t, "$$") || len(t) < 5 {
-		return false
-	}
-	spans, unclosed := mathtex.Split(t)
-	return unclosed == nil && len(spans) == 1 && spans[0].Display
-}
-
-var tagged = regexp.MustCompile(`\\tag\{[^}]*\}`)
-
 // display sets a displayed equation.
 //
 // equation when the paper numbered it and equation* when it did not, which is
@@ -151,7 +138,7 @@ func (r *Renderer) display(text string, attr tags.Attr, labelled bool) string {
 	tex := strings.TrimSpace(text)
 	tex = strings.TrimSuffix(strings.TrimPrefix(tex, "$$"), "$$")
 	env := "equation*"
-	if tagged.MatchString(tex) {
+	if markdown.Tagged(tex) {
 		env = "equation"
 	}
 	var b strings.Builder
@@ -162,8 +149,6 @@ func (r *Renderer) display(text string, attr tags.Attr, labelled bool) string {
 	fmt.Fprintf(&b, "\\end{%s}", env)
 	return b.String()
 }
-
-var captionPrefix = regexp.MustCompile(`^\*{0,2}([^\s*]+)\s*([0-9]+(?:\.[0-9]+)*)\*{0,2}\s*[:.]\s*`)
 
 // figure sets a caption paragraph as a figure, with the picture above it.
 //
@@ -185,7 +170,7 @@ func (r *Renderer) figure(text string, attr tags.Attr) string {
 		return label(attr) + r.Inline(text)
 	}
 	caption := text
-	if m := captionPrefix.FindStringSubmatch(text); m != nil && m[2] == f.Number {
+	if m := markdown.CaptionPrefix.FindStringSubmatch(text); m != nil && m[2] == f.Number {
 		caption = text[len(m[0]):]
 	}
 	n, err := strconv.Atoi(strings.SplitN(f.Number, ".", 2)[0])
@@ -200,39 +185,9 @@ func (r *Renderer) figure(text string, attr tags.Attr) string {
 	return b.String()
 }
 
-var (
-	bullet  = regexp.MustCompile(`^\s*[-*+]\s+`)
-	ordinal = regexp.MustCompile(`^\s*[0-9]+[.)]\s+`)
-)
-
-// isList says every line of the block opens an item. A block where only some
-// lines do is prose that happens to start with a dash, and setting it as a
-// list would break the sentence across items.
-func isList(text string) bool {
-	lines := strings.Split(text, "\n")
-	kind := 0
-	for _, l := range lines {
-		switch {
-		case bullet.MatchString(l):
-			if kind == 2 {
-				return false
-			}
-			kind = 1
-		case ordinal.MatchString(l):
-			if kind == 1 {
-				return false
-			}
-			kind = 2
-		default:
-			return false
-		}
-	}
-	return kind != 0
-}
-
 func (r *Renderer) list(text string, attr tags.Attr, labelled bool) string {
 	env := "itemize"
-	if ordinal.MatchString(strings.Split(text, "\n")[0]) {
+	if markdown.Ordinal.MatchString(strings.Split(text, "\n")[0]) {
 		env = "enumerate"
 	}
 	var b strings.Builder
@@ -241,21 +196,12 @@ func (r *Renderer) list(text string, attr tags.Attr, labelled bool) string {
 	}
 	fmt.Fprintf(&b, "\\begin{%s}\n", env)
 	for _, l := range strings.Split(text, "\n") {
-		item := bullet.ReplaceAllString(l, "")
-		item = ordinal.ReplaceAllString(item, "")
+		item := markdown.Bullet.ReplaceAllString(l, "")
+		item = markdown.Ordinal.ReplaceAllString(item, "")
 		fmt.Fprintf(&b, "\\item %s\n", r.Inline(item))
 	}
 	fmt.Fprintf(&b, "\\end{%s}", env)
 	return b.String()
-}
-
-var ruleRow = regexp.MustCompile(`^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$`)
-
-// isTable says the block is a pipe table: at least two rows, and the second
-// one is the rule.
-func isTable(text string) bool {
-	lines := strings.Split(text, "\n")
-	return len(lines) >= 2 && strings.Contains(lines[0], "|") && ruleRow.MatchString(strings.TrimSpace(lines[1]))
 }
 
 // wide is the column count above which a table is set small. Twelve columns of
@@ -271,7 +217,7 @@ func (r *Renderer) table(text string, attr tags.Attr, labelled bool) string {
 		if i == 1 {
 			continue
 		}
-		rows = append(rows, cells(l))
+		rows = append(rows, markdown.Cells(l))
 	}
 	n := 0
 	for _, row := range rows {
@@ -328,17 +274,6 @@ func columns(n int) string {
 	return strings.Repeat(one, n)
 }
 
-func cells(line string) []string {
-	line = strings.TrimSpace(line)
-	line = strings.TrimPrefix(line, "|")
-	line = strings.TrimSuffix(line, "|")
-	out := strings.Split(line, "|")
-	for i := range out {
-		out[i] = strings.TrimSpace(out[i])
-	}
-	return out
-}
-
 func firstCells(rows [][]string) string {
 	if len(rows) == 0 || len(rows[0]) == 0 {
 		return "a table"
@@ -349,89 +284,6 @@ func firstCells(rows [][]string) string {
 // label writes an anchor as a LaTeX label, on its own line above whatever it
 // anchors, so that a \ref to it lands on the right page.
 func label(a tags.Attr) string { return "\\label{" + a.Anchor + "}%\n" }
-
-func has(classes []string, want string) bool {
-	for _, c := range classes {
-		if c == want {
-			return true
-		}
-	}
-	return false
-}
-
-var attrTail = regexp.MustCompile(`\s*\{#[A-Za-z0-9][-A-Za-z0-9_.]*(?:\s+\.[a-z]+)*\s+tag=[0-9A-Fa-f]{4}\}$`)
-
-// takeAttr pulls the attribute block off the end of a block.
-//
-// It goes one of two ways and papers tags writes both. A displayed equation
-// carries it on the line under the closing dollars, because a line of
-// mathematics ends where it ends. A caption or a heading carries it at the
-// end of its own last line, because the caption is one paragraph and an
-// attribute block on a line of its own after it would be a second one.
-//
-// Either way it is not part of the text. Left in, the first form sets as a
-// paragraph of braces in the middle of the paper and the second sets as a
-// sentence of braces on the end of a caption, which is what the first build
-// of this did.
-func takeAttr(b string) (string, tags.Attr, bool) {
-	text := strings.TrimRight(b, "\n")
-	loc := attrTail.FindStringIndex(text)
-	if loc == nil {
-		return b, tags.Attr{}, false
-	}
-	all := tags.ParseAttrs(text[loc[0]:])
-	if len(all) != 1 {
-		return b, tags.Attr{}, false
-	}
-	rest := strings.TrimRight(text[:loc[0]], " \t\n")
-	if strings.TrimSpace(rest) == "" {
-		// The whole block was the attribute block and nothing else, which is
-		// not a thing the corpus writes. Leave it alone rather than returning
-		// an anchor on an empty paragraph.
-		return b, tags.Attr{}, false
-	}
-	return rest, all[0], true
-}
-
-// blocks cuts a body into blocks on blank lines, keeping a fenced block whole.
-//
-// A listing has blank lines in it and they are part of the listing. Cutting on
-// every blank line would set the halves of a shell transcript as three
-// paragraphs of prose with the escaping applied, which is how a document grows
-// a stray backslash in the middle of a command line.
-func blocks(body string) []string {
-	var out []string
-	var cur []string
-	fence := ""
-	flush := func() {
-		if len(cur) > 0 {
-			if s := strings.Trim(strings.Join(cur, "\n"), "\n"); strings.TrimSpace(s) != "" {
-				out = append(out, s)
-			}
-			cur = nil
-		}
-	}
-	for _, line := range strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n") {
-		switch {
-		case fence != "":
-			cur = append(cur, line)
-			if strings.HasPrefix(strings.TrimSpace(line), fence) {
-				fence = ""
-				flush()
-			}
-		case strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~"):
-			flush()
-			fence = line[:3]
-			cur = append(cur, line)
-		case strings.TrimSpace(line) == "":
-			flush()
-		default:
-			cur = append(cur, line)
-		}
-	}
-	flush()
-	return out
-}
 
 // Inline renders one run of text: the mathematics, the emphasis, the
 // citations, the footnotes, and the escaping of everything else.
@@ -532,26 +384,16 @@ func (r *Renderer) holdMath(s string) string {
 	return b.String()
 }
 
-var code = regexp.MustCompile("`+[^`]+`+")
-
 func (r *Renderer) holdCode(s string) string {
-	return code.ReplaceAllStringFunc(s, func(m string) string {
+	return markdown.Code.ReplaceAllStringFunc(s, func(m string) string {
 		return r.mark("\\texttt{" + escape(strings.Trim(m, "`")) + "}")
 	})
 }
 
-var notePattern2 = regexp.MustCompile(`\[\^([^\]\s]+)\]`)
-
-// loose is a space in front of a footnote marker. The corpus has them, off
-// pages where the marker was set raised and the reader put a space where the
-// baseline dropped. A footnote in a set document hangs on the word before it
-// with no space, in every one of the four languages, so the space goes.
-var loose = regexp.MustCompile(`[ \t]+(\[\^[^\]\s]+\])`)
-
 func (r *Renderer) holdNotes(s string) string {
-	s = loose.ReplaceAllString(s, "$1")
-	return notePattern2.ReplaceAllStringFunc(s, func(m string) string {
-		key := notePattern2.FindStringSubmatch(m)[1]
+	s = markdown.LooseNote.ReplaceAllString(s, "$1")
+	return markdown.Note.ReplaceAllStringFunc(s, func(m string) string {
+		key := markdown.Note.FindStringSubmatch(m)[1]
 		text, ok := r.Book.Notes[key]
 		if !ok {
 			r.Orphans = append(r.Orphans, key)
@@ -563,8 +405,6 @@ func (r *Renderer) holdNotes(s string) string {
 		return r.mark("\\footnote{" + escape(r.hold(text)) + "}")
 	})
 }
-
-var paperCite = regexp.MustCompile(`\[\[([a-z][a-z0-9]*-[0-9]{4}-[a-z0-9]+)\]\]`)
 
 // holdPapers sets a link to another paper of the corpus.
 //
@@ -582,8 +422,8 @@ var paperCite = regexp.MustCompile(`\[\[([a-z][a-z0-9]*-[0-9]{4}-[a-z0-9]+)\]\]`
 // cites a corpus paper its own bibliography does not list is a refs manifest
 // that needs another look, not something to hide.
 func (r *Renderer) holdPapers(s string) string {
-	return paperCite.ReplaceAllStringFunc(s, func(m string) string {
-		id := paperCite.FindStringSubmatch(m)[1]
+	return markdown.PaperCite.ReplaceAllStringFunc(s, func(m string) string {
+		id := markdown.PaperCite.FindStringSubmatch(m)[1]
 		n, ok := r.Book.Cite(id)
 		if !ok {
 			r.Unlinked = append(r.Unlinked, id)
@@ -592,8 +432,6 @@ func (r *Renderer) holdPapers(s string) string {
 		return r.mark("[\\hyperlink{bib-" + n + "}{" + n + "}]")
 	})
 }
-
-var numCite = regexp.MustCompile(`\[([0-9]+(?:\s*[,\x{2013}-]\s*[0-9]+)*)\]`)
 
 // holdCites turns [12] and [3, 7-9] into links to the bibliography.
 //
@@ -605,12 +443,12 @@ func (r *Renderer) holdCites(s string) string {
 	if len(r.Book.Bibliography) == 0 {
 		return s
 	}
-	return numCite.ReplaceAllStringFunc(s, func(m string) string {
+	return markdown.NumCite.ReplaceAllStringFunc(s, func(m string) string {
 		inner := m[1 : len(m)-1]
 		var b strings.Builder
 		b.WriteString("[")
 		at := 0
-		for _, loc := range digits.FindAllStringIndex(inner, -1) {
+		for _, loc := range markdown.Digits.FindAllStringIndex(inner, -1) {
 			b.WriteString(escape(inner[at:loc[0]]))
 			n := inner[loc[0]:loc[1]]
 			fmt.Fprintf(&b, "\\hyperlink{bib-%s}{%s}", n, n)
@@ -622,20 +460,13 @@ func (r *Renderer) holdCites(s string) string {
 	})
 }
 
-var digits = regexp.MustCompile(`[0-9]+`)
-
-var (
-	strong = regexp.MustCompile(`\*\*([^*]+)\*\*`)
-	emph   = regexp.MustCompile(`(^|[^*])\*([^*]+)\*`)
-)
-
 func (r *Renderer) holdEmphasis(s string) string {
-	s = strong.ReplaceAllStringFunc(s, func(m string) string {
-		inner := strong.FindStringSubmatch(m)[1]
+	s = markdown.Strong.ReplaceAllStringFunc(s, func(m string) string {
+		inner := markdown.Strong.FindStringSubmatch(m)[1]
 		return r.mark("\\textbf{") + inner + r.mark("}")
 	})
-	return emph.ReplaceAllStringFunc(s, func(m string) string {
-		p := emph.FindStringSubmatch(m)
+	return markdown.Emph.ReplaceAllStringFunc(s, func(m string) string {
+		p := markdown.Emph.FindStringSubmatch(m)
 		return p[1] + r.mark("\\emph{") + p[2] + r.mark("}")
 	})
 }
@@ -681,7 +512,7 @@ func (b *Book) FigureName() string {
 			if _, ok := b.Figures[attrs[0].Anchor]; !ok {
 				continue
 			}
-			if m := captionPrefix.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			if m := markdown.CaptionPrefix.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
 				return m[1]
 			}
 		}
@@ -718,8 +549,8 @@ func bookmark(s string) string {
 
 // unmark takes the Markdown and the TeX punctuation off a run of text.
 func unmark(s string) string {
-	s = paperCite.ReplaceAllString(s, "$1")
-	s = notePattern2.ReplaceAllString(s, "")
+	s = markdown.PaperCite.ReplaceAllString(s, "$1")
+	s = markdown.Note.ReplaceAllString(s, "")
 	return plainly.Replace(s)
 }
 

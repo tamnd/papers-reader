@@ -18,10 +18,9 @@ import (
 
 // Rules is every rule the toolchain implements today, in id order.
 //
-// The full set is nine groups and ninety-one rules. The three of group P that
-// are not here yet are about the paper pages, which papers emit does not
-// write yet; the rest arrive with the milestone that produces the files
-// they read.
+// Nine groups and ninety-one rules, which is all of them. The last three to
+// arrive were the group P rules about the paper pages, which had to wait for
+// papers emit to write the pages they read.
 func Rules() []Rule {
 	out := []Rule{
 		{

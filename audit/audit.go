@@ -14,8 +14,10 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/emit"
 	"github.com/tamnd/papers-reader/figures"
 	"github.com/tamnd/papers-reader/glossary"
 	"github.com/tamnd/papers-reader/refs"
@@ -118,6 +120,28 @@ type Input struct {
 	// glossary yet gets one at version zero with no terms in it, and those
 	// two rules say they had nothing to look at rather than passing.
 	Glossary *glossary.Glossary
+
+	// site is the build of the corpus, made on the first group P rule that
+	// asks for it and then kept. Four rules want it, and building it renders
+	// every formula in the corpus through KaTeX, which is the most expensive
+	// thing the audit does. It is not built in Load because most runs of the
+	// audit are one group or one rule and would pay for it without using it.
+	siteOnce sync.Once
+	site     *emit.Site
+	siteErr  error
+}
+
+// Site is the corpus built as the reading app would receive it.
+//
+// Built in memory and never written. The group P rules are about the build
+// rather than about the corpus, and building it here rather than reading a
+// site directory means they say something about the corpus as it stands now
+// and not about the last time somebody ran papers emit.
+func (in *Input) Site() (*emit.Site, error) {
+	in.siteOnce.Do(func() {
+		in.site, in.siteErr = emit.Build(in.Corpus)
+	})
+	return in.site, in.siteErr
 }
 
 // Load reads everything the rules need out of a corpus.

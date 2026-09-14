@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -42,19 +43,45 @@ var english = message.NewPrinter(language.English)
 //go:embed site.schema.json
 var Site []byte
 
-// The two documents a build writes, named as they are in the schema and as
-// they are on disk. A caller passes one of these to Validate rather than a
-// pointer into the schema, so that moving a definition inside the file is
-// not a change to this package's callers.
+// The kinds of document a build writes, named as they are in the schema. A
+// caller passes one of these to Validate rather than a pointer into the
+// schema, so that moving a definition inside the file is not a change to
+// this package's callers.
+//
+// Index and Graph are also the paths those two are written to, because there
+// is one of each. A page is one per paper per language, so Page is the kind
+// and Kind below works out which kind a path is.
 const (
 	Index = "index.json"
 	Graph = "graph.json"
+	Page  = "page"
 )
 
-// definitions maps a document to the subschema it is held to.
+// definitions maps a kind of document to the subschema it is held to.
 var definitions = map[string]string{
 	Index: "index",
 	Graph: "graph",
+	Page:  "page",
+}
+
+// pagePath is p/<id>/<lang>.json, which is the only shape of name a build
+// writes other than the two fixed ones.
+var pagePath = regexp.MustCompile(`^p/[a-z0-9]+-[0-9]{4}-[a-z0-9]+/[a-z]{2}\.json$`)
+
+// Kind says which definition a path in a build is held to.
+//
+// A path this does not recognise is a file in a build that the schema says
+// nothing about, and the caller is rule P05, which reports that rather than
+// skipping it. A build that grew a file nobody wrote a definition for is
+// exactly the drift this package exists to catch.
+func Kind(path string) (string, bool) {
+	switch {
+	case path == Index || path == Graph:
+		return path, true
+	case pagePath.MatchString(path):
+		return Page, true
+	}
+	return "", false
 }
 
 // compiled is the schema compiled once. Compiling it is a few milliseconds
@@ -110,13 +137,22 @@ func compile() {
 
 // Validate holds one emitted document to the schema.
 //
+// It takes the path the document is written to rather than the kind, so
+// that a caller walking a build can hand it every file it finds without
+// working out what each one is. A path the schema has no definition for is
+// an error and not a pass.
+//
 // The errors come back as a list of sentences, one per place the document is
 // wrong, rather than as the one nested error the validator returns. A
 // caller here is an audit rule that reports findings, and a rule that
 // reported a whole validation tree as a single finding would be a rule
 // nobody reads the output of.
 func Validate(doc string, body []byte) ([]string, error) {
-	s, err := Schema(doc)
+	kind, ok := Kind(doc)
+	if !ok {
+		return nil, fmt.Errorf("%s is not a document of the site schema", doc)
+	}
+	s, err := Schema(kind)
 	if err != nil {
 		return nil, err
 	}

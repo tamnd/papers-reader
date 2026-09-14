@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tamnd.github.io/papers/site.schema.json",
   "title": "The reading app's input",
-  "description": "The shape of the JSON that papers emit writes and the reading app consumes. The Go emitter and the TypeScript reader both validate against this file, and audit rule P05 runs it over a build of the corpus, so the two sides cannot drift apart without something saying so. A change to the shape bumps the version integer and updates both sides in one commit, which is the reason this file lives in the same repository as both. There is one file rather than one per document so that the shared definitions are shared and not copied: a paper identifier is the same string in index.json and in graph.json, and it should be impossible to tighten one and forget the other. A document is validated against the definition named after it, index.json against #/$defs/index and graph.json against #/$defs/graph.",
+  "description": "The shape of the JSON that papers emit writes and the reading app consumes. The Go emitter and the TypeScript reader both validate against this file, and audit rule P05 runs it over a build of the corpus, so the two sides cannot drift apart without something saying so. A change to the shape bumps the version integer and updates both sides in one commit, which is the reason this file lives in the same repository as both. There is one file rather than one per document so that the shared definitions are shared and not copied: a paper identifier is the same string in index.json and in graph.json, and it should be impossible to tighten one and forget the other. A document is validated against the definition named after it, index.json against #/$defs/index, graph.json against #/$defs/graph and every p/<id>/<lang>.json against #/$defs/page.",
 
   "$defs": {
     "index": {
@@ -187,6 +187,203 @@
         "from": { "$ref": "#/$defs/id" },
         "to": { "$ref": "#/$defs/id" }
       }
+    },
+
+    "page": {
+      "$anchor": "page",
+      "title": "p/<id>/<lang>.json",
+      "description": "One paper in one language, whole. One file per paper per language rather than one per section, because a reader opens a paper and reads it and a request per section would be twenty requests to read one paper. Every language of a paper has the same sections in the same order with the same block indices, which is what makes the side by side view a matter of putting block i against block i, so a change here that could move an index in one language and not another is a change that breaks reading two languages together.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "id", "lang", "provenance", "front", "sections", "refs"],
+      "properties": {
+        "version": { "$ref": "#/$defs/version" },
+        "id": { "$ref": "#/$defs/id" },
+        "lang": { "$ref": "#/$defs/lang" },
+        "source_lang": {
+          "description": "What a translation was made from. Absent on the English.",
+          "$ref": "#/$defs/lang"
+        },
+        "draft": {
+          "description": "This language is under the glossary coverage floor. The page is still built and still offered, with the app saying what it is.",
+          "type": "boolean"
+        },
+        "provenance": { "$ref": "#/$defs/provenance" },
+        "front": { "$ref": "#/$defs/pageFront" },
+        "sections": { "type": "array", "items": { "$ref": "#/$defs/pageSection" } },
+        "refs": { "type": "array", "items": { "$ref": "#/$defs/ref" } },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/note" } }
+      }
+    },
+
+    "provenance": {
+      "description": "How the page came to exist, for the colophon at the foot of it. A field the sections disagree about is absent rather than being the first or the commonest of them. The two honesty flags go the other way: one section written by a small model makes the whole page's answer true, because a reader deciding how far to trust a page wants to know that some of it is provisional.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["small_model", "gateway"],
+      "properties": {
+        "extraction": {
+          "description": "How the text was got off the page.",
+          "type": "string",
+          "enum": ["native", "layout", "vision"]
+        },
+        "extraction_tool": {
+          "description": "The tool or the model that did it, named as it names itself.",
+          "type": "string",
+          "minLength": 1
+        },
+        "translation_model": {
+          "description": "The model that wrote this language. Absent on the English, which was not translated.",
+          "type": "string",
+          "minLength": 1
+        },
+        "glossary_version": {
+          "description": "The oldest glossary any section of this page was translated against, because that is the one a reader would be caught out by.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "small_model": { "type": "boolean" },
+        "gateway": { "type": "boolean" }
+      }
+    },
+
+    "pageFront": {
+      "description": "The paper's own front matter and its first page as printed. Blocks and not an abstract, because finding the abstract on a front page is a heuristic that runs per language and can land on a different paragraph in the Vietnamese than it did in the English. Cutting the front page at a different place in each language is exactly the drift block indices exist to rule out, so the front page is carried whole and the app decides how much of it to show.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "authors", "blocks"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "authors": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "venue": { "type": "string", "minLength": 1 },
+        "year": { "type": "integer", "minimum": 1900, "maximum": 2100 },
+        "blocks": { "type": "array", "items": { "$ref": "#/$defs/block" } }
+      }
+    },
+
+    "pageSection": {
+      "description": "One content file of the paper. The front matter is in front and the bibliography is in refs, so neither of those is a section here.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["anchor", "title", "level", "kind", "blocks"],
+      "properties": {
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "tag": { "$ref": "#/$defs/tag" },
+        "number": {
+          "description": "The number the paper printed, which is what every cross reference in the prose is to. A section the paper did not number has none.",
+          "type": "string",
+          "pattern": "^[0-9A-Z]+(\\.[0-9]+)*$"
+        },
+        "title": { "type": "string" },
+        "level": {
+          "description": "How deep the section sits, counted off its number: 3 is level two and 3.2 is level three. The paper's title is level one, which is why a top level section is two.",
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6
+        },
+        "kind": { "type": "string", "enum": ["section", "appendix"] },
+        "small_model": {
+          "description": "Written by a model small enough that the result is provisional. The app prints this on the section and not only in the colophon, because a reader who has just read a paragraph is owed the warning where the paragraph is.",
+          "type": "boolean"
+        },
+        "gateway": {
+          "description": "Written through a gateway rather than the intended model, for the same reason and with the same consequence.",
+          "type": "boolean"
+        },
+        "blocks": { "type": "array", "items": { "$ref": "#/$defs/block" } }
+      }
+    },
+
+    "block": {
+      "description": "One paragraph, heading, list, formula, figure, listing or table. The index i is the alignment key: every language of a section has the same blocks in the same order with the same indices, which is what audit rules L03, L04, L16 and L18 enforce, so laying the English beside the Vietnamese is a matter of putting block i against block i with no diffing and no guessing.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "i"],
+      "properties": {
+        "kind": {
+          "description": "Headings and lists are kinds of their own rather than prose, because a heading is what rule L03 compares across languages and a list set as a paragraph would align against a real paragraph somewhere else.",
+          "type": "string",
+          "enum": ["p", "heading", "list", "math", "figure", "code", "table"]
+        },
+        "i": { "type": "integer", "minimum": 0 },
+        "html": {
+          "description": "The rendered block, sanitised against the allowlist the emitter holds. For a heading it is the heading text and not an h element, because the level is a field of its own and the app chooses the element.",
+          "type": "string"
+        },
+        "level": {
+          "description": "The depth of a heading, counted in hashes.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "tex": {
+          "description": "The mathematics as the corpus holds it, carried beside the rendered form so that a reader can copy the formula out and so that the search can index it as text.",
+          "type": "string",
+          "minLength": 1
+        },
+        "src": {
+          "description": "A figure, as a path relative to the root of the site, which is deliberately the same path it has in the corpus.",
+          "type": "string",
+          "pattern": "^figures/[a-z0-9-]+/[A-Za-z0-9._-]+$"
+        },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 },
+        "number": {
+          "description": "What the paper printed: the equation's tag, the figure's number. Never a number this toolchain invented, because every cross reference in the prose is to the paper's own numbering.",
+          "type": "string",
+          "minLength": 1
+        },
+        "caption_html": { "type": "string" },
+        "lang": {
+          "description": "The word on the opening fence of a listing, which is the word a highlighter expects. Mostly absent: what this corpus holds is pseudocode.",
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "description": "A listing as the corpus holds it, unhighlighted and unescaped.",
+          "type": "string"
+        },
+        "anchor": { "$ref": "#/$defs/anchor" },
+        "tag": { "$ref": "#/$defs/tag" }
+      }
+    },
+
+    "ref": {
+      "description": "One entry of the paper's bibliography, from the refs manifest and not from the references content file, because the manifest is the parsed form and it is what carries the resolution. A bibliography is not translated, so this is the same list in every language of the page.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "raw"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "raw": { "type": "string", "minLength": 1 },
+        "resolves_to": {
+          "description": "The paper in this corpus the entry names, where it names one, which is what turns a bibliography into navigation.",
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+
+    "note": {
+      "description": "One footnote, gathered from wherever its definition fell. Gathered because the page break decides where a definition lands and it is regularly sections away from the marker that refers to it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "html"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "html": { "type": "string" }
+      }
+    },
+
+    "anchor": {
+      "description": "A fragment identifier a link elsewhere in the corpus can point at. It carries the paper identifier because a side by side view has two papers' worth of markup in one document.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+-[0-9]{4}-[a-z0-9]+-[a-z]+-?[0-9A-Za-z-]*$"
+    },
+
+    "tag": {
+      "description": "The stable identifier papers tags assigns a numbered thing, which is what a cross reference survives a re-extraction by.",
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{4}$"
     },
 
     "version": {

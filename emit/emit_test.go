@@ -294,7 +294,7 @@ func TestAGraphNodeSaysWhetherAnybodyReadItsBibliography(t *testing.T) {
 	}
 }
 
-func TestABuildWritesTheTwoDocuments(t *testing.T) {
+func TestABuildWritesTheCatalogueTheGraphAndThePages(t *testing.T) {
 	site, err := Build(whole(t))
 	if err != nil {
 		t.Fatal(err)
@@ -303,8 +303,13 @@ func TestABuildWritesTheTwoDocuments(t *testing.T) {
 	if err := site.Write(dir); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"index.json", "graph.json"} {
-		b, err := os.ReadFile(filepath.Join(dir, name))
+	for _, name := range []string{
+		"index.json", "graph.json",
+		"p/rumelhart-1986-backprop/en.json",
+		"p/rumelhart-1986-backprop/vi.json",
+		"p/hochreiter-1997-lstm/en.json",
+	} {
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -365,5 +370,63 @@ func TestTheEmitNamesNoHostsAndNoLocalPaths(t *testing.T) {
 				t.Errorf("%s names %q", name, bad)
 			}
 		}
+	}
+}
+
+// The pictures are copied into the build and the JSON is not, so a page
+// refers to a figure by the same path it has in the corpus and a reader who
+// finds a picture on the site can find the same file in the repository.
+func TestABuildCopiesTheFiguresThePagesShow(t *testing.T) {
+	const caption = "Figure 1: A network of units.\n{#rumelhart-1986-backprop-fig-1 .figure tag=00a1}\n"
+	c := corpusOf(t, map[string]string{
+		"manifests/figures.yaml":                          figuresYAML,
+		"figures/rumelhart-1986-backprop/fig-1.png":       "not really a png",
+		"content/en/rumelhart-1986-backprop/00_front.md":  front("rumelhart-1986-backprop", "Learning Representations", corpus.EN, 1, 0),
+		"content/en/rumelhart-1986-backprop/01_method.md": body("rumelhart-1986-backprop", corpus.EN, "1", "Method", caption),
+		"content/vi/rumelhart-1986-backprop/00_front.md":  front("rumelhart-1986-backprop", "Học biểu diễn", corpus.VI, 1, 0),
+		"content/vi/rumelhart-1986-backprop/01_method.md": body("rumelhart-1986-backprop", corpus.VI, "1", "Phương pháp", caption),
+	})
+	site, err := Build(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One file to copy and not two, although two languages show it.
+	if len(site.Figures) != 1 || site.Figures[0] != "figures/rumelhart-1986-backprop/fig-1.png" {
+		t.Fatalf("the figures are %v", site.Figures)
+	}
+	if len(site.Faults) != 0 {
+		t.Errorf("faults on a corpus whose figure is there: %+v", site.Faults)
+	}
+	dir := t.TempDir()
+	if err := site.Write(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(site.Figures[0])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "not really a png" {
+		t.Errorf("the picture came out as %q", got)
+	}
+}
+
+// A page that refers to a picture the manifest has and nobody rendered is
+// the one fault the manifest cannot catch on its own, and it is what rule
+// P03's second half is for.
+func TestAFigureInTheManifestAndNotOnTheDiskIsAFault(t *testing.T) {
+	const caption = "Figure 1: A network of units.\n{#rumelhart-1986-backprop-fig-1 .figure tag=00a1}\n"
+	site, err := Build(corpusOf(t, map[string]string{
+		"manifests/figures.yaml":                          figuresYAML,
+		"content/en/rumelhart-1986-backprop/00_front.md":  front("rumelhart-1986-backprop", "Learning Representations", corpus.EN, 1, 0),
+		"content/en/rumelhart-1986-backprop/01_method.md": body("rumelhart-1986-backprop", corpus.EN, "1", "Method", caption),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(site.Faults) != 1 || site.Faults[0].Kind != FaultFigure {
+		t.Fatalf("the faults are %+v", site.Faults)
+	}
+	if !strings.Contains(site.Summary(), "1 fault") {
+		t.Errorf("the summary is %q", site.Summary())
 	}
 }

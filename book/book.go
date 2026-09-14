@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/figures"
+	"github.com/tamnd/papers-reader/markdown"
 	"github.com/tamnd/papers-reader/refs"
 )
 
@@ -141,7 +141,7 @@ func Load(c *corpus.Corpus, id string, l corpus.Lang) (*Book, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s/%s: %w", id, name, err)
 		}
-		text := notes(string(body), b.Notes)
+		text := markdown.Notes(string(body), b.Notes)
 		switch front.Kind {
 		case "front":
 			b.title(front)
@@ -204,49 +204,6 @@ func contents(dir string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
-}
-
-var notePattern = regexp.MustCompile(`^\[\^([^\]]+)\]:\s*(.*)$`)
-
-// notes lifts the footnote definitions out of a body and into a book wide
-// table, and returns the body without them.
-//
-// They have to come out. LaTeX has no free standing footnote definition, so a
-// definition left in the prose would set as a paragraph reading "[^1]: Jean
-// Pouget-Abadie is visiting Universite de Montreal", in the middle of section
-// one, three pages after the marker that refers to it. The marker is on the
-// author line of the front page and the definition is in the first section
-// because that is where the page break fell, and no rearranging of the corpus
-// would fix that: the corpus is right and it is the setting that has to
-// gather them.
-//
-// A continuation line, indented under a definition, is joined to it. Nothing
-// in this corpus has one yet and the format allows it.
-func notes(body string, into map[string]string) string {
-	var out []string
-	label := ""
-	for _, line := range strings.Split(body, "\n") {
-		if m := notePattern.FindStringSubmatch(line); m != nil {
-			label = m[1]
-			into[label] = m[2]
-			continue
-		}
-		if label != "" {
-			if strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "\t") {
-				into[label] = strings.TrimSpace(into[label] + " " + strings.TrimSpace(line))
-				continue
-			}
-			if strings.TrimSpace(line) == "" {
-				// A blank line after a definition ends it, and is dropped along
-				// with it so the body does not grow a gap where it stood.
-				label = ""
-				continue
-			}
-			label = ""
-		}
-		out = append(out, line)
-	}
-	return strings.TrimSpace(strings.Join(out, "\n")) + "\n"
 }
 
 // masthead splits the front page into the lines worth keeping and the

@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"sort"
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/emit"
@@ -19,8 +18,9 @@ func runEmit(args []string) error {
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `usage: papers emit [flags]
 
-Builds the JSON the reading app consumes: the catalogue and the citation
-graph, derived from the corpus and written as static files.
+Builds the JSON the reading app consumes: the catalogue, the citation graph
+and a page per paper per language, derived from the corpus and written as
+static files, with the figures those pages show copied in beside them.
 
 Everything it writes is derived, so the output directory can be deleted and
 built again from a checkout at any time. It is not committed to the corpus.
@@ -53,11 +53,7 @@ from the command they ran.
 		return err
 	}
 
-	names := make([]string, 0, len(files))
-	for name := range files {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := emit.SortedNames(files)
 	bad := 0
 	for _, name := range names {
 		why, err := schema.Validate(name, files[name])
@@ -73,15 +69,22 @@ from the command they ran.
 		return fmt.Errorf("%d places where the build does not match schema/site.schema.json", bad)
 	}
 
+	// The faults are printed and do not fail the command. A page that
+	// refers to a figure nobody rendered is a page the app can still show,
+	// with a paragraph where the picture would be, and refusing to build the
+	// site over it would mean a corpus with one bad reference has no site at
+	// all. Rules P01, P02 and P03 are where that becomes a failure, on the
+	// audit, which is the thing that runs before a release.
+	for _, f := range site.Faults {
+		fmt.Fprintf(os.Stderr, "%s: %s: %s\n", f.Page, f.Kind, f.What)
+	}
+
 	if *check {
 		fmt.Printf("%s, and it validates\n", site.Summary())
 		return nil
 	}
 	if err := site.Write(*out); err != nil {
 		return err
-	}
-	for _, name := range names {
-		fmt.Printf("%s/%s: %d bytes\n", *out, name, len(files[name]))
 	}
 	fmt.Println(site.Summary())
 	return nil

@@ -18,8 +18,26 @@ import (
 // made in memory from the checkout rather than over a site directory
 // somebody emitted earlier, so they say something about the corpus as it
 // stands now and not about the last time anybody ran papers emit.
+//
+// All five read one build, made once by Input.Site and shared, because
+// building the corpus renders every formula in it through KaTeX.
 func publicationRules() []Rule {
 	return []Rule{
+		{
+			ID: "P01", Hard: true,
+			What:  "every block of every page renders, and its HTML is on the allowlist.",
+			Check: faultRule("P01", emit.FaultMath, emit.FaultMarkup),
+		},
+		{
+			ID: "P02", Hard: true,
+			What:  "every link a page carries has something at the other end.",
+			Check: faultRule("P02", emit.FaultNote, emit.FaultPaper, emit.FaultCitation),
+		},
+		{
+			ID: "P03", Hard: true,
+			What:  "every figure a page shows is in the build.",
+			Check: faultRule("P03", emit.FaultFigure),
+		},
 		{
 			ID: "P04", Hard: false,
 			What:  "a language under the glossary coverage floor is emitted as a draft.",
@@ -30,6 +48,49 @@ func publicationRules() []Rule {
 			What:  "the emitted JSON validates against schema/site.schema.json.",
 			Check: ruleP05,
 		},
+	}
+}
+
+// faultRule is a rule that reports the faults of some kinds the build found.
+//
+// The three rules P01, P02 and P03 are one walk over one list, sorted into
+// three piles by what went wrong, because that is how a person reads them:
+// a formula that will not render is a different morning's work from a
+// citation pointing at nothing. Writing them as three closures over one
+// build rather than three functions keeps the pile each kind belongs in in
+// one place, which is where somebody adding a fourth kind will look.
+//
+// All three are hard. A page that refers to something that is not there
+// renders as a gap in a paper, and a corpus whose whole point is that the
+// mathematics and the figures and the references came through intact cannot
+// ship one of those as a warning.
+func faultRule(id string, kinds ...string) func(*Input) ([]Finding, error) {
+	want := map[string]bool{}
+	for _, k := range kinds {
+		want[k] = true
+	}
+	return func(in *Input) ([]Finding, error) {
+		site, err := in.Site()
+		if err != nil {
+			return nil, err
+		}
+		if len(site.Pages) == 0 {
+			return nil, ErrNotRun
+		}
+		var out []Finding
+		for _, f := range site.Faults {
+			if !want[f.Kind] {
+				continue
+			}
+			out = append(out, Finding{Rule: id, File: f.Page, Message: f.What})
+		}
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].File != out[j].File {
+				return out[i].File < out[j].File
+			}
+			return out[i].Message < out[j].Message
+		})
+		return out, nil
 	}
 }
 
@@ -47,12 +108,12 @@ func ruleP04(in *Input) ([]Finding, error) {
 	if len(in.Glossary.Terms) == 0 {
 		return nil, ErrNotRun
 	}
-	ix, err := emit.BuildIndex(in.Corpus)
+	site, err := in.Site()
 	if err != nil {
 		return nil, err
 	}
 	draft := map[string]bool{}
-	for _, l := range ix.DraftLangs {
+	for _, l := range site.Index.DraftLangs {
 		draft[string(l)] = true
 	}
 	var out []Finding
@@ -81,7 +142,7 @@ func ruleP04(in *Input) ([]Finding, error) {
 // to discover the hard way: the alternative to failing here is a page that
 // is blank in a browser on a Sunday.
 func ruleP05(in *Input) ([]Finding, error) {
-	site, err := emit.Build(in.Corpus)
+	site, err := in.Site()
 	if err != nil {
 		return nil, err
 	}
@@ -90,12 +151,7 @@ func ruleP05(in *Input) ([]Finding, error) {
 		return nil, err
 	}
 	var out []Finding
-	names := make([]string, 0, len(files))
-	for name := range files {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range emit.SortedNames(files) {
 		bad, err := schema.Validate(name, files[name])
 		if err != nil {
 			return nil, err

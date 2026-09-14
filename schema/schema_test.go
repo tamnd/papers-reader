@@ -185,3 +185,150 @@ func TestEveryComplaintNamesWhereItIs(t *testing.T) {
 		}
 	}
 }
+
+// smallestPage is the least a page can be and still be one: a paper with
+// front matter, no sections and no bibliography, which is what a restricted
+// paper emits.
+const smallestPage = `{
+  "version": 1,
+  "id": "cook-1971-np",
+  "lang": "en",
+  "provenance": {"small_model": false, "gateway": false},
+  "front": {"title": "The Complexity of Theorem-Proving Procedures", "authors": ["Stephen A. Cook"], "blocks": []},
+  "sections": [],
+  "refs": []
+}`
+
+// page returns smallestPage with one block in one section, built from a map
+// so a test can change one field and leave the rest alone.
+func page(t *testing.T, block map[string]any) []byte {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(smallestPage), &doc); err != nil {
+		t.Fatal(err)
+	}
+	full := map[string]any{"kind": "p", "i": 0, "html": "<p>Some prose.</p>"}
+	for k, v := range block {
+		full[k] = v
+	}
+	doc["sections"] = []any{map[string]any{
+		"anchor": "cook-1971-np-s1", "title": "A section", "level": 2,
+		"kind": "section", "blocks": []any{full},
+	}}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// A page is validated by the path it is written to, because a caller
+// walking a build hands over every file it finds without working out what
+// each one is.
+func TestAPageIsRecognisedByItsPath(t *testing.T) {
+	for _, path := range []string{"p/cook-1971-np/en.json", "p/rumelhart-1986-backprop/vi.json"} {
+		kind, ok := Kind(path)
+		if !ok || kind != Page {
+			t.Errorf("%s is %q %v", path, kind, ok)
+		}
+	}
+	for _, path := range []string{"p/Cook_1971/en.json", "p/cook-1971-np/en.md", "p/cook-1971-np.json", "index.html"} {
+		if _, ok := Kind(path); ok {
+			t.Errorf("%s was read as a document of the site", path)
+		}
+	}
+}
+
+func TestTheSmallestValidPageValidates(t *testing.T) {
+	if why := bad(t, "p/cook-1971-np/en.json", []byte(smallestPage)); len(why) != 0 {
+		t.Errorf("a page with nothing in it does not validate: %v", why)
+	}
+	if why := bad(t, "p/cook-1971-np/en.json", page(t, nil)); len(why) != 0 {
+		t.Errorf("a page with a paragraph in it does not validate: %v", why)
+	}
+}
+
+// The block index is the alignment key for the side by side view, so the
+// field is required on every block and nothing else in the file matters as
+// much.
+func TestABlockMustBeNumberedAndMustSayWhatItIs(t *testing.T) {
+	for _, block := range []string{`{"kind": "p", "html": "<p>x</p>"}`, `{"i": 0, "html": "<p>x</p>"}`} {
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(smallestPage), &doc); err != nil {
+			t.Fatal(err)
+		}
+		var b any
+		if err := json.Unmarshal([]byte(block), &b); err != nil {
+			t.Fatal(err)
+		}
+		doc["sections"] = []any{map[string]any{
+			"anchor": "cook-1971-np-s1", "title": "A section", "level": 2,
+			"kind": "section", "blocks": []any{b},
+		}}
+		body, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if why := bad(t, "p/cook-1971-np/en.json", body); len(why) == 0 {
+			t.Errorf("the block %s was accepted", block)
+		}
+	}
+}
+
+// A kind the app does not know is a block the app would not draw, so the
+// list is closed rather than left as any string.
+func TestTheBlockKindsAreTheOnesTheAppDraws(t *testing.T) {
+	for _, kind := range []string{"p", "heading", "list", "math", "figure", "code", "table"} {
+		if why := bad(t, "p/cook-1971-np/en.json", page(t, map[string]any{"kind": kind})); len(why) != 0 {
+			t.Errorf("a %s block does not validate: %v", kind, why)
+		}
+	}
+	if why := bad(t, "p/cook-1971-np/en.json", page(t, map[string]any{"kind": "blockquote"})); len(why) == 0 {
+		t.Error("a kind the app cannot draw was accepted")
+	}
+}
+
+// A figure path is pinned because it is the one string in a page that the
+// browser turns into a request. Anything that could climb out of the build
+// is refused here rather than in the app.
+func TestAFigurePathIsPinnedToTheBuild(t *testing.T) {
+	ok := map[string]any{"kind": "figure", "src": "figures/cook-1971-np/fig-1.png", "w": 760, "h": 480}
+	if why := bad(t, "p/cook-1971-np/en.json", page(t, ok)); len(why) != 0 {
+		t.Errorf("a figure in the build does not validate: %v", why)
+	}
+	for _, src := range []string{"../../etc/passwd", "/figures/x/f.png", "https://example.org/f.png", "figures/x.png"} {
+		block := map[string]any{"kind": "figure", "src": src}
+		if why := bad(t, "p/cook-1971-np/en.json", page(t, block)); len(why) == 0 {
+			t.Errorf("a figure at %q was accepted", src)
+		}
+	}
+}
+
+// Nothing the emitter does not write may appear in a page, because a field
+// the schema does not know is a field the generated TypeScript does not
+// have and the app would silently ignore.
+func TestAPageTakesNoFieldTheEmitterDoesNotWrite(t *testing.T) {
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(smallestPage), &doc); err != nil {
+		t.Fatal(err)
+	}
+	doc["abstract"] = "Something the emitter stopped writing."
+	b, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if why := bad(t, "p/cook-1971-np/en.json", b); len(why) == 0 {
+		t.Error("a page with a field nobody writes was accepted")
+	}
+}
+
+// A page is not a catalogue and a catalogue is not a page, and the schema
+// knows which is which, so a mixed-up argument at a call site is caught.
+func TestAPageIsNotACatalogue(t *testing.T) {
+	if why := bad(t, "p/cook-1971-np/en.json", []byte(minimal)); len(why) == 0 {
+		t.Error("the catalogue validated as a page")
+	}
+	if why := bad(t, Index, []byte(smallestPage)); len(why) == 0 {
+		t.Error("a page validated as the catalogue")
+	}
+}
