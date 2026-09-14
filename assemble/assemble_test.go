@@ -342,3 +342,73 @@ func TestOnlyOneCaptionIsSteppedOver(t *testing.T) {
 		t.Fatalf("assembled %d paragraphs, want 3: %q", len(d.Paragraphs), d.Text())
 	}
 }
+
+// A listing that came off the page without a fence is not prose, and the
+// continuation rule has no business running one brace into the next. Every
+// line here is typeset in the test and the shape is the P4 paper's header
+// declarations, which is where this was found.
+func TestAListingWithNoFenceIsNotJoinedToTheOneAfterIt(t *testing.T) {
+	page := "header first {\n" +
+		"    fields {\n" +
+		"        a : 8;\n" +
+		"        b : 8;\n" +
+		"    }\n" +
+		"}\n\n" +
+		"header second {\n" +
+		"    fields {\n" +
+		"        c : 8;\n" +
+		"    }\n" +
+		"}\n"
+	d := Join([]Page{{Number: 1, Text: page, Model: true}})
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("the two declarations came out as %d paragraph(s):\n%s", len(d.Paragraphs), d.Text())
+	}
+	if strings.Contains(d.Text(), "} header second {") {
+		t.Errorf("one declaration was run into the next:\n%s", d.Text())
+	}
+}
+
+// A listing does run over the foot of a page, and the halves of it belong
+// back together. This is the P4 parser: page 4 ends on the line that opens the
+// block and page 5 holds the two that close it.
+func TestAListingSplitAcrossAPageBreakIsPutBackTogether(t *testing.T) {
+	d := Join([]Page{
+		{Number: 4, Text: "The mTag state machine is written as follows.\n\nparser start{\n", Model: true},
+		{Number: 5, Text: "ethernet;\n}\n\nparser ethernet {\n    switch(ethertype) {\n        case 0x8100: vlan;\n    }\n}\n", Model: true},
+	})
+	want := "parser start{\nethernet;\n}"
+	if !strings.Contains(d.Text(), want) {
+		t.Errorf("the halves of the parser did not come back together:\n%s", d.Text())
+	}
+	if strings.Contains(d.Text(), "parser start{ ethernet;") {
+		t.Errorf("the halves were joined as prose, with a space:\n%s", d.Text())
+	}
+}
+
+// The short form of the same thing. Two lines, both of them program, and the
+// run is shorter than the one audit rule C08 needs before it says anything.
+func TestATwoLineListingIsNotProseEither(t *testing.T) {
+	page := "parser start{ ethernet;\n}\n\nparser ethernet {\n    switch(x) {\n        case 1: vlan;\n    }\n}\n"
+	d := Join([]Page{{Number: 1, Text: page, Model: true}})
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("the two parsers came out as %d paragraph(s):\n%s", len(d.Paragraphs), d.Text())
+	}
+}
+
+// The other side of the threshold. A paragraph of prose with a couple of
+// semicolons in it is still prose, and a sentence cut in half at a page
+// break still has to be put back together.
+func TestAParagraphWithAFewSemicolonsIsStillProse(t *testing.T) {
+	left := "The scheduler has three parts;\n" +
+		"the first reads the queue, the second sorts it;\n" +
+		"and the third hands the work out to the lanes, one\n" +
+		"item at a time, until the queue is empty and the run is"
+	right := "finished and the report is written."
+	d := Join([]Page{
+		{Number: 1, Text: left + "\n", Model: true},
+		{Number: 2, Text: right + "\n", Model: true},
+	})
+	if len(d.Paragraphs) != 1 {
+		t.Fatalf("a sentence broken at a page break came out as %d paragraphs:\n%s", len(d.Paragraphs), d.Text())
+	}
+}

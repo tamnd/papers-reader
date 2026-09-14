@@ -184,32 +184,6 @@ func ruleC05(in *Input) ([]Finding, error) {
 	})
 }
 
-// statement matches a line that English prose does not write and a program
-// does. Every one of these was picked for being unambiguous rather than for
-// being common: a rule that guessed from indentation would report every
-// quotation in the corpus.
-var statement = regexp.MustCompile(`^\s*(?:` +
-	// A brace on a line of its own, which is C, Java, Go and every
-	// descendant of them, and is not a sentence.
-	`[{}]\s*;?` +
-	// A preprocessor directive. The hash is not a heading because a heading
-	// has a space after it.
-	`|#(?:include|define|ifdef|ifndef|endif|pragma)\b` +
-	// A declaration or a keyword at the head of a line, in the languages the
-	// papers in this corpus print. BEGIN and END are ALGOL, which is most of
-	// what the older papers print and reads as ordinary prose in lower case,
-	// so they are matched in capitals only.
-	`|(?:BEGIN|END)\b` +
-	`|(?:int|double|float|char|void|struct|union|typedef|static|const|unsigned|long|short|bool)\s+\w+\s*[;(=]` +
-	`|(?:if|while|for|switch)\s*\(` +
-	`|(?:def|func|function|procedure|class)\s+\w+\s*\(` +
-	`)`)
-
-// semicolon matches a line that ends in a semicolon, which in prose happens
-// where a sentence is joined to the next and in a program happens on almost
-// every line.
-var semicolon = regexp.MustCompile(`[^\s;];\s*$`)
-
 // minLooseRun is how many lines in a row have to look like a program before
 // this rule says anything, and minLooseMarks is how many of them have to carry
 // a mark.
@@ -219,6 +193,10 @@ var semicolon = regexp.MustCompile(`[^\s;];\s*$`)
 // that lost its fence. The pair of thresholds is the same shape as acceptance
 // rule A5 and for the same reason: either one alone reports things that are
 // fine.
+//
+// What counts as a mark is code.Mark, because the assembler reads the same
+// marks when it decides whether a paragraph is prose, and two ideas about
+// what a line of a program looks like would be two answers about one page.
 const (
 	minLooseRun   = 3
 	minLooseMarks = 2
@@ -252,7 +230,7 @@ func ruleC08(in *Input) ([]Finding, error) {
 			}
 			end, marks := i, 0
 			for end < len(lines) && !skip[end+1] && strings.TrimSpace(lines[end]) != "" {
-				if statement.MatchString(lines[end]) || semicolon.MatchString(lines[end]) {
+				if code.Mark(lines[end]) {
 					marks++
 				}
 				end++

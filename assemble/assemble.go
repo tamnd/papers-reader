@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"github.com/tamnd/papers-reader/code"
 )
 
 // A Page is one extracted page as it sits in work/<id>/pages/NNNN.txt:
@@ -85,6 +87,22 @@ func Join(pages []Page) *Document {
 			at := -1
 			if i == 0 || p.Model {
 				at = joinAt(d.Paragraphs, text)
+			}
+			// A listing that ran over the foot of the page. The halves
+			// are not prose and JoinText would put a space between them,
+			// which is the join that produced `} header vlan {`, but a
+			// blank line between them is wrong too: there was no blank
+			// line on the page, there was the edge of the paper. So they
+			// go back together with the line break the page break stood
+			// in for. Only at the head of a page, because a blank line
+			// inside one is a blank line the listing really has.
+			if at < 0 && i == 0 && len(d.Paragraphs) > 0 {
+				last := &d.Paragraphs[len(d.Paragraphs)-1]
+				if program(last.Text) && program(text) {
+					last.Text += "\n" + text
+					last.Pages++
+					continue
+				}
 			}
 			if at >= 0 {
 				d.Paragraphs[at].Text = JoinText(d.Paragraphs[at].Text, text)
@@ -264,8 +282,48 @@ func block(s string) bool {
 		return true
 	case strings.HasPrefix(s, "!["):
 		return true
+	case program(s):
+		return true
 	}
 	return false
+}
+
+// program says whether a paragraph is a listing the reader wrote without a
+// fence round it.
+//
+// A listing is not prose and nothing above or below it continues into it, but
+// without this the continuation rule reads it as prose and joins it, because
+// a line of a program ends without terminal punctuation and the next one
+// starts in lower case, which is the whole of what the rule looks for. The P4
+// paper is the case: its header declarations came off the page correctly, one
+// per paragraph, and the assembler wrote `} header vlan {` and then did it
+// again for every parser in the section.
+//
+// The marks are code.Mark, the same ones audit rule C08 counts, and the
+// threshold is different because the question is different. C08 is hunting a
+// listing hidden in a body and wants three lines with two marks before it
+// says anything. This is asking whether one paragraph is prose, and a
+// paragraph where half the lines end in a semicolon or are a brace on their
+// own is not prose whether it is two lines long or twenty.
+//
+// Two marks at the least, because one is a citation with a brace in it or a
+// sentence that happened to end in a semicolon. More than half the lines,
+// because a paragraph of prose with a couple of semicolons in it is still a
+// paragraph of prose, and refusing to join one of those would leave a
+// sentence cut in half at a page break. Half exactly is not enough: four
+// lines of prose of which two end in a semicolon is a real paragraph and was
+// the first thing this refused to join.
+func program(s string) bool {
+	lines := strings.Split(s, "\n")
+	if marks := code.Marks(s); marks >= 2 && marks*2 > len(lines) {
+		return true
+	}
+	// A paragraph whose last line ends in an opening brace is the head of a
+	// listing whatever else is in it, and the P4 paper has one that is only
+	// that: page 4 ends on `parser start{` and page 5 opens on the two lines
+	// that close it. No count of marks finds a single line, and a sentence of
+	// prose that ends in an opening brace has not turned up yet.
+	return strings.HasSuffix(strings.TrimSpace(lines[len(lines)-1]), "{")
 }
 
 // continues says whether the second paragraph is the rest of the first.
