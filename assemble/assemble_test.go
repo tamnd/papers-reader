@@ -284,3 +284,61 @@ func TestTheRuleIsNoWiderInsideAModelsPage(t *testing.T) {
 		}
 	}
 }
+
+func TestAFigureFloatsIntoTheMiddleOfAColumn(t *testing.T) {
+	// Page 7 of the MapReduce paper, where the figure sits between two
+	// halves of the same sentence.
+	d := model("Each machine had two 160GB IDE\n\nFigure 2. Data transfer rate over time\n\ndisks, and a gigabit Ethernet link.\n")
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("assembled %d paragraphs, want 2: %q", len(d.Paragraphs), d.Text())
+	}
+	want := "Each machine had two 160GB IDE disks, and a gigabit Ethernet link."
+	if got := d.Paragraphs[0].Text; got != want {
+		t.Errorf("assembled %q, want %q", got, want)
+	}
+	if got := d.Paragraphs[1].Text; got != "Figure 2. Data transfer rate over time" {
+		t.Errorf("the caption came out as %q", got)
+	}
+}
+
+func TestACaptionIsNotTheStartOfTheSentenceUnderIt(t *testing.T) {
+	// Without the caption in the way the second half would join the first
+	// half, so this is the case the step over has to get right and not the
+	// case where it joins the caption itself to something.
+	d := model("Figure 2. Data transfer rate over time\n\ndisks, and a gigabit Ethernet link.\n")
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("assembled %d paragraphs, want 2: %q", len(d.Paragraphs), d.Text())
+	}
+}
+
+func TestASentenceAboutAFigureIsNotACaption(t *testing.T) {
+	// "Figure 2 shows" opens the paragraph under the caption of Figure 2 in
+	// the MapReduce paper. A caption has punctuation after the number and
+	// this does not, which is the whole of the difference.
+	for _, s := range []string{
+		"Figure 2 shows the progress of the computation over time",
+		"Table 1 lists the counters the library provides",
+	} {
+		if caption.MatchString(s) {
+			t.Errorf("%q was read as a caption", s)
+		}
+	}
+	for _, s := range []string{
+		"Figure 2. Data transfer rate over time",
+		"Figure 3: Data transfer rates for the sort program",
+		"Table 1) Counters",
+		"Fig. 4. The execution overview",
+		"Algorithm 1. Backup tasks",
+	} {
+		if !caption.MatchString(s) {
+			t.Errorf("%q was not read as a caption", s)
+		}
+	}
+}
+
+func TestOnlyOneCaptionIsSteppedOver(t *testing.T) {
+	d := model("the sentence that ran out of room and\n\n## 3.1 Gated units\n\ncarries on here.\n")
+	if len(d.Paragraphs) != 3 {
+		t.Fatalf("assembled %d paragraphs, want 3: %q", len(d.Paragraphs), d.Text())
+	}
+}

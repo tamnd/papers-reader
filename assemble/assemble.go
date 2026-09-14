@@ -10,6 +10,7 @@
 package assemble
 
 import (
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -68,6 +69,9 @@ type Document struct {
 // intermediate key", which is that. So on a model's page the rule is asked
 // at every break, and it is the same narrow rule: the half above has to end
 // unfinished and the half below has to start lower case.
+//
+// The one thing the two halves are allowed to have between them is a
+// caption. See joinAt.
 func Join(pages []Page) *Document {
 	d := &Document{}
 	for _, p := range pages {
@@ -78,15 +82,18 @@ func Join(pages []Page) *Document {
 			d.Last = p.Number
 		}
 		for i, text := range paragraphs(p.Text) {
-			n := len(d.Paragraphs)
-			if n > 0 && (i == 0 || p.Model) && continues(d.Paragraphs[n-1].Text, text) {
-				d.Paragraphs[n-1].Text = JoinText(d.Paragraphs[n-1].Text, text)
+			at := -1
+			if i == 0 || p.Model {
+				at = joinAt(d.Paragraphs, text)
+			}
+			if at >= 0 {
+				d.Paragraphs[at].Text = JoinText(d.Paragraphs[at].Text, text)
 				// Only a join at the head of a page crossed a page break.
 				// Pages is what tells a reader a paragraph ran across two
 				// of them, and counting a repair inside one page would say
 				// it ran across a break that is not there.
 				if i == 0 {
-					d.Paragraphs[n-1].Pages++
+					d.Paragraphs[at].Pages++
 				}
 				continue
 			}
@@ -191,14 +198,63 @@ func opens(trimmed string) string {
 	return ""
 }
 
+// joinAt is the paragraph already assembled that text belongs to the end of,
+// or -1 if it starts a paragraph of its own.
+//
+// Usually the one before it. One further back if the one before it is a
+// caption, because a figure floats into the middle of a column and the
+// column carries on under it. Page 7 of the MapReduce paper reads "two
+// 160GB IDE", then "Figure 2. Data transfer rate over time", then "disks,
+// and a gigabit Ethernet link", and joining the caption to the words under
+// it produced "Figure 2. Data transfer rate over time disks, and a gigabit
+// Ethernet link", which is a sentence about nothing.
+//
+// The caption stays where it is, under the paragraph it interrupted, which
+// is where the figure was and where the reading app wants it.
+//
+// Only a caption is stepped over. A heading is not: the paragraph under a
+// heading belongs to the heading's section and never to the paragraph above
+// it. A listing and a table are not, because neither has been seen to float
+// into a column the way a figure does and stepping over one would join two
+// paragraphs a page apart.
+func joinAt(done []Paragraph, text string) int {
+	n := len(done)
+	if n > 0 && continues(done[n-1].Text, text) {
+		return n - 1
+	}
+	if n > 1 && caption.MatchString(done[n-1].Text) && continues(done[n-2].Text, text) {
+		return n - 2
+	}
+	return -1
+}
+
+// caption is the opening of a figure or table caption: the word, a number,
+// and the punctuation the typesetter put after the number.
+//
+// The punctuation is what separates a caption from a sentence about a
+// figure. "Figure 2 shows the progress of the computation over time" is
+// prose and it opens the paragraph under this very caption in the MapReduce
+// paper, so getting this wrong would take a real paragraph out of the flow.
+// "Figure 2." and "Figure 2:" and "Figure 2)" are captions.
+//
+// Package figures has the same regexp with the same reasoning behind it, and
+// this is not that one because figures imports assemble. Two copies of six
+// words is the cheaper of the two prices.
+var caption = regexp.MustCompile(`^(?:Fig(?:ure)?|FIG(?:URE)?|Table|TABLE|Algorithm|ALGORITHM|Listing|LISTING|Chart)\b\.?[ \t]*` +
+	`(?:[0-9]+(?:[.\-][0-9a-zA-Z]+)*|[IVXLC]+|[A-Z])[ \t]*[.:)]`)
+
 // block says whether a paragraph is one of the things that is not prose, and
 // so can neither continue the paragraph before it nor be continued by the one
 // after it. A heading is in the list for the same reason: it ends without
 // terminal punctuation, which is exactly what the continuation rule looks
-// for, so without this a heading swallows the paragraph under it.
+// for, so without this a heading swallows the paragraph under it. A caption
+// is in the list for the same reason and it is the same mistake: "Figure 2.
+// Data transfer rate over time" ends without terminal punctuation too.
 func block(s string) bool {
 	switch {
 	case opens(s) != "":
+		return true
+	case caption.MatchString(s):
 		return true
 	case strings.HasPrefix(s, "$$"):
 		return true
