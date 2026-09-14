@@ -635,7 +635,19 @@ func within(ranges [][2]int, s [2]int) bool {
 
 // copied says whether the term at [at,end) sits in a two word English phrase
 // that other wrote as well.
+//
+// A hyphen on the other side reads as a space here. The two sides of a name
+// are allowed to punctuate it differently and often have to: Spanner writes
+// "protocol-buffer-valued fields" because the compound is being used as an
+// adjective, and the Vietnamese writes "các trường có giá trị kiểu protocol
+// buffer" because in that sentence it is not. It is the same name for the
+// same thing from Google, and L10 read the Vietnamese one as the glossary's
+// "buffer" left standing on its own, because the pair it looked for on the
+// English side had a hyphen in the middle of it.
 func copied(rs []rune, other string, at, end int) bool {
+	if strings.ContainsRune(other, '-') {
+		other = strings.ReplaceAll(other, "-", " ")
+	}
 	for _, p := range []string{
 		string(rs[back(rs, at):end]),
 		string(rs[at:forward(rs, end)]),

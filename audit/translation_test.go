@@ -718,6 +718,29 @@ func TestL10StillReadsATermThatIsNotALabel(t *testing.T) {
 	}
 }
 
+// A name the English hyphenates because it is being used as an adjective is
+// the same name the translation writes with a space, and the word inside it
+// is not a term left standing. Spanner writes "protocol-buffer-valued fields"
+// and the Vietnamese writes "giá trị kiểu protocol buffer".
+func TestL10ReadsAHyphenatedNameAsTheSameName(t *testing.T) {
+	en := "The query language has extensions to support protocol-encoder-valued fields and nothing else here.\n"
+	tr := "Ngôn ngữ truy vấn có phần mở rộng hỗ trợ các trường có giá trị kiểu protocol encoder và không gì khác.\n"
+	if res := result(t, glossaryPair(t, en, tr), "L10"); res.Failed() {
+		t.Errorf("L10 read the tail of a name as a term left standing: %v", res.Findings)
+	}
+}
+
+// And it is the name that earns it. The same word with no such name around
+// it on the English side is the finding it always was.
+func TestL10StillReadsATermWithNoNameAroundIt(t *testing.T) {
+	en := "The query language has extensions to support encoder fields and there is nothing else here.\n"
+	tr := "Ngôn ngữ truy vấn có phần mở rộng hỗ trợ các trường encoder và ở đây không có gì khác nữa.\n"
+	res := result(t, glossaryPair(t, en, tr), "L10")
+	if !res.Failed() || !strings.Contains(res.Findings[0].Message, "encoder") {
+		t.Errorf("L10 said %v about a page that left a term in English", res.Findings)
+	}
+}
+
 // A gloss is good practice on a term's first appearance, and the rendering
 // is right there in the file.
 // Twenty of the twenty-three L06 and L10 findings on the first translated
