@@ -35,6 +35,7 @@ func runExtract(args []string) error {
 	again := fs.Bool("again", false, "extract pages that are already done too")
 	retidy := fs.Bool("retidy", false, "run the tidier over the pages on disk and ask no model")
 	recheck := fs.Bool("recheck", false, "run the acceptance rules over the pages on disk and ask no model")
+	refence := fs.Bool("refence", false, "write the tables the tidier would not touch as text fences")
 	dry := fs.Bool("dry-run", false, "print what would be extracted and write nothing")
 	atOnce := fs.Int("jobs", 0, "how many papers to read at once, or 0 for one per lane in the fleet")
 	long := fs.Bool("v", false, "print every page and every refusal")
@@ -72,7 +73,7 @@ everything the page becomes, and a paper whose notation needs a sentence of
 explanation gets one added to it, which is per paper so that editing it does
 not mark every other paper's pages stale.
 
-Every page is checked against the eight acceptance rules before it is
+Every page is checked against the ten acceptance rules before it is
 written, and a page that breaks one is reported and not written. The native
 and layout paths have nothing to retry with: the same program over the same
 file reads the page the same way the second time, so a refused page is a
@@ -81,6 +82,13 @@ does. The thing to try is the other path, with --path. The vision path does
 retry, because a model asked twice answers twice: a refused page goes back
 at 400 dpi and then at 600, and a page refused at all three is reported and
 left alone.
+
+At the top of the ladder there is one thing left that costs nothing and
+asks nobody. A table the tidier would not touch is written as a text fence,
+which is what the prompt asked for in the first place for cells that do not
+form a grid, and if that is all that was wrong with the page the page is
+written. Some tables come back the same at every resolution, because the
+picture is the same picture, and a fourth ask buys the same answer again.
 
 A page that is already extracted is left alone, so running this twice costs
 one read of the file and no writes. Pass --again to do the work over.
@@ -102,6 +110,13 @@ a page that was right can come back wrong. Every step in Tidy is a
 translation between two spellings and none of them changes a page that is
 already in the second spelling, so running it again over a tidy page writes
 nothing.
+
+--refence does the same job for the tables, and is the way to reach a page
+that was read before any of this existed. A page on disk is a page at the
+top of the ladder, because there is no next attempt for it unless somebody
+spends the quota to read it again, so the last resort applies. It is a flag
+of its own rather than part of the tidier because a step that gives up the
+shape of a table is a step a person asks for.
 
 --recheck runs the acceptance rules over the pages on disk, asks no model
 and writes nothing. It is for the day a rule is added: every page in the
@@ -157,7 +172,10 @@ papers doctor to see what is installed.
 	}
 
 	if *retidy {
-		return retidyPages(c, todo, first, last, *dry, *long)
+		return retidyPages(c, todo, first, last, extract.Tidy, "tidy", *dry, *long)
+	}
+	if *refence {
+		return retidyPages(c, todo, first, last, extract.Fence, "written out", *dry, *long)
 	}
 	if *recheck {
 		return recheckPages(c, recorded, todo, first, last, *long)
@@ -569,7 +587,15 @@ func proseOf(ctx context.Context, file string) map[int]string {
 // putting anything in, so a page that passed before passes after. Running the
 // checker here would also need the paper's own sample to run rule A5 against,
 // and the sample would be half the old spelling and half the new one.
-func retidyPages(c *corpus.Corpus, todo []corpus.Paper, first, last int, dry, long bool) error {
+//
+// --refence comes through here too, with extract.Fence for the rewrite. Fence
+// belongs at the top of the resolution ladder and nowhere else, and a page
+// already on disk is a page at the top of the ladder: there is no next
+// attempt for it unless somebody spends the quota to read it again. It is a
+// flag of its own rather than part of the tidier for the same reason
+// split --prune is, which is that a step that throws information away is a
+// step a person asks for.
+func retidyPages(c *corpus.Corpus, todo []corpus.Paper, first, last int, fix func(string) string, verb string, dry, long bool) error {
 	var changed, same, skipped int
 	for _, p := range todo {
 		store := extract.Store{Dir: c.Work(p.ID, "pages")}
@@ -589,11 +615,14 @@ func retidyPages(c *corpus.Corpus, todo []corpus.Paper, first, last int, dry, lo
 				fmt.Printf("  %-34s page %d: %v\n", p.ID, page, err)
 				continue
 			}
-			// Compared as the file would be written and not as Tidy
+			// Compared as the file would be written and not as the rewrite
 			// returns it, because Store.Write puts the final newline on and
 			// a page whose only difference is that newline is a page this
-			// would rewrite for ever.
-			after := extract.Tidy(before)
+			// would rewrite for ever. Tidy takes it off and Fence, which
+			// works a line at a time and leaves the line count alone, hands
+			// it back, so the trailing newline is taken off here and neither
+			// of them has to care.
+			after := strings.TrimRight(fix(before), "\n")
 			if after+"\n" == before {
 				same++
 				continue
@@ -617,7 +646,7 @@ func retidyPages(c *corpus.Corpus, todo []corpus.Paper, first, last int, dry, lo
 	if dry {
 		fmt.Println("dry run, nothing written")
 	}
-	fmt.Printf("%d pages rewritten, %d already tidy, %d papers skipped\n", changed, same, skipped)
+	fmt.Printf("%d pages rewritten, %d already %s, %d papers skipped\n", changed, same, verb, skipped)
 	return nil
 }
 

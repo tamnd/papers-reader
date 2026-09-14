@@ -165,7 +165,7 @@ func TestRetidyRewritesOnlyThePagesThatChange(t *testing.T) {
 		}
 	}
 	papers := []corpus.Paper{{ID: "paper-1999-example"}}
-	if err := retidyPages(c, papers, 0, 0, false, false); err != nil {
+	if err := retidyPages(c, papers, 0, 0, extract.Tidy, "tidy", false, false); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Read(2)
@@ -194,7 +194,7 @@ func TestRetidyIsIdempotent(t *testing.T) {
 	}
 	papers := []corpus.Paper{{ID: "paper-1999-example"}}
 	for i := 0; i < 2; i++ {
-		if err := retidyPages(c, papers, 0, 0, false, false); err != nil {
+		if err := retidyPages(c, papers, 0, 0, extract.Tidy, "tidy", false, false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -215,7 +215,7 @@ func TestRetidyDryRunWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	papers := []corpus.Paper{{ID: "paper-1999-example"}}
-	if err := retidyPages(c, papers, 0, 0, true, false); err != nil {
+	if err := retidyPages(c, papers, 0, 0, extract.Tidy, "tidy", true, false); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.Read(1); got != html+"\n" {
@@ -228,7 +228,7 @@ func TestRetidyDryRunWritesNothing(t *testing.T) {
 func TestRetidyOverAPaperWithNoPagesIsQuiet(t *testing.T) {
 	c := &corpus.Corpus{Root: t.TempDir()}
 	papers := []corpus.Paper{{ID: "paper-1999-example"}}
-	if err := retidyPages(c, papers, 0, 0, false, false); err != nil {
+	if err := retidyPages(c, papers, 0, 0, extract.Tidy, "tidy", false, false); err != nil {
 		t.Fatalf("a paper with no pages returned %v", err)
 	}
 }
@@ -396,5 +396,53 @@ func TestAStoppedRunHandsOutNoMorePapers(t *testing.T) {
 	// blocked on a run that had just been told to stop.
 	if n == len(papers) {
 		t.Error("the run was stopped and every paper was handed out anyway")
+	}
+}
+
+// --refence is the same machinery with the last resort for the rewrite, and
+// it is how a page read before any of this existed gets its tables out of
+// HTML without being read again.
+func TestRefenceWritesTheTablesTheTidierWouldNotTouch(t *testing.T) {
+	root := t.TempDir()
+	c := &corpus.Corpus{Root: root}
+	s := extract.Store{Dir: c.Work("paper-1999-example", "pages")}
+	html := "<table>\n" +
+		"<tr><th>Term</th><th>Value</th></tr>\n" +
+		"<tr><td rowspan=\"3\">a</td><td colspan=\"9\">1</td></tr>\n" +
+		"</table>"
+	fenced := "```text\nTerm  Value\na  1\n```"
+	if err := s.Write(1, html); err != nil {
+		t.Fatal(err)
+	}
+	papers := []corpus.Paper{{ID: "paper-1999-example"}}
+	if err := retidyPages(c, papers, 0, 0, extract.Fence, "written out", false, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Read(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != fenced+"\n" {
+		t.Errorf("page 1 is:\n%s\nwant:\n%s", got, fenced)
+	}
+}
+
+// A page with a table the tidier can read is a page --refence leaves alone,
+// because Untable has already turned it into a pipe table and there is no
+// HTML on it for Fence to find.
+func TestRefenceLeavesAPageWithNoMarkupAlone(t *testing.T) {
+	root := t.TempDir()
+	c := &corpus.Corpus{Root: root}
+	s := extract.Store{Dir: c.Work("paper-1999-example", "pages")}
+	clean := "| Term | Value |\n| --- | --- |\n| a | 1 |"
+	if err := s.Write(1, clean); err != nil {
+		t.Fatal(err)
+	}
+	papers := []corpus.Paper{{ID: "paper-1999-example"}}
+	if err := retidyPages(c, papers, 0, 0, extract.Fence, "written out", false, false); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.Read(1); err != nil || got != clean+"\n" {
+		t.Errorf("page 1 was rewritten: %q", got)
 	}
 }
