@@ -176,6 +176,9 @@ func figureFiles(in *Input, id string) ([]string, error) {
 // publishing. It runs whether or not anything has been resolved, because the
 // state it guards against is exactly the unresolved one.
 func ruleS01(in *Input) ([]Finding, error) {
+	if in.whole() {
+		return nil, ErrNotRun
+	}
 	var out []Finding
 	for _, p := range in.Papers.Papers {
 		if in.Sources.Access(p.ID) != corpus.AccessUnknown {
@@ -199,6 +202,9 @@ func ruleS01(in *Input) ([]Finding, error) {
 // redistribute: the bibliographic record and a short abstract, and nothing
 // else.
 func ruleS02(in *Input) ([]Finding, error) {
+	if in.whole() {
+		return nil, ErrNotRun
+	}
 	var out []Finding
 	restricted := 0
 	for _, p := range in.Papers.Papers {
@@ -369,6 +375,9 @@ func ruleS06(in *Input) ([]Finding, error) {
 // for translating something it was allowed to publish. See corpus.Limit for
 // where the numbers come from.
 func ruleS07(in *Input) ([]Finding, error) {
+	if in.whole() {
+		return nil, ErrNotRun
+	}
 	restricted := 0
 	var out []Finding
 	for _, f := range in.Content {
@@ -557,6 +566,9 @@ const TitleShare = 0.5
 // through the glossary to be compared at all. The English file is the one
 // the translation was made from, so checking it checks both.
 func ruleS10(in *Input) ([]Finding, error) {
+	if in.whole() {
+		return nil, ErrNotRun
+	}
 	quoted := 0
 	var out []Finding
 	for _, f := range in.Content {

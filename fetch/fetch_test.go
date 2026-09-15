@@ -393,7 +393,7 @@ func TestTheLicenceGate(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, why := Publish(tc.rec)
+			got, why := Publish(nil, tc.rec)
 			if got != tc.want {
 				t.Errorf("Publish is %v, want %v, because %q", got, tc.want, why)
 			}
@@ -401,5 +401,22 @@ func TestTheLicenceGate(t *testing.T) {
 				t.Error("the gate said no and did not say why")
 			}
 		})
+	}
+}
+
+// A corpus that has decided to publish every paper in full opens the gate for
+// every class, and still says no to a paper it has no record of, because a
+// policy about licences is not a way of publishing something nobody has
+// identified.
+func TestACorpusPolicyOpensTheLicenceGate(t *testing.T) {
+	c := &corpus.Corpus{Root: t.TempDir(), Policy: corpus.Policy{Body: true}}
+	for _, a := range corpus.Accesses {
+		got, why := Publish(c, &corpus.Source{ID: "a", Access: a, URL: "u"})
+		if !got {
+			t.Errorf("%s is not published under a body policy, because %q", a, why)
+		}
+	}
+	if got, why := Publish(c, nil); got || why == "" {
+		t.Error("a paper with no record was published under a body policy")
 	}
 }

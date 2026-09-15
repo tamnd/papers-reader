@@ -790,7 +790,7 @@ func TestMarkdownPutsTheWorkFirst(t *testing.T) {
 		Candidate: Candidate{Title: "Something Else Entirely", Year: 2025},
 		Verdict:   Verdict{TitleScore: 0.41, YearOff: 54, Why: "the titles are too different"},
 	}}}
-	md := Markdown([]*Result{ok, bad})
+	md := Markdown(nil, []*Result{ok, bad})
 
 	if strings.Index(md, "## Not resolved") > strings.Index(md, "## Resolved\n") {
 		t.Error("the resolved list comes before the work")
@@ -821,7 +821,7 @@ func TestAPriorRecordStillCounts(t *testing.T) {
 		t.Error("a record with no url counted as resolved")
 	}
 
-	md := Markdown([]*Result{fresh, old, never})
+	md := Markdown(nil, []*Result{fresh, old, never})
 	if !strings.Contains(md, "3 papers, 2 resolved, 1 not") {
 		t.Error("the report counted the run and not the corpus")
 	}

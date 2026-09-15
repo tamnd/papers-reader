@@ -178,6 +178,38 @@ func TestS02HoldsTheLineOnRestricted(t *testing.T) {
 	}
 }
 
+// A corpus that has decided to publish every paper in full stands the five
+// licence shape rules down rather than failing them thousands of times.
+func TestAPolicyToPublishInFullStandsTheRestrictedRulesDown(t *testing.T) {
+	in := build(t, map[string]string{
+		"manifests/policy.yaml": "body: true\n",
+		"manifests/sources.yaml": `sources:
+  - id: codd-1970-relational
+    access: restricted
+    licence: all rights reserved
+    landing: https://dl.acm.org/doi/10.1145/362384.362685
+`,
+		"content/en/codd-1970-relational/00_front.md":   "---\npaper: codd-1970-relational\nkind: front\nlang: en\n---\n\nabstract\n",
+		"content/en/codd-1970-relational/01_section.md": "---\npaper: codd-1970-relational\nkind: section\nlang: en\n---\n\nbody\n",
+		"content/en/vaswani-2017-attention/00_front.md": "---\npaper: vaswani-2017-attention\nkind: front\nlang: en\n---\n\ntext\n",
+		"figures/codd-1970-relational/f01.png":          "not really a png",
+	})
+	rep := Run(in, true)
+	for _, id := range []string{"S01", "S02", "S07", "S10", "F08"} {
+		res := result(t, rep, id)
+		if !res.NotRun {
+			t.Errorf("%s ran under a policy that publishes every paper in full: %v", id, res.Findings)
+		}
+	}
+	// Nothing else changes, and in particular no rule breaks for want of a
+	// policy it has never heard of. S03, the rule that keeps PDFs out, is not
+	// checked here because it reads git's index and a temporary directory has
+	// none, which is the same reason it does not run in any of these tests.
+	if errs := rep.Errors(); len(errs) != 0 {
+		t.Errorf("rules broke under a body policy: %v", errs)
+	}
+}
+
 // S03 asks git what it is holding rather than reading .gitignore, because
 // one `git add -f` is the difference between a corpus and a mirror.
 func TestS03(t *testing.T) {

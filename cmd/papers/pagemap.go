@@ -55,6 +55,10 @@ is honest and is still worth having.
 A restricted paper is mapped over the three pages it was read on, wherever
 in the file those are.
 
+None of this applies to a corpus whose manifests/policy.yaml says body.
+That corpus publishes every paper in full, whatever its licence says, and
+the decision to do so is recorded in that file rather than in this one.
+
 A run that would write the file it already wrote writes nothing, so this is
 cheap to put in a pipeline.
 
@@ -150,7 +154,7 @@ func mapPaper(ctx context.Context, c *corpus.Corpus, id string, rec *corpus.Sour
 		last = doc.Pages
 	}
 	first := 1
-	if rec.Access == corpus.AccessRestricted {
+	if rec.Access == corpus.AccessRestricted && !c.PublishesWhole() {
 		first, last = restrictedRange(c, id, last)
 	}
 

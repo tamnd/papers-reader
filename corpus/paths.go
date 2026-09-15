@@ -13,6 +13,10 @@ const EnvRoot = "PAPERS_CORPUS"
 // package hangs off.
 type Corpus struct {
 	Root string
+	// Policy is manifests/policy.yaml, read once when the corpus is opened.
+	// It is a property of the corpus rather than of a command because every
+	// command has to make the same decision from it.
+	Policy Policy
 }
 
 // Open finds the corpus. It takes root if one is given, else PAPERS_CORPUS,
@@ -40,6 +44,11 @@ func Open(root string) (*Corpus, error) {
 	if _, err := os.Stat(c.PapersManifest()); err != nil {
 		return nil, fmt.Errorf("%s does not look like a checkout of tamnd/papers: %w", root, err)
 	}
+	p, err := LoadPolicy(c.PolicyManifest())
+	if err != nil {
+		return nil, err
+	}
+	c.Policy = p
 	return c, nil
 }
 

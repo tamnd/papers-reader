@@ -376,7 +376,7 @@ func by(rung string) string {
 // front matter and an abstract, and how many produce nothing at all. The
 // number that matters is the first one, and it is a good deal smaller than
 // the number of papers that resolved, which is the point.
-func publishable(results []*Result) string {
+func publishable(c *corpus.Corpus, results []*Result) string {
 	counts := map[corpus.Access]int{}
 	for _, r := range results {
 		counts[r.Record.Access]++
@@ -393,6 +393,9 @@ func publishable(results []*Result) string {
 
 	var b strings.Builder
 	b.WriteString("## What may be published\n\n")
+	if c.PublishesWhole() {
+		b.WriteString("This corpus publishes every paper in full, by the decision recorded in `manifests/policy.yaml`, so the table below says what each licence allows and not what is on the shelf.\n\n")
+	}
 	fmt.Fprintf(&b, "%d of these may have their text published, %d get front matter and a short abstract only, and %d publish nothing at all.\n",
 		body, abstract, len(results)-body-abstract)
 	fmt.Fprintf(&b, "The count that the licence work is measured by, public domain plus open, is %d.\n\n",
@@ -427,7 +430,7 @@ func publishes(a corpus.Access) string {
 // left behind a report saying four papers, four resolved would be a lie by
 // omission about the other ninety six. Prior turns the records already on
 // disk into the results for the ones this run did not touch.
-func Markdown(results []*Result) string {
+func Markdown(c *corpus.Corpus, results []*Result) string {
 	var b strings.Builder
 	var ok, failed []*Result
 	for _, r := range results {
@@ -440,7 +443,7 @@ func Markdown(results []*Result) string {
 
 	b.WriteString("# Resolve\n\n")
 	fmt.Fprintf(&b, "%d papers, %d resolved, %d not.\n\n", len(results), len(ok), len(failed))
-	b.WriteString(publishable(results))
+	b.WriteString(publishable(c, results))
 
 	if len(failed) > 0 {
 		b.WriteString("## Not resolved\n\n")

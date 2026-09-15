@@ -65,6 +65,10 @@ retroactively resolves references in papers extracted last month.
 A restricted paper gets no manifest. Its bibliography is part of the paper
 and the corpus may publish its front matter and an abstract, nothing else.
 
+None of this applies to a corpus whose manifests/policy.yaml says body.
+That corpus publishes every paper in full, whatever its licence says, and
+the decision to do so is recorded in that file rather than in this one.
+
 `)
 		fs.PrintDefaults()
 	}
@@ -90,7 +94,7 @@ and the corpus may publish its front matter and an abstract, nothing else.
 	var papers, entries, linked int
 	for _, p := range todo {
 		rec, _ := recorded.ByID(p.ID)
-		if rec == nil || !rec.Access.Body() {
+		if rec == nil || !c.Publishes(rec.Access) {
 			continue
 		}
 		d, err := document(c, p.ID)

@@ -48,6 +48,10 @@ and audit rule F06 refuses it again afterwards.
 A restricted paper commits no figures at all, whatever their size, and a
 paper whose licence has not been resolved commits nothing either.
 
+None of this applies to a corpus whose manifests/policy.yaml says body.
+That corpus publishes every paper in full, whatever its licence says, and
+the decision to do so is recorded in that file rather than in this one.
+
 Regions are found as the holes in a column of text, then paired with the
 caption nearest them. A region with no caption is reported and not
 committed: in practice it is a decorative rule, a logo or a display
@@ -143,13 +147,17 @@ This needs poppler. Run papers doctor to see whether it is installed.
 // has nothing to do with, which is the usual case for a paper that has not
 // been fetched.
 func cropOne(ctx context.Context, c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, first, last int, dry bool) (*figures.Result, error) {
-	if rec == nil || rec.Access == corpus.AccessUnknown || rec.Access == "" {
+	if rec == nil {
 		return nil, fmt.Errorf("nothing is known about what may be published from it, so nothing is cropped")
 	}
-	// The licence decides this and the budget does not. A restricted paper
-	// publishes front matter and an abstract, and a diagram out of it is
-	// the part of the paper its publisher is most protective of.
-	if !rec.Access.Body() {
+	// The corpus decides this and the budget does not. Publishing by licence,
+	// a restricted paper publishes front matter and an abstract, and a diagram
+	// out of it is the part of the paper its publisher is most protective of.
+	// A corpus whose policy carries every paper in full crops every paper.
+	if !c.PublishesFigures(rec.Access) {
+		if rec.Access == corpus.AccessUnknown || rec.Access == "" {
+			return nil, fmt.Errorf("nothing is known about what may be published from it, so nothing is cropped")
+		}
 		return nil, nil
 	}
 	file := c.PDF(p.ID)

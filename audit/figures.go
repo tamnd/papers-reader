@@ -374,6 +374,9 @@ func ruleF07(in *Input) ([]Finding, error) {
 // A restricted paper is one the corpus may describe and may not reproduce,
 // and a diagram is the part of a paper its publisher is most protective of.
 func ruleF08(in *Input) ([]Finding, error) {
+	if in.whole() {
+		return nil, ErrNotRun
+	}
 	files, err := onDisk(in)
 	if err != nil {
 		return nil, err

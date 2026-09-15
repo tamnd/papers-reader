@@ -189,14 +189,17 @@ func (r *rasterise) do(ctx context.Context) (drew, error) {
 	if r.source == nil {
 		return n, fmt.Errorf("no licence record, so nothing may be published from it: run papers resolve")
 	}
-	switch r.source.Access {
-	case corpus.AccessUnknown, "":
-		return n, fmt.Errorf("nothing is known about what may be published from it, so it is not read")
-	case corpus.AccessRestricted:
-		// The same cap the extractor keeps. Rendering a page that may never
-		// be read is CPU and disk spent on a directory nobody may open.
-		if r.last == 0 || r.last > restrictedPages {
-			r.last = restrictedPages
+	if !r.corpus.PublishesWhole() {
+		switch r.source.Access {
+		case corpus.AccessUnknown, "":
+			return n, fmt.Errorf("nothing is known about what may be published from it, so it is not read")
+		case corpus.AccessRestricted:
+			// The same cap the extractor keeps. Rendering a page that may
+			// never be read is CPU and disk spent on a directory nobody may
+			// open.
+			if r.last == 0 || r.last > restrictedPages {
+				r.last = restrictedPages
+			}
 		}
 	}
 	if !r.named && classify.Layer(r.source.TextLayer).Path() != classify.PathVision {

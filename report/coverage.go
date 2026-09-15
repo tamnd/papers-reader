@@ -36,6 +36,12 @@ type Coverage struct {
 	Total   CoverageField
 	Waiting []CoverageWait
 	Langs   []CoverageLang
+	// Whole is the corpus policy: every paper published in full, whatever
+	// its licence says. It changes what the report means rather than what it
+	// counts. A stub is the finished state of a restricted paper when the
+	// corpus publishes by licence, and it is a paper waiting to be read when
+	// the corpus publishes everything.
+	Whole bool
 }
 
 // A CoveragePaper is one paper and where it has got to.
@@ -62,17 +68,28 @@ type CoverageField struct {
 	Full   int
 	Stub   int
 	None   int
+	// Whole is the corpus policy, copied onto every row so that Done can be
+	// read off a field without the corpus being at hand.
+	Whole bool
 }
 
-// Done is the share of the field that is as done as its licence allows,
-// from zero to one. A stub counts: a restricted paper with its abstract cut
-// is finished, and counting it as a shortfall would be a report that can
-// never reach the top of its own scale.
+// Done is the share of the field that is as done as the corpus means it to
+// be, from zero to one.
+//
+// Publishing by licence, a stub counts: a restricted paper with its abstract
+// cut is finished, and counting it as a shortfall would be a report that can
+// never reach the top of its own scale. Publishing every paper in full, a
+// stub is a paper with three pages read out of thirty, so it counts for
+// nothing and the report goes back to measuring work left to do.
 func (f CoverageField) Done() float64 {
 	if f.Papers == 0 {
 		return 0
 	}
-	return float64(f.Full+f.Stub) / float64(f.Papers)
+	done := f.Full
+	if !f.Whole {
+		done += f.Stub
+	}
+	return float64(done) / float64(f.Papers)
 }
 
 // A CoverageWait is a reason papers are not done, and how many are waiting
@@ -104,7 +121,7 @@ func BuildCoverage(c *corpus.Corpus) (*Coverage, error) {
 		return nil, err
 	}
 
-	cov := &Coverage{}
+	cov := &Coverage{Whole: c.PublishesWhole()}
 	fields := map[corpus.Field]*CoverageField{}
 	waiting := map[string]int{}
 	langs := map[corpus.Lang]*CoverageLang{}
@@ -132,7 +149,7 @@ func BuildCoverage(c *corpus.Corpus) (*Coverage, error) {
 
 		cov.Papers = append(cov.Papers, row)
 		if fields[p.Field] == nil {
-			fields[p.Field] = &CoverageField{Field: p.Field}
+			fields[p.Field] = &CoverageField{Field: p.Field, Whole: cov.Whole}
 		}
 		tally := fields[p.Field]
 		tally.Papers++
@@ -175,6 +192,7 @@ func BuildCoverage(c *corpus.Corpus) (*Coverage, error) {
 		}
 		cov.Fields = append(cov.Fields, *fields[f])
 	}
+	cov.Total.Whole = cov.Whole
 	for _, f := range cov.Fields {
 		cov.Total.Papers += f.Papers
 		cov.Total.Full += f.Full
@@ -215,9 +233,12 @@ func StateOf(english []string) State {
 // able to act on a row without going and looking anything up.
 func why(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, s State) string {
 	if rec == nil || rec.Access == "" || rec.Access == corpus.AccessUnknown {
+		// Even under a policy that publishes everything, a paper nobody has
+		// identified has no location to fetch from, so this is still the
+		// first thing to go and do about it.
 		return "nothing is known about what may be published from it"
 	}
-	if s == Stub && rec.Access == corpus.AccessRestricted {
+	if s == Stub && rec.Access == corpus.AccessRestricted && !c.PublishesWhole() {
 		// As done as it will ever be. A restricted paper publishes its front
 		// matter and an abstract and that is the whole of what it may have.
 		return ""
@@ -321,9 +342,15 @@ func (c *Coverage) Summary() string {
 func (c *Coverage) Markdown() string {
 	var b strings.Builder
 	b.WriteString("# Coverage\n\nHow much of each paper the corpus publishes.\n\n")
-	b.WriteString("`full` is a paper whose body is here, section by section. `stub` is the front matter and a short abstract, which is the whole of what a restricted paper may ever have and is not a shortfall. `none` is a paper the corpus publishes nothing of yet.\n\n")
-	fmt.Fprintf(&b, "%s, which is %s of what the licences allow.\n\n",
-		c.Summary(), percent(c.Total.Done()))
+	if c.Whole {
+		b.WriteString("`full` is a paper whose body is here, section by section. `stub` is the front matter and a short abstract, which is where a paper stops until it is read in full. `none` is a paper the corpus publishes nothing of yet.\n\n")
+		fmt.Fprintf(&b, "%s, which is %s of the corpus published in full.\n\n",
+			c.Summary(), percent(c.Total.Done()))
+	} else {
+		b.WriteString("`full` is a paper whose body is here, section by section. `stub` is the front matter and a short abstract, which is the whole of what a restricted paper may ever have and is not a shortfall. `none` is a paper the corpus publishes nothing of yet.\n\n")
+		fmt.Fprintf(&b, "%s, which is %s of what the licences allow.\n\n",
+			c.Summary(), percent(c.Total.Done()))
+	}
 
 	b.WriteString("## Per field\n\n| field | papers | full | stub | none | done |\n| --- | --: | --: | --: | --: | --: |\n")
 	for _, f := range c.Fields {

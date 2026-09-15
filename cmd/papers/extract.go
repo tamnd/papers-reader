@@ -131,6 +131,10 @@ rest of it would be work done to fill a directory nobody may read. That is
 a cap and not a quota: --pages 4 reads pages 4 to 6, and --pages 4-4 reads
 page 4 alone, which is what a paper set inside a journal department needs.
 
+None of this applies to a corpus whose manifests/policy.yaml says body.
+That corpus publishes every paper in full, whatever its licence says, and
+the decision to do so is recorded in that file rather than in this one.
+
 This needs poppler, and the layout path needs one of the three tools. Run
 papers doctor to see what is installed.
 
@@ -687,11 +691,15 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 	if e.source == nil {
 		return n, fmt.Errorf("no licence record, so nothing may be published from it: run papers resolve")
 	}
-	switch e.source.Access {
-	case corpus.AccessUnknown, "":
-		return n, fmt.Errorf("nothing is known about what may be published from it, so it is not read")
-	case corpus.AccessRestricted:
-		e.last = e.restricted()
+	// The window is the licence's, unless the corpus publishes every paper in
+	// full, in which case there is no window and the whole file is read.
+	if !e.corpus.PublishesWhole() {
+		switch e.source.Access {
+		case corpus.AccessUnknown, "":
+			return n, fmt.Errorf("nothing is known about what may be published from it, so it is not read")
+		case corpus.AccessRestricted:
+			e.last = e.restricted()
+		}
 	}
 	file := e.corpus.PDF(e.paper.ID)
 	if _, err := os.Stat(file); err != nil {

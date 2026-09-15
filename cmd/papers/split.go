@@ -144,6 +144,10 @@ moved and that is worth seeing.
 A restricted paper gets its front matter and an abstract of at most 250
 words. Nothing else about it may be published, so nothing else is written.
 
+None of this applies to a corpus whose manifests/policy.yaml says body.
+That corpus publishes every paper in full, whatever its licence says, and
+the decision to do so is recorded in that file rather than in this one.
+
 `)
 		fs.PrintDefaults()
 	}
@@ -297,7 +301,7 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, prune
 		n.notes = append(n.notes, "no extraction record, so the front matter cannot say what read the pages")
 	}
 	files := split.Files(front, r)
-	if !rec.Access.Body() {
+	if !c.Publishes(rec.Access) {
 		// Restricted. The front matter and a short abstract is the whole of
 		// what may ever be published, so the rest of the paper is not written
 		// at all rather than written and then guarded by an audit rule.

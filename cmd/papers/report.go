@@ -65,6 +65,10 @@ the front matter and a short abstract, which is the whole of what a
 restricted paper may ever have, so it counts as done rather than as a
 shortfall. None is a paper nothing is published of yet.
 
+A corpus whose manifests/policy.yaml says body publishes every paper in
+full. There a stub is a paper with three pages read out of thirty, so it
+counts as work left to do rather than as done.
+
 The last table is the one to act on: it names every paper that is not done
 and what it is waiting on, which is a fetch, a licence check, a layout tool
 or a vision model. The count of papers behind one missing tool is the

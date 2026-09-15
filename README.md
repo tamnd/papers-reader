@@ -58,7 +58,13 @@ A paper that fails any of the three stays unresolved, and an unresolved paper pu
 
 **Being able to download something is not permission to republish it.**
 A paper with no licence anybody can name is restricted, which publishes its title, its authors, its year, its links and an abstract under 250 words, and no body text and no figures.
-That is the default for most of the corpus, and the number of papers whose text may be published is written at the top of `reports/resolve.md` every time the resolver runs.
+That is the default, and the number of papers whose text may be published is written at the top of `reports/resolve.md` every time the resolver runs.
+
+**What the licence allows and what the corpus publishes are two questions.**
+`manifests/sources.yaml` records the first one, found by the resolver and never edited to suit us.
+`manifests/policy.yaml` records the second one, which is the decision of whoever owns the corpus, in a committed file where it can be read and changed back.
+A corpus whose policy says `body: true` extracts, splits, crops and translates every paper in full whatever its access class says, and the five audit rules about how much of a restricted paper is on the page stand down rather than reporting the same decision thousands of times.
+Nothing about PDFs changes under any policy: they are never committed, and audit rule S03 asks git rather than trusting `.gitignore`.
 
 **The text layer is measured, not guessed at.**
 `papers classify` counts characters, mathematical glyphs, embedded fonts and full page images over a band of body pages, and decides from the numbers whether `pdftotext` alone can read the file.
@@ -79,7 +85,8 @@ A section keeps its tag across re-extraction, re-splitting and renumbering, whic
 
 **A stub is not a shortfall.**
 `papers report coverage` writes `reports/coverage.md`, which counts every paper as full, stub or none, per field and per language.
-A restricted paper gets its front matter and a short abstract and that is the whole of what its licence allows, so it counts as done rather than as a paper somebody forgot.
+Publishing by licence, a restricted paper gets its front matter and a short abstract and that is the whole of what it may have, so it counts as done rather than as a paper somebody forgot.
+Publishing every paper in full, the same stub is three pages read out of thirty, so it counts as work left to do.
 The last table in the report is the one to act on: it names what each unfinished paper is waiting on, which is a fetch, a licence check, a layout tool or a vision model, and the count behind each of those is what decides whether to go and get it.
 
 **The corpus cites itself, and the graph says how much.**

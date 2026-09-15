@@ -91,6 +91,22 @@ func (r Rule) Group() Group { return Group(r.ID[:1]) }
 // ErrNotRun is returned by a rule with nothing to look at.
 var ErrNotRun = fmt.Errorf("not run")
 
+// whole reports whether the corpus publishes every paper in full whatever
+// its licence says, which is manifests/policy.yaml and is read by the five
+// rules that are about how much of a restricted paper is on the page.
+//
+// Those rules do not fail under such a policy, they stand down. A rule that
+// reported every section of every restricted paper would report thousands of
+// findings saying the one thing the owner of the corpus has already decided,
+// and the audit would stop being a list of things to fix. The decision is
+// recorded in a committed file where it can be read and argued with, which is
+// a better place for it than a wall of findings nobody can act on.
+//
+// Nothing else changes. Rule S03 still refuses a committed PDF under every
+// policy, and the licence each paper carries is still written down in
+// manifests/sources.yaml exactly as the publisher states it.
+func (in *Input) whole() bool { return in.Corpus.PublishesWhole() }
+
 // Input is everything the rules read, loaded once.
 type Input struct {
 	Corpus      *corpus.Corpus

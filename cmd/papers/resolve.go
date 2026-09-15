@@ -101,7 +101,7 @@ licence nobody has a rule for stays unknown, and unknown publishes nothing.
 	if err := os.MkdirAll(c.Reports(), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(report, []byte(sources.Markdown(wholeCorpus(manifest, merged, results))), 0o644); err != nil {
+	if err := os.WriteFile(report, []byte(sources.Markdown(c, wholeCorpus(manifest, merged, results))), 0o644); err != nil {
 		return err
 	}
 	fmt.Println("wrote", c.SourcesManifest())

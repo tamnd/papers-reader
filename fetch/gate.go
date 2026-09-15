@@ -41,12 +41,23 @@ func May(rec *corpus.Source) (bool, string) {
 // Publish reports whether the text of a paper may go into the corpus, and
 // says what it gets instead when the answer is no.
 //
-// This is the licence gate and it has not moved. Public domain, open and
-// permissive publish the full text, the mathematics and the figures.
-// Restricted publishes the title, the authors, the year, the links and an
-// abstract under 250 words, and no body text and no figures. Unknown
-// publishes nothing at all.
-func Publish(rec *corpus.Source) (bool, string) {
+// This is the licence gate. Public domain, open and permissive publish the
+// full text, the mathematics and the figures. Restricted publishes the title,
+// the authors, the year, the links and an abstract under 250 words, and no
+// body text and no figures. Unknown publishes nothing at all.
+//
+// The corpus can decide otherwise, and a corpus whose manifests/policy.yaml
+// says body publishes every paper in full. That decision is the owner's to
+// make and it is recorded there rather than here, so this function still
+// answers the licence question truthfully for a caller that passes no
+// corpus: the nil corpus is the licence and nothing else.
+func Publish(c *corpus.Corpus, rec *corpus.Source) (bool, string) {
+	if c.PublishesWhole() {
+		if rec == nil || rec.ID == "" {
+			return false, "no record, so nothing may be published about it"
+		}
+		return true, ""
+	}
 	switch {
 	case rec == nil || rec.ID == "":
 		return false, "no record, so nothing may be published about it"

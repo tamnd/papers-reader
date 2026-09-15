@@ -50,7 +50,7 @@ Extraction is the one that matters. Over the 760 answered asks of the current co
 
 ## Two shapes of paper
 
-A restricted paper is capped at three pages by `restrictedPages`, because three pages is enough to read a title, an author list and an abstract and the corpus may not carry more of it than that. It is about 36 thousand tokens in, 3,500 out and two and a half minutes, and it produces one section. Eighty eight of the hundred and one papers in the manifest are this shape.
+A restricted paper is capped at three pages by `restrictedPages`, because three pages is enough to read a title, an author list and an abstract and the corpus may not carry more of it than that, unless `manifests/policy.yaml` says `body: true`, in which case there is no cap and the whole paper is read. It is about 36 thousand tokens in, 3,500 out and two and a half minutes, and it produces one section. Eighty eight of the hundred and one papers in the manifest are this shape.
 
 A full text paper is between 8 and 18 pages and between 8 and 18 sections, 11 at the median. End to end in all three languages that is roughly:
 
