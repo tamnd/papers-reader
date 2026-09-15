@@ -590,6 +590,60 @@ func TestRedoIgnoresAFindingThatIsNotATranslation(t *testing.T) {
 	}
 }
 
+// judged writes a translated file carrying the verdict the back
+// translation left on it, which is where -material reads from.
+func judged(t *testing.T, c *corpus.Corpus, l corpus.Lang, name, verdict string) {
+	t.Helper()
+	body := []byte("Đoạn thứ nhất.")
+	b, err := corpus.Render(corpus.Front{
+		Paper: "a-1970-paper", Title: "A Paper", Field: corpus.Theory,
+		Kind: "section", Lang: l, ContentSHA256: corpus.ContentSHA(body),
+		Roundtrip: verdict, RoundtripRun: "20260101T000000Z",
+	}, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := c.Content(l, "a-1970-paper")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMaterialKeepsOnlyThePagesTheBackTranslationFailed(t *testing.T) {
+	c := translateCorpus(t)
+	judged(t, c, corpus.VI, "01_first.md", "differs-materially")
+	judged(t, c, corpus.VI, "00_front.md", "differs-in-wording")
+	judged(t, c, corpus.ZH, "01_first.md", "the-same")
+	got, err := judgedMaterial(c, planned(t, c, corpus.VI, corpus.ZH))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("%d jobs kept, want 1: %v", len(got), got)
+	}
+	if got[0].lang != corpus.VI || got[0].name != "01_first.md" {
+		t.Errorf("the job kept is %s %s, want vi 01_first.md", got[0].lang, got[0].name)
+	}
+}
+
+// A page nothing has looked at is not a page anything is wrong with. Most
+// of the corpus is never sampled and asking for all of it again would be
+// the whole run under another name.
+func TestMaterialKeepsNothingWhereTheCheckHasNotRun(t *testing.T) {
+	c := translateCorpus(t)
+	judged(t, c, corpus.VI, "01_first.md", "")
+	got, err := judgedMaterial(c, planned(t, c, corpus.VI))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("%d jobs kept for a corpus with no verdicts in it, want 0", len(got))
+	}
+}
+
 func TestContentPathReadsAPathUnderContent(t *testing.T) {
 	for _, c := range []struct {
 		path     string

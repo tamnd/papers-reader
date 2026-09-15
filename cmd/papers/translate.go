@@ -38,6 +38,7 @@ func runTranslate(args []string) error {
 	floor := fs.Int("floor", glossary.Floor, "the glossary coverage a language needs, as a percentage")
 	force := fs.Bool("force", false, "translate again even where the English has not changed")
 	redo := fs.Bool("redo", false, "translate again the files a hard audit rule refuses, and nothing else")
+	material := fs.Bool("material", false, "translate again the files the back translation calls materially different, and nothing else")
 	atOnce := fs.Int("jobs", 0, "how many files to translate at once, or 0 for one per lane in the fleet")
 	every := fs.Int("publish", 0, "push the papers the run has finished to the corpus and merge them, once so many files are ready")
 	dry := fs.Bool("dry-run", false, "say what would be asked and ask nothing")
@@ -92,6 +93,10 @@ not the repair. The front matter carries the hash of the English the
 translation answers, so an edit either breaks that hash or lies about what
 produced the text.
 
+An audit rule can see a formula go missing and cannot see a meaning change.
+That is what papers roundtrip is for, and -material asks again for exactly
+the pages it came away from believing something the paper does not say.
+
 `)
 		fs.PrintDefaults()
 	}
@@ -124,7 +129,7 @@ produced the text.
 		}
 	}
 
-	jobs, err := plan(c, g, todo, want, *force || *redo)
+	jobs, err := plan(c, g, todo, want, *force || *redo || *material)
 	if err != nil {
 		return err
 	}
@@ -135,6 +140,16 @@ produced the text.
 		}
 		if jobs = refusedOnly(found, jobs); len(jobs) == 0 {
 			fmt.Println("no hard audit rule refuses a translation of these papers")
+			return nil
+		}
+	}
+	if *material {
+		jobs, err = judgedMaterial(c, jobs)
+		if err != nil {
+			return err
+		}
+		if len(jobs) == 0 {
+			fmt.Println("the back translation calls no translation of these papers materially different")
 			return nil
 		}
 	}
@@ -466,6 +481,44 @@ func refusedOnly(found []audit.Finding, jobs []job) []job {
 		}
 	}
 	return out
+}
+
+// judgedMaterial keeps the jobs whose translation the back translation check
+// came away from believing something the paper does not say.
+//
+// The same shape as refusedOnly and for the same reason, but the other half
+// of the quality gate. An audit rule reads the file and can say a formula
+// went missing. It cannot say that "much of the previous work" came back as
+// "most of the previous work", which is what the back translation is for and
+// what the L rules have no way to see.
+//
+// The verdict is read off the translated file's own front matter rather than
+// out of reports/roundtrip.md. The report is prose for a person, one heading
+// per page and the two texts under it, and a run that had to parse its own
+// prose back would be a run that breaks when the headings are reworded. The
+// front matter is where the check wrote the verdict down for a machine.
+//
+// A file with no verdict in it was never sampled and is not a file anything
+// is known to be wrong with, so it keeps nothing.
+func judgedMaterial(c *corpus.Corpus, jobs []job) ([]job, error) {
+	var out []job
+	for _, j := range jobs {
+		b, err := os.ReadFile(filepath.Join(c.Content(j.lang, j.front.Paper), j.name))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		front, _, err := corpus.ParseFront(b)
+		if err != nil {
+			return nil, err
+		}
+		if front.Roundtrip == string(roundtrip.Material) {
+			out = append(out, j)
+		}
+	}
+	return out, nil
 }
 
 // contentPath pulls the language, the paper and the file name out of a path
