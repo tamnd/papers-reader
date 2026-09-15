@@ -225,3 +225,66 @@ func TestATitleThatOpensWithAYearIsStillATitle(t *testing.T) {
 		t.Errorf("the title is %q", e.Title)
 	}
 }
+
+// A bibliography that runs out of room for its authors ends the list with
+// "et al.", and what comes after it is the title. Read as an abbreviation
+// the two are one sentence and the whole of it is filed as the title.
+func TestEtAlEndsTheAuthorList(t *testing.T) {
+	e := one(StyleBracket, "A. Nkemelu, B. Oyelaran, C. Fairweather, et al. A theory of slow indexes. Journal of Made Up Results, 1991.")
+	if e.Title != "A theory of slow indexes" {
+		t.Errorf("the title is %q", e.Title)
+	}
+	if got := strings.Join(e.Authors, "; "); got != "A. Nkemelu; B. Oyelaran; C. Fairweather" {
+		t.Errorf("the authors are %q", got)
+	}
+	if e.Venue != "Journal of Made Up Results" {
+		t.Errorf("the venue is %q", e.Venue)
+	}
+}
+
+// The ACL style puts the year between the two, and "et al. 1991." has to
+// end the list the same way.
+func TestEtAlEndsTheAuthorListBeforeAYear(t *testing.T) {
+	e := one(StyleBracket, "A. Nkemelu, B. Oyelaran, C. Fairweather, et al. 1991. A theory of slow indexes. Journal of Made Up Results.")
+	if e.Title != "A theory of slow indexes" {
+		t.Errorf("the title is %q", e.Title)
+	}
+	if got := strings.Join(e.Authors, "; "); got != "A. Nkemelu; B. Oyelaran; C. Fairweather" {
+		t.Errorf("the authors are %q", got)
+	}
+	if e.Year != 1991 {
+		t.Errorf("the year is %d", e.Year)
+	}
+}
+
+// A title that cites another paper carries on in lower case, and there the
+// abbreviation is an abbreviation.
+func TestEtAlInsideATitleIsNotTheEndOfAnything(t *testing.T) {
+	e := one(StyleBracket, "A. Nkemelu and B. Oyelaran. A reply to Fairweather et al. on the nature of slow indexes. Journal of Made Up Results, 1991.")
+	if e.Title != "A reply to Fairweather et al. on the nature of slow indexes" {
+		t.Errorf("the title is %q", e.Title)
+	}
+}
+
+// An arXiv identifier opens with the year and the month of the submission
+// and a full stop, so 1609.08144 holds a number that reads as a year and
+// stands last in the entry. Every 2016 preprint in the corpus was filed
+// under 1609.
+func TestTheYearIsNotReadOutOfAnArxivIdentifier(t *testing.T) {
+	e := one(StyleBracket, "A. Nkemelu and B. Oyelaran. A theory of slow indexes. arXiv preprint arXiv:1609.08144, 2016.")
+	if e.Year != 2016 {
+		t.Errorf("the year is %d, want 2016", e.Year)
+	}
+	if e.ArXiv != "1609.08144" {
+		t.Errorf("the arxiv id is %q", e.ArXiv)
+	}
+}
+
+// And an entry that gives nothing but the identifier has no year in it
+// rather than a month read as one.
+func TestAnEntryWithOnlyAnArxivIdentifierHasNoYear(t *testing.T) {
+	e := one(StyleBracket, "A. Nkemelu and B. Oyelaran. A theory of slow indexes. arXiv:1609.08144.")
+	if e.Year != 0 {
+		t.Errorf("the year is %d, want none", e.Year)
+	}
+}

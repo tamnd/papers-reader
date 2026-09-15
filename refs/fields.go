@@ -22,8 +22,23 @@ func fields(s Style, e *Entry) {
 		listFields(e)
 	}
 	if e.Year == 0 {
-		e.Year = year(raw)
+		e.Year = year(dated(raw))
 	}
+}
+
+// dated is the entry with the identifiers taken out of it, which is what
+// the year is read from.
+//
+// An arXiv identifier opens with the year and the month of the submission
+// and then a full stop, so arXiv:1609.08144 has a 1609 in it that reads as
+// a year and is the last four figure number in the entry. Every reference
+// to a 2016 preprint in the corpus came out filed under 1609. A DOI and a
+// URL can hold a four figure number the same way.
+func dated(raw string) string {
+	for _, re := range []*regexp.Regexp{arxivPattern, absPattern, doiPattern, urlPattern} {
+		raw = re.ReplaceAllString(raw, " ")
+	}
+	return raw
 }
 
 var (
@@ -229,7 +244,7 @@ func sentences(s string) []string {
 		if r[i] != '.' || i+1 >= len(r) || r[i+1] != ' ' {
 			continue
 		}
-		if abbreviated(string(r[start:i])) {
+		if abbreviated(string(r[start:i]), string(r[i+1:])) {
 			continue
 		}
 		if part := strings.TrimSpace(string(r[start:i])); part != "" {
@@ -246,7 +261,9 @@ func sentences(s string) []string {
 // abbreviated says whether the full stop that follows this text is part of
 // an abbreviation. A word with a full stop already inside it is one, which
 // covers i.e., e.g. and U.S. without listing them.
-func abbreviated(before string) bool {
+//
+// after is what comes next, and only one abbreviation needs it. See closes.
+func abbreviated(before, after string) bool {
 	word := lastWord(before)
 	if word == "" {
 		return false
@@ -257,7 +274,39 @@ func abbreviated(before string) bool {
 	if r := []rune(word); len(r) == 1 && unicode.IsUpper(r[0]) {
 		return true
 	}
-	return abbreviations[strings.ToLower(word)]
+	if !abbreviations[strings.ToLower(word)] {
+		return false
+	}
+	return !closes(word, before, after)
+}
+
+// closes says whether an abbreviation is standing at the end of a sentence
+// after all, which of the ones listed here only "et al." ever does.
+//
+// A bibliography that runs out of room for its authors ends the list with
+// it, and what follows is the year or the title: "Yonghui Wu, Mike
+// Schuster, ... Klaus Macherey, et al. Google's neural machine translation
+// system." Kept as an abbreviation the author list and the title are one
+// sentence, and the whole of it, two hundred and forty characters of it,
+// gets filed as the title. That is what the GNMT paper's entry in the
+// Transformer bibliography did, and it is why papers suggest listed a work
+// called "Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V Le, ...".
+//
+// The tell is the next word. A title that cites another paper carries on in
+// lower case, "A reply to Smith et al. on the nature of the problem", and
+// an author list that has ended is followed by a capital or by the year.
+// The other abbreviations get no such rule: Proc. and Int. and Conf. are
+// followed by a capital every time and none of them ends a sentence.
+func closes(word, before, after string) bool {
+	if strings.ToLower(word) != "al" || !strings.HasSuffix(strings.ToLower(before), "et al") {
+		return false
+	}
+	next := strings.TrimLeft(after, " ")
+	if next == "" {
+		return false
+	}
+	r := []rune(next)[0]
+	return unicode.IsUpper(r) || unicode.IsDigit(r)
 }
 
 // abbreviations is the short words a reference ends with a full stop and
