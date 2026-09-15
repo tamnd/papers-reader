@@ -9,7 +9,6 @@ import (
 // fields as a test needs.
 type entry struct {
 	title, resolvesTo, doi, arxiv string
-	year                          int
 }
 
 // refsFile is one manifests/refs/<id>.yaml written out of entries.

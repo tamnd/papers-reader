@@ -287,7 +287,7 @@ func pushed(c *corpus.Corpus, run string, batch int, last bool, paths []string) 
 	opening += "Every paper here has been through the hard audit rules and passed them. A paper one of them refuses is held back in the working tree and named in the run log, so what is in this batch is what is ready rather than what happens to be finished.\n"
 	res, err := push(context.Background(), c, "main", publish.Branch(run, batch), opening, paths, true, false)
 	switch {
-	case errors.Is(err, publish.Nothing):
+	case errors.Is(err, publish.ErrNothing):
 		return
 	case err != nil:
 		fmt.Printf("batch %d could not be pushed, and the run carries on: %v\n", batch, err)

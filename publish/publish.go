@@ -21,6 +21,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path"
@@ -91,13 +92,13 @@ type Result struct {
 	Merged bool
 }
 
-// Nothing is returned when there was nothing to push.
+// ErrNothing is returned when there was nothing to push.
 //
 // Not an error at the call site that matters: a run publishing every twenty
 // files reaches a batch with nothing in it whenever the twenty files were
 // all copied bibliographies, and stopping a six hour run over that would be
 // absurd.
-var Nothing = fmt.Errorf("nothing has changed under the corpus directories")
+var ErrNothing = errors.New("nothing has changed under the corpus directories")
 
 // Do stages, commits, pushes, opens the pull request and merges it.
 func Do(ctx context.Context, b *Batch) (*Result, error) {
@@ -131,7 +132,7 @@ func Do(ctx context.Context, b *Batch) (*Result, error) {
 		return nil, err
 	}
 	if len(changes) == 0 {
-		return nil, Nothing
+		return nil, ErrNothing
 	}
 	if err := Guard(changes); err != nil {
 		return nil, err
@@ -146,7 +147,7 @@ func Do(ctx context.Context, b *Batch) (*Result, error) {
 		return nil, err
 	}
 	if strings.TrimSpace(staged) == "" {
-		return nil, Nothing
+		return nil, ErrNothing
 	}
 
 	logf("committing %d files as %s", len(changes), b.Branch)

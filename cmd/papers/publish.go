@@ -86,7 +86,7 @@ No PDF and no EPUB is ever staged, whatever .gitignore says.
 	}
 	res, err := push(context.Background(), c, *base, name, opening, paths, !*hold, *dry)
 	if err != nil {
-		if errors.Is(err, publish.Nothing) {
+		if errors.Is(err, publish.ErrNothing) {
 			fmt.Println("nothing has been written that is not already in the corpus")
 			return nil
 		}
@@ -122,7 +122,7 @@ func push(ctx context.Context, c *corpus.Corpus, base, branch, opening string, p
 		return nil, err
 	}
 	if len(changes) == 0 {
-		return nil, publish.Nothing
+		return nil, publish.ErrNothing
 	}
 	if err := publish.Guard(changes); err != nil {
 		return nil, err

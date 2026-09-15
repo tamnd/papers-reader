@@ -2,6 +2,7 @@ package publish
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -109,8 +110,8 @@ func TestABatchIsOnlyPushedFromTheBaseBranch(t *testing.T) {
 
 func TestAnEmptyBatchIsNotAnError(t *testing.T) {
 	f := onMain("")
-	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Git: f.git}); err != Nothing {
-		t.Fatalf("err = %v, want Nothing", err)
+	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Git: f.git}); !errors.Is(err, ErrNothing) {
+		t.Fatalf("err = %v, want ErrNothing", err)
 	}
 }
 
@@ -121,8 +122,8 @@ func TestAnEmptyBatchIsNotAnError(t *testing.T) {
 func TestABatchThatStagesNothingIsNotCommitted(t *testing.T) {
 	f := onMain("?? content/vi/a-1900-x/01_intro.md\n")
 	f.say["git diff --cached"] = "\n"
-	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Git: f.git}); err != Nothing {
-		t.Fatalf("err = %v, want Nothing", err)
+	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Git: f.git}); !errors.Is(err, ErrNothing) {
+		t.Fatalf("err = %v, want ErrNothing", err)
 	}
 	for _, line := range f.said {
 		if strings.HasPrefix(line, "git commit") {
