@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/tamnd/llm"
 
@@ -104,6 +105,12 @@ type Result struct {
 	// The difference between the two is the refusal rate, and the refusal rate
 	// is how the prompt gets better.
 	Asks int
+	// Copied is the chunks that were not asked about because there was
+	// nothing in them written in a language.
+	Copied int
+	// Held is the fenced listings that were taken out of a chunk before it
+	// was asked about and put back afterwards.
+	Held int
 	// Refused is the differences that made an answer be asked for again, in
 	// the order they happened, for the run report.
 	Refused []string
@@ -136,6 +143,16 @@ func (t *Translator) Body(ctx context.Context, p Paper, l corpus.Lang, terms []T
 	out.Chunks = len(chunks)
 	parts := make([]string, 0, len(chunks))
 	for i, c := range chunks {
+		if !Translatable(c.Text) {
+			out.Copied++
+			parts = append(parts, c.Text)
+			continue
+		}
+		ask, held := c.Text, []string(nil)
+		if !Holding(c.Text) {
+			ask, held = Hold(c.Text)
+			out.Held += len(held)
+		}
 		text, err := tmpl.Render(map[string]string{
 			"LANGUAGE": l.Name(),
 			"SOURCE":   source(p),
@@ -144,12 +161,12 @@ func (t *Translator) Body(ctx context.Context, p Paper, l corpus.Lang, terms []T
 			"GLOSSARY": Glossary(terms),
 			"RULES":    strings.TrimSpace(rules.Text),
 			"NOTE":     note(p.Note),
-			"BODY":     c.Text,
+			"BODY":     ask,
 		})
 		if err != nil {
 			return out, err
 		}
-		got, err := t.chunk(ctx, &out, fmt.Sprintf("%s %s chunk %d of %d", p.ID, l, i+1, len(chunks)), text, c)
+		got, err := t.chunk(ctx, &out, fmt.Sprintf("%s %s chunk %d of %d", p.ID, l, i+1, len(chunks)), text, c.Text, ask, held)
 		if err != nil {
 			return out, err
 		}
@@ -160,7 +177,13 @@ func (t *Translator) Body(ctx context.Context, p Paper, l corpus.Lang, terms []T
 }
 
 // chunk asks for one chunk until it comes back as the same document.
-func (t *Translator) chunk(ctx context.Context, out *Result, target, instructions string, c Chunk) (string, error) {
+//
+// The source is the chunk as the corpus has it and the ask is the chunk as
+// the model was given it, which differ by the listings Hold took out. An
+// answer is put back together before it is checked, so what Verify compares
+// is two whole passages and what the corpus is written is the listings the
+// English had rather than a model's copy of them.
+func (t *Translator) chunk(ctx context.Context, out *Result, target, instructions, source, ask string, held []string) (string, error) {
 	var worst string
 	for attempt := 1; attempt <= t.tries(); attempt++ {
 		out.Asks++
@@ -173,8 +196,8 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 		}
 		out.Usage = add(out.Usage, reply.Usage)
 
-		answer := Repair(c.Text, Clean(c.Text, reply.Text))
-		bad := Verify(c.Text, answer)
+		answer := Unhold(Repair(ask, Clean(ask, reply.Text)), held)
+		bad := Verify(source, answer)
 		if len(bad) == 0 {
 			out.Models = keep(out.Models, reply.Model)
 			out.Routes = keep(out.Routes, reply.Route)
@@ -184,7 +207,7 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 		out.Refused = append(out.Refused, target+": "+worst)
 		t.logf("%s: refused on attempt %d, %s", target, attempt, worst)
 		if attempt == t.tries() && t.Keep != nil {
-			t.Keep(target, c.Text, answer)
+			t.Keep(target, source, answer)
 		}
 	}
 	return "", fmt.Errorf("%s: %d answers were refused, the last because %s", target, t.tries(), worst)
@@ -243,6 +266,29 @@ func Verify(source, answer string) []Difference {
 		return []Difference{{At: 1, Why: "the answer is the English, word for word"}}
 	}
 	return nil
+}
+
+// Translatable reports whether a chunk has anything in it that is written
+// in a language.
+//
+// A chunk that is one fenced listing is the commonest kind that has not,
+// and a section that is a single long table is a whole file of them. Rule
+// C07 says the fenced regions of a translation are the English ones byte
+// for byte, so the only right answer to such a chunk is the chunk itself
+// and there is nothing to ask. Hold covers the other case, a listing with
+// prose around it, by taking the listing out of the question.
+//
+// Letters and not words, because a display equation standing on its own is
+// the same case, and so is a line that is nothing but a figure's attribute
+// block. Digits do not count: a row of numbers between pipes has nothing
+// to translate either.
+func Translatable(text string) bool {
+	for _, r := range Prose(text) {
+		if unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // Clean takes off what a model wrapped its answer in.

@@ -226,8 +226,8 @@ the pages it came away from believing something the paper does not say.
 		}
 		inARow = 0
 		written++
-		fmt.Printf("%s %s %s: %d chunks, %d asks, %s\n",
-			o.job.lang, o.job.front.Paper, o.job.name, o.res.Chunks, o.res.Asks, strings.Join(o.res.Models, " and "))
+		fmt.Printf("%s %s %s: %d chunks, %d asks%s, %s\n",
+			o.job.lang, o.job.front.Paper, o.job.name, o.res.Chunks, o.res.Asks, kept(o.res), strings.Join(o.res.Models, " and "))
 		ship.done(o.job.front.Paper, true)
 		if *every > 0 && ship.pending() >= *every {
 			batch++
@@ -845,6 +845,24 @@ func gateways(path string) (map[string]bool, error) {
 // came back. The work directory is ignored by git and safe to delete, and
 // a run that cannot write there carries on: keeping a copy for a person to
 // read is not worth failing a translation over.
+// kept is what the line for one file says about the parts of it that were
+// not sent to a model: the chunks that had nothing written in a language in
+// them, and the listings that were taken out of a chunk and put back after.
+// Both are silent when there were none, which is most files.
+func kept(r translate.Result) string {
+	var parts []string
+	if r.Copied > 0 {
+		parts = append(parts, fmt.Sprintf("%d copied", r.Copied))
+	}
+	if r.Held > 0 {
+		parts = append(parts, fmt.Sprintf("%d listings held back", r.Held))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ", " + strings.Join(parts, ", ")
+}
+
 func keeper(c *corpus.Corpus) func(target, source, answer string) {
 	return func(target, source, answer string) {
 		dir := c.Work("refused")

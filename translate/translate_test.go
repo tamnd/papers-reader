@@ -354,6 +354,88 @@ func TestNothingIsKeptWhenTheAnswerIsAccepted(t *testing.T) {
 	}
 }
 
+// A chunk with no prose in it is the answer to itself, and asking about it
+// is how a run loses a section over a table.
+const table = "```text\nName   Metric   Split\nLAMBADA   acc   test\n```"
+
+func TestAChunkWithNothingToTranslateIsNotAskedAbout(t *testing.T) {
+	tr, asks := answering(t, func(string, int) string { return "should not have been asked" })
+	got, err := tr.Body(context.Background(), paper, corpus.VI, nil, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*asks) != 0 {
+		t.Errorf("%d asks about a passage that is one table", len(*asks))
+	}
+	if got.Copied != 1 {
+		t.Errorf("%d chunks were copied, want the table", got.Copied)
+	}
+	if strings.TrimSpace(got.Text) != table {
+		t.Errorf("the table did not come through as it was written:\n%s", got.Text)
+	}
+}
+
+// A listing with prose around it is one chunk, so the ask goes out with a
+// marker where the listing was and the listing is put back afterwards.
+func TestATableIsHeldBackFromTheQuestionAndPutBackAfter(t *testing.T) {
+	source := "The results are in the table below.\n\n" + table
+	tr, asks := answering(t, func(asked string, _ int) string {
+		if strings.Contains(body(asked), "LAMBADA") {
+			t.Error("the table was sent to the model")
+		}
+		return "Kết quả nằm trong bảng bên dưới.\n\n[[listing-1]]"
+	})
+	got, err := tr.Body(context.Background(), paper, corpus.VI, nil, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*asks) != 1 {
+		t.Errorf("%d asks for a passage of one paragraph and one table", len(*asks))
+	}
+	if got.Held != 1 {
+		t.Errorf("%d listings were held back, want the table", got.Held)
+	}
+	if !strings.Contains(got.Text, table) {
+		t.Errorf("the table did not come through as it was written:\n%s", got.Text)
+	}
+	if strings.Contains(got.Text, "listing-1") {
+		t.Errorf("a marker was left in the translation:\n%s", got.Text)
+	}
+}
+
+// Dropping the marker is dropping the table, and the answer is refused for
+// the same reason an answer that dropped the table itself would be.
+func TestAnAnswerThatDropsTheMarkerIsRefused(t *testing.T) {
+	source := "The results are in the table below.\n\n" + table
+	tr, _ := answering(t, func(string, int) string { return "Kết quả nằm trong bảng bên dưới." })
+	_, err := tr.Body(context.Background(), paper, corpus.VI, nil, source)
+	if err == nil {
+		t.Fatal("an answer with no table in it was written into the corpus")
+	}
+	if !strings.Contains(err.Error(), "LAMBADA") {
+		t.Errorf("the refusal does not say what went missing: %v", err)
+	}
+}
+
+func TestWhatCountsAsSomethingToTranslate(t *testing.T) {
+	for _, c := range []struct {
+		why  string
+		text string
+		want bool
+	}{
+		{"a paragraph", "The results are in the table below.", true},
+		{"a listing on its own", "```text\nName   Metric\n```", false},
+		{"a display equation on its own", "$$\nE = mc^2\n$$", false},
+		{"a figure attribute block on its own", "{#a-1970-paper-fig-1 .figure tag=0001}", false},
+		{"a row of numbers", "| 1 | 2 | 3 |", false},
+		{"a heading", "## The Results", true},
+	} {
+		if got := Translatable(c.text); got != c.want {
+			t.Errorf("%s: Translatable is %v, want %v", c.why, got, c.want)
+		}
+	}
+}
+
 func TestAnEmptyBodyAsksNothing(t *testing.T) {
 	tr, asks := answering(t, func(string, int) string { return "" })
 	got, err := tr.Body(context.Background(), paper, corpus.VI, nil, "\n\n  \n")
