@@ -371,6 +371,37 @@ func TestF09NoticesAFigureThePaperTalksAboutAndDoesNotHave(t *testing.T) {
 	}
 }
 
+// Not every figure is a picture. A worked example set as a table is the
+// figure itself and not a stand in for one, and the reader has it whether
+// or not a PNG of it was ever cut.
+func TestF09TakesACaptionOfItsOwnAsTheFigureBeingThere(t *testing.T) {
+	in := corpusOf(t, []figures.Figure{record("vaswani-2017-attention", "f01")}, map[string]string{
+		"figures/vaswani-2017-attention/f01.png": picture(t, 600, 400),
+		"content/en/vaswani-2017-attention/02_section.md": front("vaswani-2017-attention", "section",
+			"Figure 4 is discussed here.\n\n| a | b |\n| --- | --- |\n| c | d |\n\nFigure 4: A worked example."),
+	})
+	if res := result(t, Run(in, false), "F09"); res.Failed() {
+		t.Errorf("F09 asked for a figure the reader can already see: %v", res.Findings)
+	}
+}
+
+// The caption line is not the whole of what a caption line says. One that
+// points at another figure is still pointing at it.
+func TestF09ReadsTheRestOfACaptionLine(t *testing.T) {
+	in := corpusOf(t, []figures.Figure{record("vaswani-2017-attention", "f01")}, map[string]string{
+		"figures/vaswani-2017-attention/f01.png": picture(t, 600, 400),
+		"content/en/vaswani-2017-attention/02_section.md": front("vaswani-2017-attention", "section",
+			"Figure 1: The model, laid out the same way as Figure 9."),
+	})
+	res := result(t, Run(in, false), "F09")
+	if len(res.Findings) != 1 {
+		t.Fatalf("F09 found %d things, want 1: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.Contains(res.Findings[0].Message, "Figure 9") {
+		t.Errorf("F09 named the wrong figure: %v", res.Findings[0])
+	}
+}
+
 func TestF09IsSoft(t *testing.T) {
 	for _, r := range Rules() {
 		if r.ID == "F09" && r.Hard {

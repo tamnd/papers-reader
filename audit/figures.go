@@ -411,11 +411,27 @@ func ruleF08(in *Input) ([]Finding, error) {
 // figures for a figure 1 that was never there.
 var mention = regexp.MustCompile(`\b(?:Figure|Fig\.)\s+([0-9]{1,3}(?:[.\-][0-9a-zA-Z]+)*|[A-Z](?:[.\-][0-9a-zA-Z]+)+)\b`)
 
+// legend is a caption standing at the head of its own line, which is how the
+// assembler writes one and is not how a sentence refers to a figure.
+var legend = regexp.MustCompile(`^(?:Figure|Fig\.)\s+([0-9]{1,3}(?:[.\-][0-9a-zA-Z]+)*|[A-Z](?:[.\-][0-9a-zA-Z]+)+)\s*[:.]`)
+
 // ruleF09 is soft, and the reason is that it cannot tell the two causes
 // apart. A paper whose prose mentions Figure 7 and which has six figures may
 // have had its seventh dropped by the detector, or the seventh may be in an
 // appendix nobody fetched, or the sentence may be citing another paper's
 // figure. The rule's job is to say so and let a person look.
+//
+// A figure the manifest does not carry may still be in front of the reader.
+// Not every figure is a picture. Appendix G of the GPT-3 paper is fifty one
+// worked dataset examples, each one a box of text, and the extractor reads
+// them as the tables they are and sets them in the markdown. The figure is
+// there, better set than a screenshot of it would be, and asking for a PNG
+// of it as well would be asking for the page to be read twice.
+//
+// So a caption of its own on a line of its own counts as the figure being
+// present. That is the form the assembler writes, and prose does not use
+// it: a sentence says "as Figure 3 shows" and never opens a line with
+// "Figure 3:".
 func ruleF09(in *Input) ([]Finding, error) {
 	if len(in.Figures.Figures) == 0 {
 		return nil, ErrNotRun
@@ -434,7 +450,7 @@ func ruleF09(in *Input) ([]Finding, error) {
 		if err != nil {
 			return nil, err
 		}
-		missing := map[string]bool{}
+		var prose []string
 		for _, rel := range files {
 			if !strings.HasPrefix(rel, "content/en/") {
 				continue
@@ -443,7 +459,17 @@ func ruleF09(in *Input) ([]Finding, error) {
 			if err != nil {
 				return nil, err
 			}
-			for _, m := range mention.FindAllStringSubmatch(string(b), -1) {
+			for _, line := range strings.Split(string(b), "\n") {
+				if m := legend.FindStringSubmatch(line); m != nil {
+					numbered[m[1]] = true
+					line = line[len(m[0]):]
+				}
+				prose = append(prose, line)
+			}
+		}
+		missing := map[string]bool{}
+		for _, line := range prose {
+			for _, m := range mention.FindAllStringSubmatch(line, -1) {
 				if !numbered[m[1]] {
 					missing[m[1]] = true
 				}
