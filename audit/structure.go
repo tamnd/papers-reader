@@ -653,7 +653,14 @@ func ruleT12(in *Input) ([]Finding, error) {
 // markdownLink is an inline link or an inline image. A reference style link
 // is not matched and does not need to be: nothing writes one, and the
 // definition it would need would be a finding of its own.
-var markdownLink = regexp.MustCompile(`!?\[[^\]\n]*\]\([^)\n]*\)`)
+//
+// An escape is allowed inside the target because a model that writes an
+// address as a link escapes the punctuation in it, and Milner's doi has
+// parentheses: the target came back as
+// "https://doi.org/10.1016/0022-0000\(78\)90014-4", which a pattern that
+// stops at the first parenthesis reads as half a link and reports as a
+// link that is not the one on the line.
+var markdownLink = regexp.MustCompile(`!?\[[^\]\n]*\]\((?:\\.|[^)\n\\])*\)`)
 
 // ruleT13 is the word the page broke across two lines and the reader put
 // back together wrong.

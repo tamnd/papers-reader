@@ -253,6 +253,22 @@ func TestAnEscapedSelfLinkAndAnEscapedEmailArePutBack(t *testing.T) {
 	}
 }
 
+// Milner's doi, where the escapes are on the target rather than the label
+// and the parentheses are inside the link. A pattern that stops at the
+// first parenthesis sees half a link and repairs nothing, which is how the
+// front of that paper failed four passes of the run.
+func TestASelfLinkWhoseTargetIsEscapedIsPutBack(t *testing.T) {
+	source := "The proof is at https://doi.org/10.1016/0022-0000(78)90014-4 in full.\n"
+	answer := "Chứng minh đầy đủ ở [https://doi.org/10.1016/0022-0000(78)90014-4](https://doi.org/10.1016/0022-0000\\(78\\)90014-4).\n"
+	want := "Chứng minh đầy đủ ở https://doi.org/10.1016/0022-0000(78)90014-4.\n"
+	if got := Repair(source, answer); got != want {
+		t.Errorf("Repair gave\n%q\nand the address is written\n%q", got, want)
+	}
+	if bad := Verify(source, Repair(source, answer)); bad != nil {
+		t.Errorf("a repaired answer was still refused: %s", bad[0])
+	}
+}
+
 // A link that says something the target does not is prose the page did not
 // have, and no amount of unescaping makes the two halves one address.
 func TestALinkThatSaysSomethingElseIsLeftForVerify(t *testing.T) {

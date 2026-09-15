@@ -11,7 +11,7 @@ import (
 // The same shape audit rule T12 looks for, and the two have to stay the
 // same: what is taken out here is exactly what would be reported there, and
 // a body that leaves this package clean has to leave the audit clean too.
-var link = regexp.MustCompile(`!?\[[^\]\n]*\]\([^)\n]*\)`)
+var link = regexp.MustCompile(`!?\[[^\]\n]*\]\((?:\\.|[^)\n\\])*\)`)
 
 // Links lists the links in a body, ignoring the ones inside a formula or a
 // listing, where a pair of brackets followed by a pair of parentheses is
