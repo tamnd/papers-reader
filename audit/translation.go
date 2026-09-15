@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/tamnd/llm"
 
@@ -784,14 +785,54 @@ func untranslated(p pair) []int {
 	if len(want) != len(got) {
 		return nil
 	}
+	math := mathBlocks(p.en.Body, want)
 	var out []int
 	for i := start(p); i < len(want); i++ {
 		a, b := plainProse(want[i]), plainProse(got[i])
-		if a == "" || proseWords(a) < prosePerParagraph {
+		if math[i] || a == "" || proseWords(a) < prosePerParagraph {
 			continue
 		}
 		if a == b && !runningHead(p, a) {
 			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// mathBlocks marks the blocks of a body that lie inside a protected span.
+//
+// Blocks are cut at blank lines and spans are found over the whole body, so
+// the two disagree about a display that is written with room around it: a
+// line of $$, a blank line, the equation, a blank line, a line of $$. That
+// is three blocks, and the middle one is a paragraph of TeX to anything
+// reading a block on its own. Eight English files in the corpus are written
+// that way and the Cortes front page is one of them, where L07 read the
+// discriminant function as a paragraph the translator had left in English.
+//
+// plainProse cannot see it, because it protects the block it is given and
+// the block it is given has no delimiter in it. The delimiters are in the
+// blocks above and below.
+func mathBlocks(body string, blocks []string) []bool {
+	out := make([]bool, len(blocks))
+	spans := translate.Protect(body)
+	if len(spans) == 0 {
+		return out
+	}
+	at := 0
+	for i, b := range blocks {
+		off := strings.Index(body[at:], b)
+		if off < 0 {
+			continue
+		}
+		off += at
+		at = off + len(b)
+		from := utf8.RuneCountInString(body[:off])
+		to := from + utf8.RuneCountInString(b)
+		for _, s := range spans {
+			if s.Start <= from && to <= s.End {
+				out[i] = true
+				break
+			}
 		}
 	}
 	return out
@@ -1207,9 +1248,10 @@ func ruleL11(in *Input) ([]Finding, error) {
 		for _, i := range untranslated(p) {
 			whole[i] = true
 		}
+		math := mathBlocks(p.en.Body, want)
 		var out []Finding
 		for i := start(p); i < len(want); i++ {
-			if whole[i] {
+			if whole[i] || math[i] {
 				continue
 			}
 			english := sentences(plainProse(want[i]))

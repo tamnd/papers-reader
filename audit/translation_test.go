@@ -477,6 +477,27 @@ func TestL07LeavesAListingWithABlankLineInItAlone(t *testing.T) {
 	}
 }
 
+// display is a formula written with room around it, which is how eight of
+// the English files in this corpus print theirs. Cut at blank lines it is
+// three blocks and the middle one has no delimiter in it, so the block on
+// its own reads as a paragraph of TeX.
+const display = "$$\n" +
+	"\nF(x) = \\operatorname{sign} \\left[ \\frac{1}{2} (x - m_1)^T \\Sigma_1^{-1} (x - m_1) + \\ln \\frac{|\\Sigma_2|}{|\\Sigma_1|} \\right].\n" +
+	"\n$$"
+
+func TestL07LeavesADisplayWrittenWithRoomAroundItAlone(t *testing.T) {
+	middle := strings.Split(display, "\n\n")[1]
+	if n := proseWords(middle); n < prosePerParagraph {
+		t.Fatalf("the formula holds %d words, under the floor, so this test proves nothing", n)
+	}
+	en, tr := englishBody+"\n"+display+"\n", viBody+"\n"+display+"\n"
+	for _, id := range []string{"L07", "L11"} {
+		if res := result(t, pairOf(t, corpus.VI, en, tr), id); res.Failed() {
+			t.Errorf("%s asked for a formula to be translated: %v", id, res.Findings)
+		}
+	}
+}
+
 func TestProseWordsCountsWordsAndNotPunctuation(t *testing.T) {
 	for text, want := range map[string]int{
 		algol:                          6,
