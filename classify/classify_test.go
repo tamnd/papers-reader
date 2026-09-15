@@ -324,3 +324,22 @@ func TestTransliterated(t *testing.T) {
 		}
 	}
 }
+
+func TestBitmaps(t *testing.T) {
+	bitmap := poppler.Font{Name: "[none]", Type: "Type 3", Embedded: true}
+	named := poppler.Font{Name: "ABCDEF+CMR10", Type: "Type 1", Embedded: true, Unicode: true}
+	for _, c := range []struct {
+		what  string
+		fonts []poppler.Font
+		want  bool
+	}{
+		{"a file of nothing but nameless bitmaps", []poppler.Font{bitmap, bitmap, bitmap}, true},
+		{"one bitmap among real fonts", []poppler.Font{named, bitmap, named}, false},
+		{"no bitmap at all", []poppler.Font{named, named}, false},
+		{"a file with no fonts listed", nil, false},
+	} {
+		if got := Bitmaps(c.fonts); got != c.want {
+			t.Errorf("%s: Bitmaps is %v, want %v", c.what, got, c.want)
+		}
+	}
+}

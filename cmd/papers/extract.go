@@ -844,6 +844,23 @@ func (e *extraction) layer(ctx context.Context, file string) func(int) (string, 
 	default:
 		return nil
 	}
+	// A file set entirely in nameless bitmap fonts is born digital and has
+	// no text layer worth comparing anything against. What pdftotext prints
+	// for one is the position each little picture sits at in its font, so
+	// the layer is a string of characters the paper never set. It is what
+	// put the paper on the vision path in the first place: see
+	// classify.Measurement.Transliterated.
+	//
+	// Razborov's references are the page that showed this. They cite Russian
+	// work by its transliterated title, the layer holds "poluqeni" and
+	// "kvadratiqnyh", and A9 refused the model's reading for not reproducing
+	// them. Every pass of the run would have refused that page again.
+	//
+	// A font list that cannot be read leaves the rule on. A9 is a check and
+	// turning it off is the exception, so the exception has to be proved.
+	if fonts, err := poppler.FontList(ctx, file, e.first, e.last); err == nil && classify.Bitmaps(fonts) {
+		return nil
+	}
 	return pageLayer(ctx, file)
 }
 

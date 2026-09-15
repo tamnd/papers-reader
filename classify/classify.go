@@ -181,6 +181,18 @@ func (m Measurement) Mathematical() bool {
 // the years when TeX was published through dvips, and all of it is pictures.
 func (m Measurement) Transliterated() bool { return m.Fonts > 0 && m.Bitmap == m.Fonts }
 
+// Bitmaps is Transliterated asked of a font list rather than of a
+// measurement, for a caller that has the list and does not want the rest of
+// a measurement to get at the answer.
+func Bitmaps(fonts []poppler.Font) bool {
+	for _, f := range fonts {
+		if !f.Bitmap() {
+			return false
+		}
+	}
+	return len(fonts) > 0
+}
+
 // Verdict is the answer, and why.
 type Verdict struct {
 	Layer Layer
