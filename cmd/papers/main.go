@@ -48,6 +48,7 @@ var commands = []command{
 	{"refs", "M2", "parse bibliographies and link the citations", runRefs},
 	{"split", "M2", "cut a paper into one file per section", runSplit},
 	{"tags", "M2", "hand out permanent identifiers", runTags},
+	{"seal", "M2", "record a hand edit of an English file", runSeal},
 	{"glossary", "M6", "manage the controlled vocabulary", runGlossary},
 	{"translate", "M6", "produce Vietnamese, Chinese and Japanese", runTranslate},
 	{"roundtrip", "M6", "put a sample of the translations back into English and judge them", runRoundtrip},
