@@ -188,7 +188,7 @@ the pages it came away from believing something the paper does not say.
 		return err
 	}
 
-	t := &translate.Translator{Ask: ask, Tries: *tries, Logf: logf}
+	t := &translate.Translator{Ask: ask, Tries: *tries, Logf: logf, Keep: keeper(c)}
 	run := work.RunID()
 	ctx, stop := context.WithCancel(context.Background())
 	defer stop()
@@ -833,6 +833,33 @@ func gateways(path string) (map[string]bool, error) {
 		}
 	}
 	return out, nil
+}
+
+// keeper writes the last refused answer of a chunk into the work directory,
+// beside the source it was an answer to.
+//
+// A refusal prints sixty characters of each of the two spans that differ,
+// which says which span and not what is wrong with it. Three files of the
+// Vietnamese run were given up on over differences in a table of results
+// and in a query string, and reading any of them meant guessing at what
+// came back. The work directory is ignored by git and safe to delete, and
+// a run that cannot write there carries on: keeping a copy for a person to
+// read is not worth failing a translation over.
+func keeper(c *corpus.Corpus) func(target, source, answer string) {
+	return func(target, source, answer string) {
+		dir := c.Work("refused")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return
+		}
+		name := strings.Map(func(r rune) rune {
+			if r == ' ' || r == '/' {
+				return '-'
+			}
+			return r
+		}, target)
+		text := "# " + target + "\n\n## asked\n\n" + source + "\n\n## answered\n\n" + answer + "\n"
+		os.WriteFile(filepath.Join(dir, name+".md"), []byte(text), 0o644)
+	}
 }
 
 // commas reads a comma separated flag.

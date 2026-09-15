@@ -355,3 +355,33 @@ func TestC09LeavesOrdinaryProseAlone(t *testing.T) {
 		t.Errorf("C09 reported prose: %v", res.Findings)
 	}
 }
+
+// A closing fence with words after it closes nothing, so the fence runs on
+// and swallows the sentence. The shape is a reader writing an inline code
+// span as a display block.
+func TestC10FindsASentenceAfterAFence(t *testing.T) {
+	body := "Replace the word with the\n\n```text\n[MASK]\n``` token, e.g.,\n\n```text\nthe sentence with the word taken out\n```\n"
+	res := result(t, onePaper(t, body+pad), "C10")
+	if !res.Failed() {
+		t.Fatal("C10 passed a closing fence with a sentence after it")
+	}
+	if res.Findings[0].Line != 5 {
+		t.Errorf("C10 named line %d, want 5", res.Findings[0].Line)
+	}
+}
+
+func TestC10LeavesAPlainFencePairAlone(t *testing.T) {
+	body := "Before.\n\n```c\nint x;\n```\n\nAfter.\n"
+	if res := result(t, onePaper(t, body+pad), "C10"); res.Failed() {
+		t.Errorf("C10 reported an ordinary listing: %v", res.Findings)
+	}
+}
+
+// An attribute block after the fence is how a numbered listing carries its
+// tag, which rule C06 asks for.
+func TestC10LeavesAnAttributeBlockAlone(t *testing.T) {
+	body := "```c {#a-1970-paper-lst-1 .code tag=0001}\nint x;\n```\n"
+	if res := result(t, onePaper(t, body+pad), "C10"); res.Failed() {
+		t.Errorf("C10 reported a listing carrying its tag: %v", res.Findings)
+	}
+}

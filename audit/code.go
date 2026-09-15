@@ -529,6 +529,74 @@ func ruleC07(in *Input) ([]Finding, error) {
 	})
 }
 
+// ruleC10 is about a run of backticks with prose after it on the same line.
+//
+// CommonMark says a closing fence carries nothing after the backticks, so a
+// line like "``` token, e.g.," does not close anything: it is a line of the
+// listing, and the fence it should have closed runs on until the next bare
+// run of backticks, swallowing whatever prose is between them.
+//
+// It is a reader transcribing an inline code span as a display block. The
+// BERT appendix has a sentence about replacing a word with the [MASK] token,
+// and it came back as a fenced block holding [MASK], the words "token, e.g.,"
+// on the closing line, and another fenced block. Nothing else in the audit
+// saw it: the block is tagged text, which is the one tag C03 exempts, and
+// the tag on the opening line is a real tag, so C02 is happy too.
+//
+// It is worth a rule of its own because of what it does further down. The
+// translator holds a fenced block out of the question and compares it with
+// the answer byte for byte, so a block with a sentence inside it is a
+// sentence that may not be translated, and three attempts at the file were
+// refused for translating it before anybody looked at the English.
+//
+// A run with a single word after it is a fence with a language tag and is
+// C02's business, not this rule's. What this rule wants is the punctuation
+// and the spaces of a sentence.
+func ruleC10(in *Input) ([]Finding, error) {
+	return eachCodeFile(in, "C10", func(f *File) []Finding {
+		var out []Finding
+		for i, line := range strings.Split(f.Body, "\n") {
+			if !prosePastFence(line) {
+				continue
+			}
+			out = append(out, Finding{
+				Rule: "C10", File: f.Path, Line: i + 1,
+				Message: "a run of backticks here is followed by prose rather than a language tag, so it closes nothing and the fence runs on",
+			})
+		}
+		return out
+	})
+}
+
+// pastFence is a run of backticks or tildes and whatever follows it on the
+// line.
+var pastFence = regexp.MustCompile("^ {0,3}(?:`{3,}|~{3,})(.*)$")
+
+// prosePastFence reports whether a line is a fence run with prose after it
+// rather than a language tag.
+//
+// The test is on the first word alone, because what comes after a real tag
+// is a listing's attribute block and that is rule C06's business. A word
+// with a comma or a full stop in it is not a tag anybody writes, and a word
+// that could be one is left to C02, which knows the list of tags and will
+// say so if it is not on it.
+func prosePastFence(line string) bool {
+	m := pastFence.FindStringSubmatch(line)
+	if m == nil {
+		return false
+	}
+	rest := strings.TrimSpace(m[1])
+	if rest == "" {
+		return false
+	}
+	return !tagWord.MatchString(strings.Fields(rest)[0])
+}
+
+// tagWord is what a language tag may be spelled with: a letter, and then
+// the letters, digits and the handful of marks that the names of languages
+// have in them, c++ and c# and objective-c among them.
+var tagWord = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+#._-]*$`)
+
 // codeRules is the C group.
 func codeRules() []Rule {
 	return []Rule{
@@ -576,6 +644,11 @@ func codeRules() []Rule {
 			ID:    "C09",
 			What:  "no run of lines is lined up with spaces Markdown will collapse.",
 			Check: ruleC09,
+		},
+		{
+			ID: "C10", Hard: true,
+			What:  "no run of backticks has a sentence after it on the same line.",
+			Check: ruleC10,
 		},
 	}
 }

@@ -2,6 +2,7 @@ package translate
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -306,6 +307,50 @@ func TestWhatTheRunCostIsCountedIncludingTheRefusals(t *testing.T) {
 	}
 	if got.Usage.InputTokens != 200 || got.Usage.OutputTokens != 20 {
 		t.Errorf("the run cost %+v, and two asks were made", got.Usage)
+	}
+}
+
+// The last answer of a chunk that was given up on is handed to the caller,
+// because the refusal line is sixty characters of each span and a person
+// reading it afterwards wants the whole thing.
+func TestTheLastRefusedAnswerIsHandedOver(t *testing.T) {
+	const source = "Let $x$ be the input."
+	var target, asked, answered string
+	calls := 0
+	tr := &Translator{
+		Logf: func(string, ...any) {},
+		Ask: func(_ context.Context, _ string, _ llm.Request, attempt int) (Reply, error) {
+			return Reply{Response: llm.Response{Text: fmt.Sprintf("G\u1ecdi $y_%d$ l\u00e0 \u0111\u1ea7u v\u00e0o.", attempt)}}, nil
+		},
+		Keep: func(tg, src, ans string) {
+			calls++
+			target, asked, answered = tg, src, ans
+		},
+	}
+	if _, err := tr.Body(context.Background(), paper, corpus.VI, nil, source); err == nil {
+		t.Fatal("a chunk that was refused three times came back as a translation")
+	}
+	if calls != 1 {
+		t.Errorf("the answer was kept %d times, want once at the end", calls)
+	}
+	if asked != source {
+		t.Errorf("the source handed over is %q", asked)
+	}
+	if !strings.Contains(answered, "y_3") {
+		t.Errorf("the answer handed over is %q, and the third attempt is the last one", answered)
+	}
+	if target == "" {
+		t.Error("the chunk handed over has no name on it")
+	}
+}
+
+func TestNothingIsKeptWhenTheAnswerIsAccepted(t *testing.T) {
+	tr, _ := answering(t, func(string, int) string { return "Đoạn đầu tiên." })
+	tr.Keep = func(string, string, string) {
+		t.Error("an accepted answer was kept as a refusal")
+	}
+	if _, err := tr.Body(context.Background(), paper, corpus.VI, nil, "The first paragraph."); err != nil {
+		t.Fatal(err)
 	}
 }
 

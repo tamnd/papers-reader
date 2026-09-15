@@ -69,6 +69,17 @@ type Translator struct {
 	// on. Zero means Tries.
 	Tries int
 	Logf  func(string, ...any)
+	// Keep is handed the last answer of a chunk that was given up on, along
+	// with the source that was asked about.
+	//
+	// A refusal prints the two spans that differ, cut to sixty characters so
+	// a run of forty files stays readable, and sixty characters is enough to
+	// see that a table did not come back the same and not enough to see how.
+	// Three files in the Vietnamese run were given up on for differences
+	// nobody could read, and the answers that caused them were gone the
+	// moment the run moved on. The caller decides where to put them, and
+	// whether to keep them at all.
+	Keep func(target, source, answer string)
 }
 
 // Tries is how many times one chunk is asked.
@@ -172,6 +183,9 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 		worst = bad[0].String()
 		out.Refused = append(out.Refused, target+": "+worst)
 		t.logf("%s: refused on attempt %d, %s", target, attempt, worst)
+		if attempt == t.tries() && t.Keep != nil {
+			t.Keep(target, c.Text, answer)
+		}
 	}
 	return "", fmt.Errorf("%s: %d answers were refused, the last because %s", target, t.tries(), worst)
 }
