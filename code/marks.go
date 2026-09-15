@@ -31,6 +31,17 @@ var statement = regexp.MustCompile(`^\s*(?:` +
 	`|(?:def|func|function|procedure|class)\s+\w+\s*\(` +
 	`)`)
 
+// assign matches an assignment written with a colon and an equals sign, which
+// is ALGOL, Pascal and the notation most of the older papers in this corpus
+// print their algorithms in. It is separate because the pattern above is
+// anchored at the head of a line and an assignment sits in the middle of one.
+//
+// English does not write it. Floyd's Algorithm 97 is ten lines of ALGOL 60,
+// and the only keyword in it the pattern above knows is a lower case begin,
+// which prose writes too. Without this the listing carried no evidence at all
+// and went out of the corpus unfenced.
+var assign = regexp.MustCompile(`\S\s*:=`)
+
 // semicolon matches a line that ends in a semicolon, which in prose happens
 // where a sentence is joined to the next and in a program happens on almost
 // every line.
@@ -52,12 +63,12 @@ var semicolon = regexp.MustCompile(`[^\s;];\s*$`)
 // a body and the assembler is deciding whether one paragraph is the rest of
 // another.
 func Mark(line string) bool {
-	return statement.MatchString(line) || semicolon.MatchString(line)
+	return Statement(line) || semicolon.MatchString(line)
 }
 
 // Statement reports whether a line carries the stronger half of a mark: a
-// brace, a directive, a comment or a declaration, and not merely a semicolon
-// at the end of it.
+// brace, a directive, a comment, a declaration or an assignment, and not
+// merely a semicolon at the end of it.
 //
 // The two halves are not equal evidence and one caller needs to know which
 // it has. A semicolon ending a line is how a program is written and also how
@@ -65,7 +76,7 @@ func Mark(line string) bool {
 // poem with a semicolon at the end of two of them. Nothing else about those
 // lines says program. The other marks have no reading in English at all.
 func Statement(line string) bool {
-	return statement.MatchString(line)
+	return statement.MatchString(line) || assign.MatchString(line)
 }
 
 // Marks is how many lines of a stretch of text carry one.

@@ -192,6 +192,17 @@ func TestStatementIsTheHalfOfAMarkThatIsNotPunctuation(t *testing.T) {
 		{"int i = 0;", true, true},
 		{"hears the wind and the rustling of leaves;", true, false},
 		{"the shadows wait,", false, false},
+		// ALGOL, which is what the oldest papers in the corpus print and
+		// which has none of the marks above in it. The keywords read as
+		// English and the assignment does not.
+		{"begin s := m[j, i] + m[i, k];", true, true},
+		{"if s < m[j, k] then m[j, k] := s", true, true},
+		{"for i := 1 step 1 until n do", true, true},
+		{"begin", false, false},
+		{"end shortest path", false, false},
+		// A colon at the end of a clause, with the next one opening on an
+		// equals sign, is not an assignment.
+		{"the two are equal: = holds in both directions", false, false},
 	} {
 		if got := Mark(c.line); got != c.mark {
 			t.Errorf("Mark(%q) is %v, want %v", c.line, got, c.mark)

@@ -222,6 +222,13 @@ const (
 // of the corpus gets is a paragraph in a proportional font with `#include
 // <math.h>` in it, and the `<math.h>` is eaten by the renderer as a tag.
 //
+// The masthead of a front page is skipped, which is the same exception rule
+// C09 makes and for the same reason. The TraceMonkey paper has sixteen
+// authors at four institutions and prints each institution's addresses as a
+// brace list, {gal,brendan,shaver}@mozilla.com, which opens on a brace and
+// so reads as a block of C. Four of those with an affiliation line between
+// each pair is an eight line listing as far as this rule can tell.
+//
 // The prompt asks for the fence in as many words and the reader ignored it,
 // which is the same thing that happens with the math delimiters, so this is
 // not something a better prompt fixes. It is soft because the marks below are
@@ -233,30 +240,72 @@ func ruleC08(in *Input) ([]Finding, error) {
 		var out []Finding
 		lines := strings.Split(f.Body, "\n")
 		skip := protectedLines(f.Body, len(lines))
-		for i := 0; i < len(lines); i++ {
+		for i := mastheadLines(f); i < len(lines); i++ {
 			if skip[i+1] || strings.TrimSpace(lines[i]) == "" {
 				continue
 			}
-			end, marks, statements := i, 0, 0
-			for end < len(lines) && !skip[end+1] && strings.TrimSpace(lines[end]) != "" {
+			end, run, marks, statements := i, 0, 0, 0
+			for end < len(lines) && !skip[end+1] {
+				if strings.TrimSpace(lines[end]) == "" {
+					if !continues(lines, skip, end, marks) {
+						break
+					}
+					end++
+					continue
+				}
 				if code.Mark(lines[end]) {
 					marks++
 				}
 				if code.Statement(lines[end]) {
 					statements++
 				}
+				run++
 				end++
 			}
-			if end-i >= minLooseRun && marks >= minLooseMarks && statements > 0 {
+			if run >= minLooseRun && marks >= minLooseMarks && statements > 0 {
 				out = append(out, Finding{
 					Rule: "C08", File: f.Path, Line: i + 1,
-					Message: fmt.Sprintf("%d lines here read as program text and are not in a fence", end-i),
+					Message: fmt.Sprintf("%d lines here read as program text and are not in a fence", run),
 				})
 			}
 			i = end
 		}
 		return out
 	})
+}
+
+// continues reports whether the blank line at at is inside a listing rather than
+// at the end of one, which it is when a marked line stands on each side of it.
+//
+// A reader that is given a program and asked for Markdown sometimes writes
+// every line of it as its own paragraph. Floyd's Algorithm 97 came back that
+// way, ten lines of ALGOL 60 with a blank line between each pair, and read as
+// runs of one line it was ten runs of one line and no listing at all. It went
+// out unfenced, and the translator then left the program lines in English
+// because they are not prose, which is how a rule about fences turned into
+// three findings from the rule about untranslated paragraphs.
+//
+// One blank line and no more, and the line above it marked. Two blank lines
+// is a gap between two things and stops the run either way.
+//
+// The line below is allowed to carry the mark instead, but only once the run
+// has one of its own. That second case is for the unmarked lines a listing
+// has inside it: an ALGOL block opens on a bare begin and closes on a bare
+// end, and wanting the line above every blank to be marked cut Floyd's ten
+// lines into a run of one, a run of one and a run of three, which pointed
+// the reader at the middle of the listing. Letting the line below carry it
+// from the start would be worse, because the sentence introducing a listing
+// sits one blank line above the listing and would be read as the first line
+// of it.
+func continues(lines []string, skip []bool, at, marks int) bool {
+	next := at + 1
+	if at == 0 || next >= len(lines) || skip[next+1] || strings.TrimSpace(lines[next]) == "" {
+		return false
+	}
+	if code.Mark(lines[at-1]) {
+		return true
+	}
+	return marks > 0 && code.Mark(lines[next])
 }
 
 // aligned matches a run of three or more spaces between two things that are

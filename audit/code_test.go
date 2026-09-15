@@ -175,6 +175,38 @@ func TestC08LeavesAListingInAFenceAlone(t *testing.T) {
 	}
 }
 
+// A reader given a program sometimes writes every line of it as its own
+// paragraph. Floyd's Algorithm 97 came back that way and the rule saw ten
+// runs of one line, so the listing went out unfenced and the translator then
+// left the program lines in English.
+func TestC08FindsAListingWrittenAsOneLineParagraphs(t *testing.T) {
+	body := "The procedure is this.\n\n" +
+		"procedure shortest path (m, n); value n; integer n; array m;\n\n" +
+		"begin\n\n" +
+		"integer i, j, k; real inf, s; inf := 1010;\n\n" +
+		"for i := 1 step 1 until n do\n\n" +
+		"if s < m[j, k] then m[j, k] := s\n\n" +
+		"end shortest path\n" + pad
+	res := result(t, onePaper(t, body), "C08")
+	if !res.Failed() {
+		t.Fatal("C08 passed an ALGOL procedure written a line to a paragraph")
+	}
+	if res.Findings[0].Line != 3 {
+		t.Errorf("C08 named line %d, want the first line of the listing", res.Findings[0].Line)
+	}
+}
+
+// Two blank lines is a gap between two things and not a listing with room in
+// it, so the run stops there and neither half is long enough to report.
+func TestC08StopsAtAGapOfTwoBlankLines(t *testing.T) {
+	body := "The value of i := 1 is fixed throughout.\n\n\n" +
+		"The value of j := 2 is fixed as well.\n\n\n" +
+		"The value of k := 3 is what varies.\n" + pad
+	if res := result(t, onePaper(t, body), "C08"); res.Failed() {
+		t.Errorf("C08 joined paragraphs across a gap: %v", res.Findings)
+	}
+}
+
 // The reason the rule wants three lines and two marks rather than one of
 // either. Prose puts a brace in a citation, a semicolon at the end of a
 // clause and a capitalised word at the head of a line, and none of those is
@@ -211,6 +243,27 @@ func TestC08LeavesProseAlone(t *testing.T) {
 				t.Errorf("C08 reported prose: %v", res.Findings)
 			}
 		})
+	}
+}
+
+// A paper with authors at four institutions prints each institution's
+// addresses as a brace list, and a brace at the head of a line is one of the
+// marks. Four of those with an affiliation line between each pair is an
+// eight line listing as far as this rule can tell.
+func TestC08LeavesTheMastheadAlone(t *testing.T) {
+	front := "A Paper With Authors At Two Institutions\n\n" +
+		"Ada Lovelace*, Grace Hopper†\n\n" +
+		"A University*\n\n" +
+		"{ada,grace}@a.example\n\n" +
+		"Another University†\n\n" +
+		"{turing,hoare}@b.example\n\n" +
+		abstract
+	rep := Run(in(t, map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), front),
+	}), false)
+	if res := result(t, rep, "C08"); res.Failed() {
+		t.Errorf("C08 reported a byline: %v", res.Findings)
 	}
 }
 
