@@ -43,6 +43,9 @@ const (
 	// is markup the English does not have, in a corpus whose vocabulary has
 	// no links in it.
 	URL Kind = "url"
+	// Email is an email address, which a paper prints next to an author's
+	// name and which is as much a thing to be copied as a web address is.
+	Email Kind = "email address"
 )
 
 // A Span is one stretch of a body that a translation has to reproduce byte
@@ -112,6 +115,12 @@ func Protect(body string) []Span {
 	}
 	for _, m := range address.FindAllStringIndex(body, -1) {
 		add(URL, runeIndex(body, m[0]), runeIndex(body, m[1]))
+	}
+	// The addresses first, because a web address can end in something that
+	// reads as an email: "http://a.org/x@y.com" is one address and not two
+	// things.
+	for _, m := range mail.FindAllStringIndex(body, -1) {
+		add(Email, runeIndex(body, m[0]), runeIndex(body, m[1]))
 	}
 	sortByStart(out)
 	return out
@@ -186,6 +195,19 @@ var (
 	// such address, and the answer was refused for adding a URL that is the
 	// paper's own with one invisible character on the end of it.
 	address = regexp.MustCompile(`\b(?:https?://|www\.)[^\s\p{Z}\p{Cf}<>()\[\]"]*[^\s\p{Z}\p{Cf}<>()\[\]".,;:!?]`)
+
+	// mail is an email address, which a paper prints next to an author's
+	// name on the title page and nowhere else. It is protected for the same
+	// reason an address is: it is typed in rather than written, and a
+	// translator that touches one decorates it.
+	//
+	// The backslash in front of the at sign is allowed into the match so
+	// that the decorated form is one span rather than none. The AIMD paper's
+	// front came back three times running with "jain\@cse.wustl.edu", and
+	// without the backslash in the pattern there is nothing for Unescape to
+	// take hold of: the local part stops at the backslash and what is left
+	// is a domain that reads as no address at all.
+	mail = regexp.MustCompile(`[A-Za-z0-9._%+\-]+\\?@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+`)
 )
 
 // A Difference is one way a translation's protected spans are not the

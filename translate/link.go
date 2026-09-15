@@ -60,11 +60,15 @@ func Unlink(source, answer string) string {
 			continue
 		}
 		text, target, ok := halves(whole)
-		if !ok || text == "" || text != target {
+		if !ok || text == "" {
+			continue
+		}
+		plain := selfLink(source, text, target)
+		if plain == "" {
 			continue
 		}
 		b.WriteString(answer[at:m[0]])
-		b.WriteString(text)
+		b.WriteString(plain)
 		at = m[1]
 	}
 	if at == 0 {
@@ -72,6 +76,45 @@ func Unlink(source, answer string) string {
 	}
 	b.WriteString(answer[at:])
 	return b.String()
+}
+
+// selfLink is the address a link points at, when the link is that address
+// and nothing more. It is the empty string for a link that says anything
+// the target does not.
+//
+// The two halves are usually the same string, which is the plain shape of
+// the tic. They also come back differing by a backslash: the AIMD paper's
+// front page came back three times running as
+// "[http://www.cse.wustl.edu/\~jain](http://www.cse.wustl.edu/~jain)",
+// which is the linking tic and the escaping tic written on top of one
+// another. Neither repair sees it on its own. Unlink wants the two halves
+// to be equal and they are not, and Unescape never gets a turn because the
+// answer is thrown away for having a link in it first.
+//
+// Taking the escapes off both halves says whether it is still the one
+// address, and what goes back is whichever spelling the source has, so
+// nothing is decided here about how the paper wrote it.
+func selfLink(source, text, target string) string {
+	if text == target {
+		return text
+	}
+	if bare(text) != bare(target) {
+		return ""
+	}
+	return pick(source, []string{target, text, bare(target)})
+}
+
+// bare is a string with its Markdown escapes taken off, as many rounds as
+// it takes, for deciding whether two spellings are the same address.
+func bare(s string) string {
+	for i := 0; i < 3; i++ {
+		next := escape.ReplaceAllString(s, "$1")
+		if next == s {
+			break
+		}
+		s = next
+	}
+	return s
 }
 
 // Unescape takes the Markdown escapes out of a web address a model wrote
@@ -111,7 +154,7 @@ func Unescape(source, answer string) string {
 	var b strings.Builder
 	at := 0
 	for _, s := range Protect(answer) {
-		if s.Kind != URL || s.Start < at {
+		if s.Kind != URL && s.Kind != Email || s.Start < at {
 			continue
 		}
 		end := token(rs, s.End)

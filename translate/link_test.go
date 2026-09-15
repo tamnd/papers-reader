@@ -237,3 +237,41 @@ func TestRepairPutsBackAnAddressAndAFormulaAtOnce(t *testing.T) {
 		t.Errorf("Repair gave %q\nand the passage is written %q", got, want)
 	}
 }
+
+// The AIMD front page: the address linked to itself with the label escaped,
+// which is the linking tic and the escaping tic written on top of each
+// other, and an author's email with the at sign escaped beside it.
+func TestAnEscapedSelfLinkAndAnEscapedEmailArePutBack(t *testing.T) {
+	source := "Write to jain@cse.wustl.edu, http://www.cse.wustl.edu/~jain for the note.\n"
+	answer := "Gửi thư tới jain\\@cse.wustl.edu, [http://www.cse.wustl.edu/\\~jain](http://www.cse.wustl.edu/~jain) để biết thêm.\n"
+	want := "Gửi thư tới jain@cse.wustl.edu, http://www.cse.wustl.edu/~jain để biết thêm.\n"
+	if got := Repair(source, answer); got != want {
+		t.Errorf("Repair gave\n%q\nand the passage is written\n%q", got, want)
+	}
+	if bad := Verify(source, Repair(source, answer)); bad != nil {
+		t.Errorf("a repaired answer was still refused: %s", bad[0])
+	}
+}
+
+// A link that says something the target does not is prose the page did not
+// have, and no amount of unescaping makes the two halves one address.
+func TestALinkThatSaysSomethingElseIsLeftForVerify(t *testing.T) {
+	source := "See http://x.test/a for the note.\n"
+	answer := "Xem [trang chủ](http://x.test/a) để biết thêm.\n"
+	if got := Unlink(source, answer); got != answer {
+		t.Errorf("Unlink gave %q and should have left the link alone", got)
+	}
+	if bad := Verify(source, answer); bad == nil {
+		t.Error("an answer with an invented link in it was accepted")
+	}
+}
+
+// An email is a protected span, so a model that translates the local part
+// or the domain is refused rather than written into the corpus.
+func TestAnEmailThatCameBackChangedIsRefused(t *testing.T) {
+	source := "Write to jain@cse.wustl.edu for the note.\n"
+	answer := "Gửi thư tới jain@cse.wustl.edu.vn để biết thêm.\n"
+	if bad := Verify(source, answer); bad == nil {
+		t.Error("an answer that changed an email address was accepted")
+	}
+}

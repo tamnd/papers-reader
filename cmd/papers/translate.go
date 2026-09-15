@@ -854,7 +854,9 @@ func kept(r translate.Result) string {
 	if r.Copied > 0 {
 		parts = append(parts, fmt.Sprintf("%d copied", r.Copied))
 	}
-	if r.Held > 0 {
+	if r.Held == 1 {
+		parts = append(parts, "1 listing held back")
+	} else if r.Held > 1 {
 		parts = append(parts, fmt.Sprintf("%d listings held back", r.Held))
 	}
 	if len(parts) == 0 {
