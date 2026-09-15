@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -218,6 +219,9 @@ func hardFindings(c *corpus.Corpus) func() ([]audit.Finding, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := pending(c, in); err != nil {
+			return nil, err
+		}
 		var out []audit.Finding
 		for _, res := range audit.Run(in, true).Results {
 			if res.Err != nil {
@@ -227,6 +231,34 @@ func hardFindings(c *corpus.Corpus) func() ([]audit.Finding, error) {
 		}
 		return out, nil
 	}
+}
+
+// pending counts what the run has written and not yet committed as tracked,
+// because the gate is asking whether the corpus is sound after this batch and
+// the batch is what puts those files into git.
+//
+// Two rules read git's index rather than the disk, F04 for a figure and S03
+// for a PDF, and they are right to: a figure that was rendered and never
+// committed is a figure the site asks for and does not get. But the publish
+// gate runs a few seconds before the commit that would hold it, so every
+// paper with a picture in it was refused for a figure that was on its way in.
+// The Paxos paper is two figures and it was held back by both of them.
+//
+// A nil tracked list means this is not a git checkout and the two rules stand
+// down. It stays nil here, because a list built out of git status without a
+// git to ask would be a list of nothing dressed up as an answer.
+func pending(c *corpus.Corpus, in *audit.Input) error {
+	if in.Tracked == nil {
+		return nil
+	}
+	changes, err := publish.Changed(context.Background(), publish.Exec, c.Root, publish.Roots)
+	if err != nil {
+		return err
+	}
+	for _, ch := range changes {
+		in.Tracked = append(in.Tracked, ch.Path)
+	}
+	return nil
 }
 
 // blamed is the paper of the batch a finding is about, or the empty string
