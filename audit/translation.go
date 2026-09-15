@@ -44,6 +44,13 @@ type pair struct {
 	// page prints it as a running head and a translation is right to leave
 	// it as printed. See runningHead.
 	venue string
+	// stale says the translation answers an English file that has been
+	// written again since. It is the recorded source hash against the hash
+	// the English now carries, and it is false where either is missing:
+	// a file that records no hash is rule L05's finding and an English file
+	// with none is nobody's, and neither is evidence that the translation is
+	// out of date.
+	stale bool
 }
 
 // pairs matches every translated file with its English.
@@ -80,9 +87,19 @@ func pairs(in *Input) []pair {
 				en = named
 			}
 		}
-		out = append(out, pair{en: en, tr: f, venue: venue[f.Paper]})
+		out = append(out, pair{en: en, tr: f, venue: venue[f.Paper], stale: stale(en, f)})
 	}
 	return out
+}
+
+// stale reports whether a translation answers an English file that has been
+// written again since it was made.
+func stale(en, tr *File) bool {
+	if en == nil {
+		return false
+	}
+	was, is := tr.Front.SourceContentSHA256, en.Front.ContentSHA256
+	return was != "" && is != "" && was != is
 }
 
 func base(path string) string {
@@ -104,7 +121,36 @@ func base(path string) string {
 // L04, which is the rule that says so. There is nothing for the others to
 // compare it with, and eighteen findings about one file is eighteen ways of
 // saying the same thing.
+//
+// A stale translation is skipped for the same reason. The English of a
+// paper is re-read whenever the extraction improves, and until the
+// translator catches up the file on disk is a faithful translation of an
+// English that is no longer there. Measured against the English that is,
+// every rule in this group fires at once and every one of them is wrong:
+// the Paxos front page grew from an abstract to six pages, and the Japanese
+// and Chinese of the old abstract were reported as having dropped two
+// citations, both headings and half the paper. What is actually wrong with
+// those files is that they are out of date, which is rule L20, and it is
+// one finding rather than a hundred.
 func eachTranslation(in *Input, check func(pair) []Finding) ([]Finding, error) {
+	return each(in, func(p pair) []Finding {
+		if p.stale {
+			return nil
+		}
+		return check(p)
+	})
+}
+
+// eachTranslationFile is eachTranslation for a rule that reads the
+// translation on its own and not against its English: whether it records
+// where it came from, what wrote it, what script it is in, and whether it is
+// an apology rather than a translation. Those questions have the same answer
+// whatever the English has done since, so a stale file is still asked them.
+func eachTranslationFile(in *Input, check func(pair) []Finding) ([]Finding, error) {
+	return each(in, check)
+}
+
+func each(in *Input, check func(pair) []Finding) ([]Finding, error) {
 	all := pairs(in)
 	if len(all) == 0 {
 		return nil, ErrNotRun
@@ -216,6 +262,11 @@ func translationRules() []Rule {
 			ID: "L19", Hard: false,
 			What:  "the section title of a translation was translated too.",
 			Check: ruleL19,
+		},
+		{
+			ID: "L20", Hard: false,
+			What:  "every translation answers the English as it now stands.",
+			Check: ruleL20,
 		},
 	}
 }
@@ -360,7 +411,7 @@ func ruleL04(in *Input) ([]Finding, error) {
 // not a failure here: the English moving is expected and papers translate
 // queues the file again. A hash that is absent is.
 func ruleL05(in *Input) ([]Finding, error) {
-	return eachTranslation(in, func(p pair) []Finding {
+	return eachTranslationFile(in, func(p pair) []Finding {
 		var out []Finding
 		if p.tr.Front.TranslatedFrom == "" {
 			out = append(out, Finding{
@@ -1002,7 +1053,7 @@ func plainProse(s string) string {
 // rejected, so that coverage.md can say how much of the corpus is
 // provisional and the reading app can say so on the page.
 func ruleL08(in *Input) ([]Finding, error) {
-	return eachTranslation(in, func(p pair) []Finding {
+	return eachTranslationFile(in, func(p pair) []Finding {
 		if !p.tr.Front.SmallModel && !llm.SmallModel(p.tr.Front.TranslationModel) {
 			return nil
 		}
@@ -1014,7 +1065,7 @@ func ruleL08(in *Input) ([]Finding, error) {
 }
 
 func ruleL15(in *Input) ([]Finding, error) {
-	return eachTranslation(in, func(p pair) []Finding {
+	return eachTranslationFile(in, func(p pair) []Finding {
 		if !p.tr.Front.Gateway {
 			return nil
 		}
@@ -1456,7 +1507,7 @@ var named = map[string]*unicode.RangeTable{
 }
 
 func ruleL13(in *Input) ([]Finding, error) {
-	return eachTranslation(in, func(p pair) []Finding {
+	return eachTranslationFile(in, func(p pair) []Finding {
 		allowed := scripts[p.tr.Lang]
 		if allowed == nil {
 			return nil
@@ -1637,7 +1688,7 @@ var providerErrors = []string{
 }
 
 func ruleL17(in *Input) ([]Finding, error) {
-	return eachTranslation(in, func(p pair) []Finding {
+	return eachTranslationFile(in, func(p pair) []Finding {
 		if strings.TrimSpace(p.tr.Body) == "" {
 			return []Finding{{
 				Rule: "L17", File: p.tr.Path,
@@ -1667,5 +1718,29 @@ func ruleL17(in *Input) ([]Finding, error) {
 			}
 		}
 		return out
+	})
+}
+
+// ruleL20 is the translation that answers an English file which has been
+// written again since.
+//
+// Soft, because it is the normal state of a corpus that is still being
+// read. The English of a paper is rewritten whenever the extraction
+// improves and the translator catches up on the next pass, so a hard rule
+// here would hold back every paper the day its English got better, which is
+// the one day it is most worth publishing.
+//
+// It exists so that the work owed is written down somewhere. The other
+// rules in this group stand down on a stale file, and a file nothing
+// reports is a file nobody does again.
+func ruleL20(in *Input) ([]Finding, error) {
+	return eachTranslationFile(in, func(p pair) []Finding {
+		if !p.stale {
+			return nil
+		}
+		return []Finding{{
+			Rule: "L20", File: p.tr.Path,
+			Message: fmt.Sprintf("this answers %s as it was and that file has been written again since, so it needs translating again", p.en.Path),
+		}}
 	})
 }

@@ -30,7 +30,17 @@ var (
 	PaperCite = regexp.MustCompile(`\[\[([a-z][a-z0-9]*-[0-9]{4}-[a-z0-9]+)\]\]`)
 
 	// NumCite is a numeric citation, single or a list or a range.
-	NumCite = regexp.MustCompile(`\[([0-9]+(?:\s*[,\x{2013}-]\s*[0-9]+)*)\]`)
+	//
+	// Three digits at most, which is the cap the refs package already puts
+	// on the citations it rewrites. A bibliography label is a small number
+	// and the longest reference list in the corpus is under two hundred
+	// entries, so a four digit number in brackets is the year of an author
+	// and year citation and not a label. The Paxos paper writes "the
+	// explanation of the algorithm for computer scientists by Lampson
+	// [1996]", its bibliography has no entry 1996 and never will, and
+	// without the cap that page carried six links to nothing and rule P02
+	// held the paper out of the corpus for all six.
+	NumCite = regexp.MustCompile(`\[([0-9]{1,3}(?:\s*[,\x{2013}-]\s*[0-9]{1,3})*)\]`)
 
 	// Digits picks the numbers out of one of those, so that [3, 7] links
 	// twice and the comma between stays punctuation.

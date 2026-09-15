@@ -1110,3 +1110,67 @@ func TestL18FindsAListingThatMoved(t *testing.T) {
 		t.Fatal("L18 passed a listing whose program changed")
 	}
 }
+
+// The English of a paper is re-read whenever the extraction improves, and
+// until the translator catches up the file on disk answers an English that
+// is no longer there. That is L20's finding and it is not the other rules'.
+func TestL20FindsATranslationOfAnEnglishThatHasMoved(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(
+			answer(corpus.VI, "section", "the English as it stood a month ago"), viBody),
+	}), false)
+
+	res := result(t, rep, "L20")
+	if len(res.Findings) != 1 {
+		t.Fatalf("L20 found %d on one stale translation: %v", len(res.Findings), res.Findings)
+	}
+}
+
+// A translation of the English as it stands is not stale and L20 says
+// nothing about it.
+func TestL20SaysNothingAboutACurrentTranslation(t *testing.T) {
+	if res := result(t, pairOf(t, corpus.VI, englishBody, viBody), "L20"); res.Failed() {
+		t.Errorf("L20 reported a current translation: %v", res.Findings)
+	}
+}
+
+// The Paxos front page grew from an abstract to six pages and the Japanese
+// of the old abstract was reported as having dropped two citations, both
+// headings and half the paper. One finding about a stale file, not a
+// hundred.
+func TestTheComparisonRulesStandDownOnAStaleTranslation(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(
+			answer(corpus.VI, "section", "the English as it stood a month ago"),
+			"Một đoạn văn không có gì chung với bản tiếng Anh.\n"),
+	}), false)
+
+	for _, id := range []string{"L01", "L03", "L07", "L16", "L18"} {
+		if res := result(t, rep, id); res.Failed() {
+			t.Errorf("%s reported a stale translation: %v", id, res.Findings)
+		}
+	}
+}
+
+// A stale file is still asked what wrote it and what script it is in,
+// because those have the same answer whatever the English has done since.
+func TestTheFileRulesStillRunOnAStaleTranslation(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(
+			answer(corpus.VI, "section", "the English as it stood a month ago"),
+			"I'm sorry, I cannot translate this page.\n"),
+	}), false)
+
+	if res := result(t, rep, "L17"); !res.Failed() {
+		t.Error("L17 passed an apology because the file was out of date")
+	}
+}
