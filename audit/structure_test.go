@@ -2,6 +2,7 @@ package audit
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -458,6 +459,100 @@ func TestS09AcceptsAPaperAndItsBlankVerso(t *testing.T) {
 	if res := result(t, Run(build(t, files), true), "S09"); res.Failed() {
 		t.Errorf("S09 refused a paper with one blank page: %v", res.Findings)
 	}
+}
+
+// S10 is the rule for the fault that got past every other one: the front
+// file of a restricted paper carrying a different paper's text, whole,
+// because the pages that were read were not the pages the paper is on.
+func TestS10CatchesAQuotationOffTheWrongPaper(t *testing.T) {
+	body := "ALGORITHM 93\n\nGENERAL ORDER ARITHMETIC\n\nMillard H. Perstein\n\nThis procedure performs different order arithmetic operations, putting the result in the first parameter, and the order of the operation is given by the fourth.\n"
+	files := map[string]string{
+		"manifests/papers.yaml":                          restrictedPapers,
+		"manifests/sources.yaml":                         restrictedSources,
+		"content/en/floyd-1962-shortestpath/00_front.md": file(pinned("Algorithm 97: Shortest Path", "Robert W. Floyd"), body),
+	}
+	res := result(t, Run(in(t, files), true), "S10")
+	if len(res.Findings) != 1 {
+		t.Fatalf("S10 found %d, want 1: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.Contains(res.Findings[0].Message, "floyd-1962-shortestpath") {
+		t.Errorf("S10 does not say which paper: %s", res.Findings[0].Message)
+	}
+}
+
+// Naming an author is enough on its own. A title like "Go To Statement
+// Considered Harmful" shares almost nothing with the abstract under it, and
+// a rule that wanted both tests to pass would report the corpus for being
+// well written.
+func TestS10TakesAnAuthorAsProofEnough(t *testing.T) {
+	body := "Dijkstra observes that the quality of programmers falls off with the density of the jumps in the programs they write, and asks that the construct be abolished.\n"
+	files := map[string]string{
+		"manifests/papers.yaml":                          restrictedPapers,
+		"manifests/sources.yaml":                         restrictedSources,
+		"content/en/floyd-1962-shortestpath/00_front.md": file(pinned("Algorithm 97: Shortest Path", "Edsger W. Dijkstra"), body),
+	}
+	res := result(t, Run(in(t, files), true), "S10")
+	if res.NotRun {
+		t.Fatal("S10 did not read the file at all")
+	}
+	if res.Failed() {
+		t.Errorf("S10 refused a quotation that names its author: %v", res.Findings)
+	}
+}
+
+// And the title on its own is enough the other way, which is the common
+// case: a journal that sets the byline in a running head the reader dropped
+// publishes an abstract with no author anywhere in it.
+func TestS10TakesTheTitleWordsAsProofEnough(t *testing.T) {
+	body := "The shortest path between every pair of points in a network is found by relaxing each link in turn against every point that could stand between its two ends.\n"
+	files := map[string]string{
+		"manifests/papers.yaml":                          restrictedPapers,
+		"manifests/sources.yaml":                         restrictedSources,
+		"content/en/floyd-1962-shortestpath/00_front.md": file(pinned("Algorithm 97: Shortest Path", "Robert W. Floyd"), body),
+	}
+	res := result(t, Run(in(t, files), true), "S10")
+	if res.NotRun {
+		t.Fatal("S10 did not read the file at all")
+	}
+	if res.Failed() {
+		t.Errorf("S10 refused a quotation that is plainly the paper: %v", res.Findings)
+	}
+}
+
+// An open paper publishes the whole of itself and is not a quotation of
+// anything, so the rule has nothing to say about one.
+func TestS10LeavesAnOpenPaperAlone(t *testing.T) {
+	files := map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), "A paragraph about something else entirely, long enough to be an abstract and sharing not one word with the title above it.\n"),
+	}
+	if res := result(t, Run(in(t, files), true), "S10"); !res.NotRun {
+		t.Errorf("S10 read a paper nobody restricted: %v", res.Findings)
+	}
+}
+
+// restrictedPapers and restrictedSources are the manifests the S10 tests
+// share: one paper, restricted, off a scan of a whole journal department.
+const restrictedPapers = `papers:
+  - id: floyd-1962-shortestpath
+    title: "Algorithm 97: Shortest Path"
+    authors: [Robert W. Floyd]
+    year: 1962
+    field: algorithms
+    status: listed
+`
+
+const restrictedSources = `sources:
+  - id: floyd-1962-shortestpath
+    access: restricted
+    landing: https://dl.acm.org/doi/10.1145/367766.368168
+    pages: 5
+`
+
+// pinned is the front matter of a restricted paper's one file, with the
+// title and the author the rule reads.
+func pinned(title, author string) string {
+	return "paper: floyd-1962-shortestpath\ntitle: " + strconv.Quote(title) + "\nauthors:\n  - " + author + "\nkind: front\nlang: en\n"
 }
 
 // Nothing under work/ is committed, so in CI this rule has nothing to read

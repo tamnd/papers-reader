@@ -469,13 +469,37 @@ func fromTitle(body, title string) string {
 	if want == "" {
 		return body
 	}
+	// The match is over the whole block and not line by line, because a
+	// title is set to the measure of the column and wraps. Algorithm 97 is
+	// two lines on the page, "ALGORITHM 97" over "SHORTEST PATH", and
+	// neither of them holds the title. Read line by line, that paper kept
+	// everything above it, which was the whole of Algorithm 96 by somebody
+	// else. Three more of the restricted papers wrap their titles the same
+	// way and kept the furniture above them for the same reason.
 	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		if strings.Contains(onlyLetters(line), want) {
-			return strings.Join(lines[i:], "\n")
-		}
+	var whole strings.Builder
+	for _, line := range lines {
+		whole.WriteString(onlyLetters(line))
 	}
-	return body
+	i := strings.Index(whole.String(), want)
+	if i < 0 {
+		return body
+	}
+	// The line the title opens on is the last one to start at or before
+	// where the match does. Blank lines and lines of punctuation put no
+	// letters in, so they are never it.
+	start, pos := 0, 0
+	for n, line := range lines {
+		if pos > i {
+			break
+		}
+		letters := onlyLetters(line)
+		if letters != "" {
+			start = n
+		}
+		pos += len(letters)
+	}
+	return strings.Join(lines[start:], "\n")
 }
 
 // onlyLetters is the lowercase letters and digits of a string, everything

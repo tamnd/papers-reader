@@ -560,6 +560,25 @@ func TestTheTitleIsMatchedOnItsLettersAlone(t *testing.T) {
 	}
 }
 
+// A title is set to the measure of the column and wraps, and a wrapped
+// title is still the title. Algorithm 97 is two lines on the page, and read
+// line by line neither of them is a match, so the whole of the algorithm
+// above it stayed in the published block.
+func TestAWrappedTitleIsStillFound(t *testing.T) {
+	const title = "Algorithm 97: Shortest Path"
+	body := "m[j, k] := true\n\nend ancestor\n\nALGORITHM 97\n\nSHORTEST PATH\n\nROBERT W. FLOYD\n"
+	got := fromTitle(body, title)
+	if strings.Contains(got, "ancestor") {
+		t.Errorf("the algorithm above it was published:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "ALGORITHM 97") {
+		t.Errorf("the block does not open on the title:\n%s", got)
+	}
+	if !strings.Contains(got, "FLOYD") {
+		t.Errorf("the block was cut past the title:\n%s", got)
+	}
+}
+
 // A page that does not print the title is a page this knows nothing about,
 // and a cover sheet is a real one. Dropping the block would publish nothing.
 func TestATitleThatIsNotOnThePageLeavesTheBlockAlone(t *testing.T) {

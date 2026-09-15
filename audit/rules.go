@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
@@ -18,10 +19,11 @@ import (
 
 // Rules is every rule the toolchain implements today, in id order.
 //
-// Nine groups and ninety-two rules, which is all the ones designed and one
-// more. The last four to arrive were the group P rules about the paper pages
-// and the search index, which had to wait for papers emit to write the files
-// they read.
+// Nine groups and ninety-three rules, which is all the ones designed and two
+// more. The last to arrive was S10, which came out of a restricted paper
+// that published the wrong paper's text: every other rule read it and found
+// nothing, because a well formed publication of the wrong paper is well
+// formed.
 func Rules() []Rule {
 	out := []Rule{
 		{
@@ -68,6 +70,11 @@ func Rules() []Rule {
 			ID: "S09", Hard: true,
 			What:  "the pages that were read carry as much text as a paper's pages do.",
 			Check: ruleS09,
+		},
+		{
+			ID: "S10", Hard: true,
+			What:  "the quotation published from a restricted paper is from that paper.",
+			Check: ruleS10,
 		},
 	}
 	out = append(out, structureRules()...)
@@ -508,6 +515,140 @@ func ruleS09(in *Input) ([]Finding, error) {
 		return nil, ErrNotRun
 	}
 	return out, nil
+}
+
+// TitleShare is how much of a restricted paper's title has to turn up in the
+// quotation published from it, and it is the whole of rule S10's threshold.
+//
+// Half, and the corpus is not close to it in either direction. Of the eighty
+// eight restricted papers, every one that fails the author test sits at 0.71
+// or above except the one that is wrong, which sits at 0.33. The abstract of
+// a paper restates what the title says it is about, so the words come back
+// whether or not the title line itself survived the reading.
+const TitleShare = 0.5
+
+// ruleS10 asks whether the quotation published from a restricted paper is
+// out of that paper.
+//
+// S02 says such a paper gets one file and S07 says how long it may be.
+// Neither of them reads it. The Floyd paper is Algorithm 97 in the
+// Communications of the ACM Algorithms department, half a column on the
+// second page of a five page scan of the whole department, and the pages
+// that were read were the first three. What got published under Floyd's
+// name was Algorithm 93, General Order Arithmetic, by Millard H. Perstein
+// of Control Data, in full: a paper the corpus has no record of and no
+// licence for, two hundred and seventy five words of it.
+//
+// Nothing else could have caught it. The file parses, the front matter is
+// correct, the word count is under the cap, the mathematics closes and the
+// Markdown is clean. It is a well formed publication of the wrong paper.
+//
+// The test is that the quotation shows some sign of being the paper it is
+// filed under. Either it names one of the authors, or it uses the words the
+// title uses. One or the other is enough because both fail honestly: a
+// journal that sets the byline in a running head the reader dropped
+// publishes an abstract with no author in it, and a title like "Go To
+// Statement Considered Harmful" shares almost nothing with its own abstract.
+// Together they are a test the corpus passes eighty seven times out of
+// eighty eight.
+//
+// English only. A translated stub carries the title in the title's language
+// and the quotation in the quotation's, and the two would have to be matched
+// through the glossary to be compared at all. The English file is the one
+// the translation was made from, so checking it checks both.
+func ruleS10(in *Input) ([]Finding, error) {
+	quoted := 0
+	var out []Finding
+	for _, f := range in.Content {
+		if f.Broken() || f.Lang != corpus.EN || in.Sources.Access(f.Paper) != corpus.AccessRestricted {
+			continue
+		}
+		want := distinctive(f.Front.Title)
+		if len(want) == 0 {
+			continue
+		}
+		quoted++
+		said := map[string]bool{}
+		for _, w := range alnumWords(f.Body) {
+			said[w] = true
+		}
+		for _, a := range f.Front.Authors {
+			if n := surname(a); n != "" && said[n] {
+				said = nil
+				break
+			}
+		}
+		if said == nil {
+			continue
+		}
+		hit := 0
+		for _, w := range want {
+			if said[w] {
+				hit++
+			}
+		}
+		if share := float64(hit) / float64(len(want)); share < TitleShare {
+			out = append(out, Finding{
+				Rule: "S10", File: f.Path,
+				Message: fmt.Sprintf("the quotation names no author of %s and uses %d of the %s in its title, so it may be another paper off the same pages", f.Paper, hit, plural(len(want), "distinctive word")),
+			})
+		}
+	}
+	if quoted == 0 {
+		return nil, ErrNotRun
+	}
+	return out, nil
+}
+
+// alnumWords is the text as lowercase runs of letters and digits, which is
+// the only comparison a title and a page of OCR can be held to. They
+// disagree about case, about the hyphen in Ion-Implanted, about the
+// apostrophe in MOSFET's and about which dash was set.
+func alnumWords(s string) []string {
+	return strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+// stopWords are the words of a title that say nothing about which paper it
+// is. Two thirds of the corpus has a "the" in the title and one in the
+// abstract, and counting those as a match would let any page match any
+// paper.
+var stopWords = map[string]bool{
+	"and": true, "are": true, "for": true, "its": true, "new": true,
+	"our": true, "that": true, "the": true, "this": true, "using": true,
+	"via": true, "with": true,
+}
+
+// distinctive is the words of a title that are worth looking for: the ones
+// that are not furniture and are longer than two characters.
+//
+// The length cut takes out the short words a stop list would never think to
+// hold, and it takes out the number in "Algorithm 97" as well. That is the
+// right call even on the paper the rule was written for. A page that says 93
+// where the title says 97 is a difference of one digit in OCR of a 1962
+// scan, and a rule that turned on it would be reporting the scanner as often
+// as the corpus.
+func distinctive(title string) []string {
+	var out []string
+	for _, w := range alnumWords(title) {
+		if len(w) > 2 && !stopWords[w] {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// surname is the last word of a name, lowercased, which is the part of it a
+// page is most likely to print the same way the manifest does. A manifest
+// that says Robert W. Floyd meets a page that says R. W. Floyd, and the
+// initials are the half that changes.
+func surname(name string) string {
+	w := alnumWords(name)
+	if len(w) == 0 {
+		return ""
+	}
+	return w[len(w)-1]
 }
 
 // register reads tags/tags for the G group. A register that does not parse is

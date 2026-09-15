@@ -250,6 +250,30 @@ func TestARestrictedPaperIsReadThreePagesFromWhereItStarts(t *testing.T) {
 	}
 }
 
+// The three page window is a cap. A paper set inside a journal department
+// is one page of a scan of the whole department, and reading to the cap
+// reads other people's work off pages this paper is not on.
+func TestABothEndedPageRangeNarrowsTheRestrictedWindow(t *testing.T) {
+	for _, c := range []struct {
+		name        string
+		span        bool
+		first, last int
+		want        int
+	}{
+		{"one page named at both ends", true, 2, 2, 2},
+		{"two pages named at both ends", true, 2, 3, 3},
+		{"a lone page number is where the window starts", false, 2, 2, 4},
+		{"no range at all", false, 0, 0, 3},
+		{"an end past the cap is the cap", true, 2, 9, 4},
+		{"an end before the start is the cap", true, 4, 2, 6},
+	} {
+		e := &extraction{first: c.first, last: c.last, span: c.span}
+		if got := e.restricted(); got != c.want {
+			t.Errorf("%s: reads to page %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func TestTheWindowNeverRunsOffTheEndOfThePaper(t *testing.T) {
 	e := &extraction{source: &corpus.Source{Pages: 5}, first: 4, last: restrictedWindow(4)}
 	if err := e.pageRange(t.Context(), ""); err != nil {

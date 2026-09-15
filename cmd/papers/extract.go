@@ -127,7 +127,9 @@ that was already published.
 
 A restricted paper is read as far as its third page and no further. Nothing
 but its front matter and a short abstract can ever be published, so the
-rest of it would be work done to fill a directory nobody may read.
+rest of it would be work done to fill a directory nobody may read. That is
+a cap and not a quota: --pages 4 reads pages 4 to 6, and --pages 4-4 reads
+page 4 alone, which is what a paper set inside a journal department needs.
 
 This needs poppler, and the layout path needs one of the three tools. Run
 papers doctor to see what is installed.
@@ -231,7 +233,7 @@ papers doctor to see what is installed.
 			corpus: c, paper: p, source: rec, math: math,
 			forced: classify.Path(*path), tool: layout.Tool(*tool),
 			fleet: ready,
-			first: first, last: last,
+			first: first, last: last, span: strings.Contains(*pages, "-"),
 			again: *again, dry: *dry, long: *long,
 		}
 		return run.do(ctx)
@@ -374,9 +376,14 @@ type extraction struct {
 	fleet func() (*work.Ask, error)
 
 	first, last int
-	again       bool
-	dry         bool
-	long        bool
+	// span is set when --pages named both ends. It is how a restricted
+	// paper is read over fewer pages than its cap, which --pages 2 cannot
+	// ask for because a lone page number is the start of the window and
+	// not the whole of it.
+	span  bool
+	again bool
+	dry   bool
+	long  bool
 }
 
 // restrictedPages is how many pages of a paper that may not be redistributed
@@ -684,12 +691,7 @@ func (e *extraction) do(ctx context.Context) (count, error) {
 	case corpus.AccessUnknown, "":
 		return n, fmt.Errorf("nothing is known about what may be published from it, so it is not read")
 	case corpus.AccessRestricted:
-		// Front matter and an abstract under 250 words is the whole of what
-		// this paper can ever publish, so the rest of it is never read. The
-		// cap moves with --pages, so --pages 4 reads 4 to 6, because where a
-		// paper starts is not something this can work out and a cover sheet
-		// is not front matter.
-		e.last = restrictedWindow(e.first)
+		e.last = e.restricted()
 	}
 	file := e.corpus.PDF(e.paper.ID)
 	if _, err := os.Stat(file); err != nil {
@@ -869,6 +871,29 @@ func (e *extraction) firstPage() int {
 		return 1
 	}
 	return e.first
+}
+
+// restricted is the last page a restricted paper is read to.
+//
+// Front matter and an abstract under 250 words is the whole of what such a
+// paper can ever publish, so the rest of it is never read. The window moves
+// with --pages, so --pages 4 reads 4 to 6, because where a paper starts is
+// not something this can work out and a cover sheet is not front matter.
+//
+// Three pages is a cap and not a quota. --pages 2-2 reads one page and
+// stops, because reading less of a paper than the licence allows is never
+// the unsafe direction and there are papers where it is the only right
+// answer. Algorithm 97 is half a column on the second page of a five page
+// scan of a whole Communications of the ACM Algorithms department, and
+// pages 3 and 4 are five other people's algorithms. Widening that window to
+// the cap is how the corpus came to publish Algorithm 93, by somebody else,
+// under Floyd's name.
+func (e *extraction) restricted() int {
+	most := restrictedWindow(e.firstPage())
+	if !e.span || e.last < e.firstPage() || e.last > most {
+		return most
+	}
+	return e.last
 }
 
 // restrictedWindow is the last page a restricted paper is read to, given
