@@ -11,7 +11,7 @@ import (
 	"github.com/tamnd/papers-reader/mathtex"
 )
 
-// The ten acceptance rules. A page is checked before it is written, and a
+// The eleven acceptance rules. A page is checked before it is written, and a
 // page that fails goes back on the queue rather than into the corpus.
 //
 // They are numbered because the numbers end up in the queue, in the reports
@@ -33,6 +33,8 @@ const (
 	// A10 is the one that catches a model writing the web instead of the
 	// page. See markup.
 	A10 = "A10 the page came back with markup the corpus has no spelling for"
+	// A11 is the one that catches mathematics flattened into the prose.
+	A11 = "A11 the page is doing mathematics and has not one math span"
 )
 
 // A Fault is one rule one page broke.
@@ -351,6 +353,30 @@ func (c *Checker) faults(page int, text string) []Fault {
 					Window, share*100, quoteFew(missing)), 0)
 			}
 		}
+	}
+
+	// A11 is the page whose mathematics was dissolved rather than mangled.
+	//
+	// Rules A2, A3 and A4 all read the math spans and ask whether they are
+	// right, so a page with no spans at all passes every one of them and
+	// goes into the corpus with its formulas written out as words. The
+	// Paxos paper is six pages of set theory read that way: a hundred and
+	// fifty six characters that are nothing but mathematics, not one dollar
+	// sign, and every math rule in the audit reporting that it had nothing
+	// to look at.
+	//
+	// pdftotext cannot write a delimiter, so on the native path this is a
+	// page that has to be read by something that can, and refusing it here
+	// is what sends it to the vision path on the next pass. The threshold
+	// is mathtex.Enough, because one of these characters is a glyph that
+	// wandered into a sentence and three is a page doing mathematics.
+	//
+	// The listings are taken out first, the same as the math rules above
+	// and for the same reason. An unclosed span counts as a span, because
+	// that page is already A2's and two findings about one fault is one
+	// finding too many.
+	if n := mathtex.Signs(prose); n >= mathtex.Enough && len(spans) == 0 && unclosed == nil {
+		add(A11, fmt.Sprintf("the page carries %d characters that are nothing but mathematics and not one math span, so its formulas were flattened into the prose", n), mathtex.FirstSign(prose))
 	}
 
 	if tag, n := markup(text); n > 0 {

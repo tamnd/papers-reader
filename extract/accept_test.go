@@ -461,3 +461,44 @@ func TestMarkupInInlineCodeIsPartOfTheProse(t *testing.T) {
 		t.Errorf("a page that names a tag was refused: %v", faults)
 	}
 }
+
+// A page of set theory that came back with no dollar sign in it passed
+// every math rule there was, because they all read the spans and it had
+// none. Six pages of the Paxos paper went into the corpus that way.
+func TestA11RefusesMathematicsFlattenedIntoTheProse(t *testing.T) {
+	c := &Checker{}
+	text := "Condition B3(B) has the form for every B ∈ B: the decree of B ≤ the decree of every earlier ballot, and the set of voters is a subset Q ⊆ P of the priests.\n"
+	if !has(c.Faults(3, text), A11) {
+		t.Errorf("A11 passed a page with three signs and no span: %v", c.Faults(3, text))
+	}
+}
+
+// One sign is a glyph that wandered into a sentence and is not a paper's
+// mathematics going missing.
+func TestA11LeavesOneStraySignAlone(t *testing.T) {
+	c := &Checker{}
+	text := "The running time is at most n ≤ 400 for every input we tried, which was enough to settle the question.\n"
+	if has(c.Faults(3, text), A11) {
+		t.Error("A11 refused a page for one sign in a sentence")
+	}
+}
+
+// A page that wrote its mathematics as mathematics is what the rule wants
+// and it says nothing about it, however much notation is inside the spans.
+func TestA11SaysNothingWhereThereIsASpan(t *testing.T) {
+	c := &Checker{}
+	text := "The condition is $B \\in \\mathcal{B}$ and the quorum is $Q \\subseteq P$ with $|Q| \\geq 3$.\n"
+	if has(c.Faults(3, text), A11) {
+		t.Errorf("A11 refused a page whose mathematics is in spans: %v", c.Faults(3, text))
+	}
+}
+
+// A listing is code. A shell session full of redirections and comparisons
+// is not this paper's mathematics going missing.
+func TestA11DoesNotReadAListingAsMathematics(t *testing.T) {
+	c := &Checker{}
+	text := "The driver is run like this.\n\n```\nsolve --tol ≤0.5 --set ∈A --mode ⊆B\n```\n\nThat is the whole interface.\n"
+	if has(c.Faults(3, text), A11) {
+		t.Errorf("A11 refused a page for the notation inside a listing: %v", c.Faults(3, text))
+	}
+}

@@ -674,13 +674,10 @@ func inRanges(ranges [][2]int, line int) bool {
 //
 // What is left is glyphs a sentence has no use for. A body carrying several
 // of them is a body with mathematics in it, whatever its markup says.
-const notation = "√∛∈∉∋∌∞∑∏∫∮∂∇∀∃∄⊆⊄⊂⊇⊃⊕⊗⊙∧∨¬≈≅≡≢≪≫≤≥≠≜≔∝∅∪∩⌈⌉⌊⌋∥⟨⟩ℵ"
-
-// enough is how many of those characters make a paper's mathematics certain.
-//
-// One is a glyph that wandered into a sentence. Three is a paper that was
-// doing mathematics on the page and is not doing any in the file.
-const enough = 3
+// notation and enough live in mathtex, because the extraction path asks the
+// same question of one page that this rule asks of a whole paper. Two lists
+// of what counts as mathematics would be two lists that drifted.
+const notation, enough = mathtex.Notation, mathtex.Enough
 
 // ruleM14 catches the mathematics that was flattened rather than mangled.
 //

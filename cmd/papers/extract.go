@@ -73,7 +73,7 @@ everything the page becomes, and a paper whose notation needs a sentence of
 explanation gets one added to it, which is per paper so that editing it does
 not mark every other paper's pages stale.
 
-Every page is checked against the ten acceptance rules before it is
+Every page is checked against the eleven acceptance rules before it is
 written, and a page that breaks one is reported and not written. The native
 and layout paths have nothing to retry with: the same program over the same
 file reads the page the same way the second time, so a refused page is a
