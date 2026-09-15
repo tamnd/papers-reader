@@ -185,6 +185,7 @@ func (t *Translator) Body(ctx context.Context, p Paper, l corpus.Lang, terms []T
 // English had rather than a model's copy of them.
 func (t *Translator) chunk(ctx context.Context, out *Result, target, instructions, source, ask string, held []string) (string, error) {
 	var worst string
+	var spare fallback
 	for attempt := 1; attempt <= t.tries(); attempt++ {
 		out.Asks++
 		reply, err := t.Ask(ctx, target, llm.Request{
@@ -203,6 +204,17 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 			out.Routes = keep(out.Routes, reply.Route)
 			return answer, nil
 		}
+		// A soft difference buys one more ask and no more. The second
+		// answer is taken whatever it says, because the complaint is one
+		// the checker cannot be sure about and asking a third time is
+		// paying for the same uncertainty twice.
+		if soft(bad) {
+			got := fallback{answer, reply.Model, reply.Route}
+			if spare.text != "" {
+				return got.take(out), nil
+			}
+			spare = got
+		}
 		worst = bad[0].String()
 		out.Refused = append(out.Refused, target+": "+worst)
 		t.logf("%s: refused on attempt %d, %s", target, attempt, worst)
@@ -210,7 +222,23 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 			t.Keep(target, source, answer)
 		}
 	}
+	if spare.text != "" {
+		return spare.take(out), nil
+	}
 	return "", fmt.Errorf("%s: %d answers were refused, the last because %s", target, t.tries(), worst)
+}
+
+// fallback is an answer that was not accepted at the time and may be
+// written anyway, with the route that gave it, so that the front matter
+// names the model that actually wrote the text.
+type fallback struct {
+	text, model, route string
+}
+
+func (a fallback) take(out *Result) string {
+	out.Models = keep(out.Models, a.model)
+	out.Routes = keep(out.Routes, a.route)
+	return a.text
 }
 
 func (t *Translator) tries() int {
@@ -265,7 +293,118 @@ func Verify(source, answer string) []Difference {
 	if Prose(source) == Prose(answer) {
 		return []Difference{{At: 1, Why: "the answer is the English, word for word"}}
 	}
+	if h := echoed(source, answer); h != "" {
+		return []Difference{{At: 1, Soft: true, Why: fmt.Sprintf(
+			"the heading %q came back as the English while the prose under it was translated", h)}}
+	}
 	return nil
+}
+
+// echoed is the first heading of the source that came back as itself.
+//
+// The whole answer echo above does not catch this, because one block of a
+// chunk of ten is not the chunk, and the span comparison does not either,
+// because a heading has no spans in it to compare. So a model that
+// translates six paragraphs correctly and copies the two words over them
+// passes every other check. It happens: on the first real run of this
+// corpus the introduction of the ResNet paper came back with its prose in
+// Vietnamese under the word Introduction.
+//
+// It matters more than one block usually would. A heading is the first line
+// a reader sees, it is what the book prints as a chapter heading and what
+// the reader prints in a table of contents, and papers split lifts the
+// section's own heading into the front matter, so for that one heading
+// there is no prose around it to make up for it.
+//
+// The difference is soft, because a heading that stands in both languages
+// is a real answer and Standing cannot be sure which one it has. Refusing
+// it outright would mean failing a whole file over a section called
+// Transformer.
+func echoed(source, answer string) string {
+	src, ans := blocks(source), blocks(answer)
+	if len(src) != len(ans) {
+		return ""
+	}
+	a, b := []rune(source), []rune(answer)
+	for i := range src {
+		if !src[i].heading {
+			continue
+		}
+		s := strings.TrimSpace(string(a[src[i].start:src[i].end]))
+		if s != strings.TrimSpace(string(b[ans[i].start:ans[i].end])) {
+			continue
+		}
+		if title := strings.TrimSpace(strings.TrimLeft(s, "#")); !Standing(title) {
+			return title
+		}
+	}
+	return ""
+}
+
+// Standing reports whether a heading stands as printed in every language.
+//
+// A heading of one short word is where the question is hardest. "GAN",
+// "MNIST", "Adam" and "TPU" stand everywhere, and so does a section called
+// "3.2". Asking for two runs of letters, or one of more than three, leaves
+// those alone and still catches "Introduction", "Experiments" and "Related
+// work", which are the headings that actually come back untranslated.
+//
+// One long word with a capital letter inside it stands too. It is a coined
+// name, and nothing in ordinary English is written that way: TrueTime,
+// MapReduce, BigTable, PageRank. Spanner's section 3 is headed TrueTime and
+// the Vietnamese keeps it, which is the right answer and the only answer,
+// because the name is the name.
+func Standing(title string) bool {
+	if coined(title) {
+		return true
+	}
+	return !spelled(title)
+}
+
+// coined says whether a title is one word with a capital inside it.
+func coined(title string) bool {
+	title = strings.TrimSpace(title)
+	if strings.ContainsFunc(title, unicode.IsSpace) {
+		return false
+	}
+	rs := []rune(title)
+	for i := 1; i < len(rs); i++ {
+		if unicode.IsLower(rs[i-1]) && unicode.IsUpper(rs[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+// spelled says whether a title has anything in it a translator could have
+// changed: two runs of letters, or one of more than three.
+func spelled(title string) bool {
+	n, longest, run := 0, 0, 0
+	for _, r := range title + " " {
+		if unicode.IsLetter(r) {
+			run++
+			continue
+		}
+		if run > 0 {
+			n++
+			if run > longest {
+				longest = run
+			}
+			run = 0
+		}
+	}
+	return n >= 2 || longest > 3
+}
+
+// soft says whether every difference in a refusal is one worth asking about
+// again rather than one that makes the answer unusable.
+func soft(bad []Difference) bool {
+	for _, d := range bad {
+		if !d.Soft {
+			return false
+		}
+	}
+	return len(bad) > 0
 }
 
 // Translatable reports whether a chunk has anything in it that is written

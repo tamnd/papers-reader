@@ -1575,10 +1575,10 @@ func ruleL14(in *Input) ([]Finding, error) {
 // the reader prints in a table of contents, so a title left in English is
 // the most visible line of the file and the least likely to be noticed by
 // a rule that reads bodies. The translator does ask for it, as a heading at
-// the top of the passage, and a model that answers the prose correctly
-// still hands the heading back unchanged often enough to be worth a rule:
-// on the first real run of this corpus it happened to Introduction twice
-// out of three languages.
+// the top of the passage, and it asks a second time when the heading comes
+// back unchanged, but it takes the second answer whatever that says. So
+// this is what is left after the translator has already tried: the titles
+// two models in a row would not render.
 //
 // It is soft because a title that is the same in both languages is a real
 // answer. Plenty of section titles are a proper noun, an abbreviation or a
@@ -1597,7 +1597,7 @@ func ruleL19(in *Input) ([]Finding, error) {
 		if title == "" || title != strings.TrimSpace(p.en.Front.SectionTitle) {
 			return nil
 		}
-		if !words(title) {
+		if translate.Standing(title) {
 			return nil
 		}
 		return []Finding{{
@@ -1605,60 +1605,6 @@ func ruleL19(in *Input) ([]Finding, error) {
 			Message: fmt.Sprintf("the section title %q is the English one, and the book prints it as the chapter heading", title),
 		}}
 	})
-}
-
-// words says whether a title has anything in it a translator could have
-// changed: two runs of letters, or one of more than three.
-//
-// A title of one short word is where this rule is wrong most often. "GAN",
-// "MNIST", "Adam" and "TPU" stand in every language, and so does a section
-// called "3.2". Asking for two words, or one long one, leaves those alone
-// and still catches "Introduction", "Experiments" and "Related work", which
-// are the titles that actually come back untranslated.
-//
-// One long word with a capital letter inside it is not one of those. It is
-// a coined name, and nothing in ordinary English is written that way:
-// TrueTime, MapReduce, BigTable, PageRank. Spanner's section 3 is headed
-// TrueTime and the Vietnamese keeps it, which is the right answer and the
-// only answer, because the name is the name.
-func words(title string) bool {
-	if coined(title) {
-		return false
-	}
-	return spelled(title)
-}
-
-// coined says whether a title is one word with a capital inside it.
-func coined(title string) bool {
-	title = strings.TrimSpace(title)
-	if strings.ContainsFunc(title, unicode.IsSpace) {
-		return false
-	}
-	rs := []rune(title)
-	for i := 1; i < len(rs); i++ {
-		if unicode.IsLower(rs[i-1]) && unicode.IsUpper(rs[i]) {
-			return true
-		}
-	}
-	return false
-}
-
-func spelled(title string) bool {
-	n, longest, run := 0, 0, 0
-	for _, r := range title + " " {
-		if unicode.IsLetter(r) {
-			run++
-			continue
-		}
-		if run > 0 {
-			n++
-			if run > longest {
-				longest = run
-			}
-			run = 0
-		}
-	}
-	return n >= 2 || longest > 3
 }
 
 // apologies is what a model writes instead of a translation.

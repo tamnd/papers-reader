@@ -220,6 +220,12 @@ type Difference struct {
 	Want Span
 	Got  Span
 	Why  string
+	// Soft says the answer is worth asking about again but is not wrong
+	// enough to throw away. An answer whose differences are all soft is
+	// written after one more ask rather than failing the file, because the
+	// thing being complained about is sometimes the right answer and a file
+	// that never ships is worse than a heading left in English.
+	Soft bool
 }
 
 func (d Difference) String() string {

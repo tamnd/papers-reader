@@ -453,3 +453,107 @@ func TestThereIsNoTranslationIntoEnglish(t *testing.T) {
 		t.Error("a body was translated into the language it is already in")
 	}
 }
+
+func TestAHeadingHandedBackInEnglishIsAskedAboutAgain(t *testing.T) {
+	// The prose comes back translated and the two words over it do not.
+	// Every other check passes: the spans match because a heading has none,
+	// the block count matches, and the whole answer is not the English.
+	const source = "### Related work\n\nThe first paragraph.\n\nThe second paragraph."
+	tr, _ := answering(t, func(_ string, attempt int) string {
+		if attempt == 1 {
+			return "### Related work\n\nĐoạn thứ nhất.\n\nĐoạn thứ hai."
+		}
+		return "### Công trình liên quan\n\nĐoạn thứ nhất.\n\nĐoạn thứ hai."
+	})
+
+	got, err := tr.Body(context.Background(), paper, corpus.VI, nil, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got.Text, "### Công trình liên quan\n") {
+		t.Errorf("the body came back as %q", got.Text)
+	}
+	if got.Asks != 2 {
+		t.Errorf("%d asks, want the first answer refused and the second taken", got.Asks)
+	}
+}
+
+func TestAHeadingNoModelWillRenderIsWrittenAnyway(t *testing.T) {
+	// The second answer is taken whatever it says. A heading that stands in
+	// both languages is a real answer and nothing here can be sure which
+	// one it has, so failing the file over it would be refusing the truth.
+	// Rule L19 reports what is left.
+	const source = "### Related work\n\nThe first paragraph.\n\nThe second paragraph."
+	tr, _ := answering(t, func(string, int) string {
+		return "### Related work\n\nĐoạn thứ nhất.\n\nĐoạn thứ hai."
+	})
+
+	got, err := tr.Body(context.Background(), paper, corpus.VI, nil, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got.Text, "### Related work\n") {
+		t.Errorf("the body came back as %q", got.Text)
+	}
+	if got.Asks != 2 {
+		t.Errorf("%d asks, want one more and not two more", got.Asks)
+	}
+	if len(got.Models) != 1 || got.Models[0] != "a-model" {
+		t.Errorf("the models are %v, and the front matter has to name the one that wrote the text", got.Models)
+	}
+}
+
+func TestASoftRefusalDoesNotHideAHardOne(t *testing.T) {
+	// The heading is echoed and a formula was dropped. The formula is what
+	// the answer is thrown away for, and three of those fail the file.
+	const source = "### Related work\n\nLet $x$ be the input."
+	tr, _ := answering(t, func(string, int) string {
+		return "### Related work\n\nGọi $y$ là đầu vào."
+	})
+
+	if _, err := tr.Body(context.Background(), paper, corpus.VI, nil, source); err == nil {
+		t.Fatal("an answer that dropped a formula came back as a translation")
+	}
+}
+
+func TestAHeadingThatStandsInEveryLanguageIsNotAskedAboutAgain(t *testing.T) {
+	for _, title := range []string{"TrueTime", "GAN", "3.2"} {
+		t.Run(title, func(t *testing.T) {
+			source := "### " + title + "\n\nThe first paragraph."
+			tr, _ := answering(t, func(string, int) string {
+				return "### " + title + "\n\nĐoạn thứ nhất."
+			})
+
+			got, err := tr.Body(context.Background(), paper, corpus.VI, nil, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Asks != 1 {
+				t.Errorf("%d asks, and the name is the name", got.Asks)
+			}
+		})
+	}
+}
+
+func TestWhichHeadingsStandInEveryLanguage(t *testing.T) {
+	for _, c := range []struct {
+		title string
+		want  bool
+	}{
+		{"Introduction", false},
+		{"Related work", false},
+		{"Experiments", false},
+		{"4 Results", false},
+		{"3.2 Experimental setup", false},
+		{"GAN", true},
+		{"TPU", true},
+		{"3.2", true},
+		{"TrueTime", true},
+		{"MapReduce", true},
+		{"", true},
+	} {
+		if got := Standing(c.title); got != c.want {
+			t.Errorf("Standing(%q) is %v, want %v", c.title, got, c.want)
+		}
+	}
+}
