@@ -291,3 +291,115 @@ func itoa(n int) string {
 	}
 	return string(b)
 }
+
+// lowFolio is a paper whose text block ends two thirds of the way down the
+// page with the folio set a little under it: forty points of white below the
+// last line of the body, which is a long way from the body and nowhere near
+// the bottom eighth of the page.
+func lowFolio(n int) []poppler.Layout {
+	var pages []poppler.Layout
+	for i := 1; i <= n; i++ {
+		text := body(60, 120, 36, "a line of the body of this paper")
+		foot := []poppler.TextLine{put(300, 580, itoa(i+1))}
+		pages = append(pages, page(i, text, foot))
+	}
+	return pages
+}
+
+func TestAFolioUnderTheTextBlockIsFurnitureWhereverItSits(t *testing.T) {
+	// Natural Proofs is set this way and the fixed band alone kept every one
+	// of its page numbers, which rule T10 then found sitting in the prose in
+	// sixteen places in one paper.
+	pages := lowFolio(8)
+	band := frame{margin, 1 - margin}
+	f := FindFurniture(pages)
+	for _, p := range pages {
+		for _, l := range f.Lines(p) {
+			if folio.MatchString(l.Text()) {
+				t.Fatalf("page %d kept its folio %q", p.Number, l.Text())
+			}
+		}
+		if got, want := f.Printed(p), itoa(p.Number+1); got != want {
+			t.Errorf("page %d printed %q, want %q", p.Number, got, want)
+		}
+		last := Lines(p)[len(Lines(p))-1]
+		if _, ok := band.key(p, last); ok {
+			t.Errorf("page %d sets its folio inside the fixed band, so this fixture proves nothing", p.Number)
+		}
+	}
+}
+
+func TestARunningHeadJustUnderTheTopBandIsFurniture(t *testing.T) {
+	// A 1972 journal that sets its head an eighth of an inch lower than the
+	// band allows for. Four of the hundred papers do, and each of them
+	// carried its head into every page of the Markdown.
+	var pages []poppler.Layout
+	for i := 1; i <= 8; i++ {
+		head := []poppler.TextLine{put(60, 100, "Journal of Nothing in Particular "+itoa(106+i))}
+		pages = append(pages, page(i, head, body(60, 150, 30, "a line of the body of this paper")))
+	}
+	f := FindFurniture(pages)
+	for _, p := range pages {
+		for _, l := range f.Lines(p) {
+			if strings.Contains(l.Text(), "Journal") {
+				t.Fatalf("page %d kept its running head", p.Number)
+			}
+		}
+	}
+}
+
+func TestALineStandingOffTheTextBlockIsKeptWhenItIsNotFurniture(t *testing.T) {
+	// Widening the frame only lets Is look at a line. A footnote set under
+	// the text block stands as far off the body as a folio does, and it is
+	// neither a bare number nor the same line twice, so it stays.
+	words := []string{"one", "two", "three", "four", "five", "six", "seven", "eight"}
+	var pages []poppler.Layout
+	for i := 1; i <= 8; i++ {
+		note := []poppler.TextLine{put(60, 580, "a note on the "+words[i-1]+" point made above")}
+		pages = append(pages, page(i, body(60, 120, 36, "a line of the body of this paper"), note))
+	}
+	f := FindFurniture(pages)
+	for _, p := range pages {
+		kept := false
+		for _, l := range f.Lines(p) {
+			kept = kept || strings.Contains(l.Text(), "a note on the")
+		}
+		if !kept {
+			t.Errorf("page %d lost its footnote", p.Number)
+		}
+	}
+}
+
+func TestAPageOfWhiteSpaceDoesNotMoveTheMarginOfTheRest(t *testing.T) {
+	// A title page has a block of white under the authors and a page built
+	// around one figure has white wherever the figure is not. Read as
+	// evidence about where the paper sets its margin they are misleading,
+	// and the Gamma paper has one of each: taken on their own the two of
+	// them moved the top margin to nearly half the page, which put a
+	// footnote marker standing beside a line of prose into the margin and
+	// then took it out of the text.
+	sparse := func(n int, head string) poppler.Layout {
+		return page(n, []poppler.TextLine{put(60, 60, head)}, body(60, 500, 12, "a line under a lot of white"))
+	}
+	pages := []poppler.Layout{sparse(1, "A Title and Some Authors"), sparse(2, "Figure 1: a caption")}
+	for i := 3; i <= 8; i++ {
+		marker := []poppler.TextLine{put(300, 256, "1")}
+		pages = append(pages, page(i, body(60, 120, 30, "a line of the body of this paper"), marker))
+	}
+	// The marker is set beside a line of the body and comes back joined to
+	// it, which is what the reader does with a superscript.
+	frames := framesOf(pages)
+	if got := frames[5].top; got != margin {
+		t.Errorf("a full page of text starts its body at %.3f, want the fixed band at %.3f", got, margin)
+	}
+	f := FindFurniture(pages)
+	for _, p := range pages[2:] {
+		kept := false
+		for _, l := range f.Lines(p) {
+			kept = kept || strings.HasSuffix(l.Text(), "paper 1")
+		}
+		if !kept {
+			t.Errorf("page %d lost the footnote marker from the middle of its text", p.Number)
+		}
+	}
+}

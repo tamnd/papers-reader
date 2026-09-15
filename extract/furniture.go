@@ -2,6 +2,7 @@ package extract
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -19,6 +20,20 @@ const margin = 0.12
 // anything. Two pages that share a line share it by coincidence as often as
 // not, and a two page paper loses nothing by keeping its header.
 const minPages = 3
+
+// detach is how far a line has to stand off the rest of the type on the page,
+// in lines of that page's own type, before the white space around it is read
+// as margin. Two lines of white is already more than any paragraph break in
+// the hundred papers and less than any page ever leaves between its body and
+// its folio.
+const detach = 2.0
+
+// minRows is how many rows of type a page needs before its own typesetting is
+// allowed to say where the margin is. A title page, a page holding one figure
+// and a page of nothing but a table are all white space with a little type in
+// it, and asking them where the body ends gets an answer about the layout of
+// that one page rather than about the margin.
+const minRows = 8
 
 // Furniture is the running heads, folios and rules of one paper: the text a
 // journal prints on the page that the author did not write.
@@ -44,6 +59,29 @@ type Furniture struct {
 	// whole paper by folios below, and it is empty for a paper whose margin
 	// numbers do not count.
 	folios map[int]string
+	// frames is where the body sits on each page it was shown, so that a page
+	// is measured once rather than once per line.
+	frames map[int]frame
+}
+
+// A frame is where the body of one page ends and the margin begins, as a
+// fraction of the page height. Only what is outside the frame can be
+// furniture.
+//
+// It starts at the fixed band and is then widened by the page's own
+// typesetting, because the band on its own is not enough. Razborov's Natural
+// Proofs is set on US letter with the text block ending three quarters of the
+// way down, and prints its folio at 0.81 of the page height: thirty eight
+// points of white above it, on a page whose lines are twelve points apart,
+// and still nowhere near the bottom eighth. Read by the band alone that folio
+// stayed in the text, and audit rule T10 found the page number sitting in the
+// prose in sixteen places in that one paper.
+//
+// Widening the frame does not delete anything on its own. It only lets Is
+// look at a line, and Is still wants the line to be a bare number or to be
+// repeated down the paper before it takes it out.
+type frame struct {
+	top, bottom float64
 }
 
 // FindFurniture learns what is furniture from the pages it is given.
@@ -53,7 +91,13 @@ type Furniture struct {
 // and learn nothing about the first page, which is the page that has a
 // different one.
 func FindFurniture(pages []poppler.Layout) *Furniture {
-	f := &Furniture{repeated: map[string]bool{}, pages: len(pages), folios: foliosOf(pages)}
+	frames := framesOf(pages)
+	f := &Furniture{
+		repeated: map[string]bool{},
+		pages:    len(pages),
+		folios:   foliosOf(pages, frames),
+		frames:   frames,
+	}
 	if len(pages) < minPages {
 		return f
 	}
@@ -65,7 +109,7 @@ func FindFurniture(pages []poppler.Layout) *Furniture {
 	seen := map[string]map[int]bool{}
 	for _, p := range pages {
 		for _, l := range Lines(p) {
-			k, ok := key(p, l)
+			k, ok := frames[p.Number].key(p, l)
 			if !ok {
 				continue
 			}
@@ -93,7 +137,7 @@ func (f *Furniture) Is(p poppler.Layout, l poppler.TextLine) bool {
 	if f == nil {
 		return false
 	}
-	k, ok := key(p, l)
+	k, ok := f.frame(p).key(p, l)
 	if !ok {
 		return false
 	}
@@ -105,6 +149,121 @@ func (f *Furniture) Is(p poppler.Layout, l poppler.TextLine) bool {
 	// here for the front matter of a thesis, which is the one place in the
 	// hundred they are used for pages.
 	return folio.MatchString(strings.TrimSpace(l.Text()))
+}
+
+// frame is where the body of a page ends and the margin begins. It is the
+// measurement taken when the furniture was learned, and a fresh one for a
+// page that was not in that sample.
+func (f *Furniture) frame(p poppler.Layout) frame {
+	if fr, ok := f.frames[p.Number]; ok {
+		return fr
+	}
+	return frameOf(p)
+}
+
+// framesOf measures every page and then gives each page the typical page's
+// answer as well as its own.
+//
+// One page on its own is not steady enough. The Natural Proofs pages all
+// leave forty points between the last line and the folio and are set
+// thirteen points apart, so most of them stand the folio off the text and
+// the few with a displayed equation near the foot do not, and a folio that
+// is furniture on twenty pages and text on six is worse than either answer.
+//
+// Typical is the median of every page and not the average of the pages that
+// widened, because a title page has a block of white under the authors and
+// a page carrying one figure has white wherever the figure is not. Counted
+// among all the pages those two are outvoted, which is what should happen to
+// them: the Gamma paper has one of each in its first eight pages, and read
+// as evidence about the paper they moved the top margin to nearly half the
+// page.
+//
+// Each page then keeps whichever of the two frames is the wider, because a
+// journal that walks the folio down the page as the text block grows, which
+// the victim cache paper does by half a point a page, would otherwise have
+// its own pages overruled by the middle of the others.
+func framesOf(pages []poppler.Layout) map[int]frame {
+	out := map[int]frame{}
+	if len(pages) == 0 {
+		return out
+	}
+	var tops, bottoms []float64
+	for _, p := range pages {
+		fr := frameOf(p)
+		out[p.Number] = fr
+		tops = append(tops, fr.top)
+		bottoms = append(bottoms, fr.bottom)
+	}
+	paper := frame{median(tops), median(bottoms)}
+	for n, fr := range out {
+		out[n] = frame{max(fr.top, paper.top), min(fr.bottom, paper.bottom)}
+	}
+	return out
+}
+
+// frameOf measures one page on its own.
+func frameOf(p poppler.Layout) frame {
+	fr := frame{margin, 1 - margin}
+	if p.Height <= 0 {
+		return fr
+	}
+	rows, pitch := rowsOn(p)
+	if len(rows) < minRows || pitch <= 0 {
+		return fr
+	}
+	if gap := rows[1] - rows[0]; gap >= detach*pitch {
+		fr.top = max(fr.top, (rows[0]+gap/2)/p.Height)
+	}
+	if gap := rows[len(rows)-1] - rows[len(rows)-2]; gap >= detach*pitch {
+		fr.bottom = min(fr.bottom, (rows[len(rows)-1]-gap/2)/p.Height)
+	}
+	return fr
+}
+
+// rowsOn is the centre of every row of type on a page, in order down the
+// page, with the page's line spacing.
+//
+// Rows and not lines, because the two columns of a two column page put two
+// lines at the same height and the question here is only whether anything at
+// all is set at that height. Measuring the gaps between lines instead gives
+// every two column page a typical gap of nothing, since the line beside a
+// line is no distance below it.
+//
+// The spacing is the gap from one row to the next and not the height of a
+// line, because pdftotext measures a line of mathematics from the top of the
+// superscripts to the bottom of the subscripts. A page of proofs has a
+// typical line height of twenty one points and sets its text thirteen points
+// apart, and the height is the wrong unit to count white space in.
+func rowsOn(p poppler.Layout) ([]float64, float64) {
+	var ys, hs []float64
+	for _, l := range p.Lines() {
+		if len(l.Words) == 0 {
+			continue
+		}
+		ys = append(ys, l.YMid())
+		hs = append(hs, l.Box.Height())
+	}
+	if len(ys) < 2 {
+		return nil, 0
+	}
+	slices.Sort(ys)
+	// Two lines are the same row when they overlap, which is what half a line
+	// height apart means, so the height is still what the grouping is done by.
+	h := median(hs)
+	var rows []float64
+	for _, y := range ys {
+		if len(rows) == 0 || y-rows[len(rows)-1] > h/2 {
+			rows = append(rows, y)
+		}
+	}
+	if len(rows) < 2 {
+		return rows, 0
+	}
+	var gaps []float64
+	for i := 1; i < len(rows); i++ {
+		gaps = append(gaps, rows[i]-rows[i-1])
+	}
+	return rows, median(gaps)
 }
 
 // Lines returns the text lines of a page with the furniture taken out, in
@@ -169,7 +328,7 @@ func (f *Furniture) Printed(p poppler.Layout) string {
 // like, and that pair should not be allowed to number a sixteen page paper.
 // A folio is on nearly every page of the paper that has one, so a third is
 // already generous.
-func foliosOf(pages []poppler.Layout) map[int]string {
+func foliosOf(pages []poppler.Layout, frames map[int]frame) map[int]string {
 	type candidate struct {
 		text   string
 		offset int
@@ -178,7 +337,7 @@ func foliosOf(pages []poppler.Layout) map[int]string {
 	agree := map[int]int{}
 	for _, p := range pages {
 		for _, l := range Lines(p) {
-			if _, ok := key(p, l); !ok {
+			if _, ok := frames[p.Number].key(p, l); !ok {
 				continue
 			}
 			s := strings.TrimSpace(l.Text())
@@ -286,17 +445,17 @@ var folio = regexp.MustCompile(`^[-\[\(]?\s*(?:[0-9]{1,4}|[ivxlcdmIVXLCDM]{1,7})
 
 // key is how a line is recognised on another page: what it says, with the
 // numbers folded out, and roughly where it sits. It returns false for a line
-// that is not in the margin at all.
+// that is inside the frame, which is to say not in the margin at all.
 //
 // The numbers are folded because a running head that reads "483" on one page
 // reads "484" on the next and is the same piece of furniture, and because a
 // header that carries the volume and the page carries both in one line.
-func key(p poppler.Layout, l poppler.TextLine) (string, bool) {
+func (fr frame) key(p poppler.Layout, l poppler.TextLine) (string, bool) {
 	if p.Height <= 0 {
 		return "", false
 	}
 	y := l.YMid() / p.Height
-	if y > margin && y < 1-margin {
+	if y > fr.top && y < fr.bottom {
 		return "", false
 	}
 	text := fold(l.Text())
