@@ -391,7 +391,7 @@ func maskText(s string) string {
 		// whole. mathtex reads \text{$\Gamma$ correspondence} as one span on
 		// purpose, and masking the argument would let a translator rewrite the
 		// \Gamma inside it with nothing to catch that.
-		if strings.Contains(arg, "$") || Upright[strings.TrimSpace(arg)] {
+		if strings.Contains(arg, "$") || Upright[strings.TrimSpace(arg)] || Applied(s, shut) {
 			b.WriteString(arg)
 		} else {
 			// The spaces at the edges stay. A "\text{not }" carries the space
@@ -405,13 +405,43 @@ func maskText(s string) string {
 	return b.String()
 }
 
+// Applied reports whether the \text whose closing brace is at shut names
+// something in the formula rather than saying something about it: it is
+// applied to an argument, or it carries an index.
+//
+// \text{Sublayer}(x) is a function and \text{head}_i is the ith of several
+// heads. Neither is Vietnamese for anything, and a translation that renders
+// either of them has broken the formula, because the prose around it goes on
+// calling the function by its name.
+//
+// This is the half of the question that has a rule in it. Upright is the
+// other half and it is a list, so it holds the names a reader of this corpus
+// met first and will never hold all of them: every paper names its own
+// functions. The Transformer paper alone has six, of which the list had four.
+//
+// The character has to come straight after the brace. A \text that says
+// something about the formula puts its space inside its own braces, the way
+// "\text{not }" does, so a space after the brace is not the shape of an
+// application either.
+func Applied(s string, shut int) bool {
+	if shut+1 >= len(s) {
+		return false
+	}
+	switch s[shut+1] {
+	case '(', '_', '^':
+		return true
+	}
+	return false
+}
+
 // Upright is the arguments of a \text that are not prose and do not move.
 //
-// It is a list and not a rule because there is no rule. "\text{if}" is prose,
-// "\text{iff}" is arguable and "\text{argmax}" is an operator that happens to
-// be spelled with letters. What is here is what a paper sets upright because
-// TeX would otherwise set it in italics and make it look like a product of
-// variables.
+// It is a list and not a rule because there is no rule for the whole of it.
+// "\text{if}" is prose, "\text{iff}" is arguable and "\text{argmax}" is an
+// operator that happens to be spelled with letters. What is here is what a
+// paper sets upright because TeX would otherwise set it in italics and make
+// it look like a product of variables. See Applied for the part of this
+// that a rule does reach.
 var Upright = func() map[string]bool {
 	m := map[string]bool{}
 	for _, s := range strings.Fields(`

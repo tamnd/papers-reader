@@ -866,6 +866,17 @@ func TestL12LeavesAnOperatorNameAlone(t *testing.T) {
 	}
 }
 
+// A \text applied to an argument or carrying an index names something in
+// the formula, and the prose around it goes on calling it by that name. The
+// Transformer paper has six of them and the upright list had four.
+func TestL12LeavesAnAppliedNameAlone(t *testing.T) {
+	source := `The block is $\text{Sublayer}(x)$ and the ith of them is $\text{head}_i$ in this paragraph here.` + "\n"
+	tr := `Khối là $\text{Sublayer}(x)$ và cái thứ i là $\text{head}_i$ trong đoạn văn này ở đây.` + "\n"
+	if res := result(t, pairOf(t, corpus.VI, source, tr), "L12"); res.Failed() {
+		t.Errorf("L12 asked for the name of a function to be translated: %v", res.Findings)
+	}
+}
+
 // The journal's own line at the foot of a first page stands as printed, the
 // same way a venue name in a bibliography does. It sits below the abstract,
 // so the masthead rule does not reach it, and it runs past L07's eight word

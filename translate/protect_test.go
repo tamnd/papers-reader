@@ -319,6 +319,33 @@ func TestAnUprightOperatorInsideATextCommandMayNotBeTranslated(t *testing.T) {
 	}
 }
 
+// A \text applied to an argument or carrying an index is the name of
+// something in the formula. The prose around it goes on calling the function
+// by its name, so a translation that renders the name has broken the pair.
+func TestAnAppliedTextCommandMayNotBeTranslated(t *testing.T) {
+	for _, c := range []struct{ name, source, answer string }{
+		{"a function", "$\\text{Sublayer}(x)$\n", "$\\text{Lớp con}(x)$\n"},
+		{"an indexed name", "$\\text{head}_i = W_i$\n", "$\\text{đầu}_i = W_i$\n"},
+		{"a superscript", "$\\text{head}^2$\n", "$\\text{đầu}^2$\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if d := Compare(c.source, c.answer); len(d) != 1 {
+				t.Fatalf("Compare found %v and the answer renamed a function", d)
+			}
+		})
+	}
+}
+
+// And a \text that stands on its own is still prose.
+func TestATextCommandThatIsNotAppliedIsStillProse(t *testing.T) {
+	source := "$x \\text{ where } y$\n"
+	answer := "$x \\text{ trong đó } y$\n"
+
+	if d := Compare(source, answer); len(d) != 0 {
+		t.Fatalf("Compare refused a translated word inside a \\text: %v", d)
+	}
+}
+
 func TestMathematicsInsideATextCommandIsComparedWhole(t *testing.T) {
 	source := "$\\text{the $\\Gamma$ correspondence}$\n"
 	answer := "$\\text{tương ứng $\\Lambda$}$\n"

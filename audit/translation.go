@@ -1358,7 +1358,8 @@ func ruleL12(in *Input) ([]Finding, error) {
 //
 // A single letter is a subscript label and not a word. An argument holding
 // mathematics of its own is compared whole by the span check and is not
-// prose. An operator name is not prose.
+// prose. An operator name is not prose, and neither is the name of a
+// function or of an indexed thing: see translate.Applied.
 func textWords(body string) []string {
 	var out []string
 	for _, s := range translate.Protect(body) {
@@ -1393,7 +1394,9 @@ func textArgs(s string) []string {
 		if shut < 0 {
 			return out
 		}
-		out = append(out, s[open:shut])
+		if !translate.Applied(s, shut) {
+			out = append(out, s[open:shut])
+		}
 		i = shut + 1
 	}
 	return out
