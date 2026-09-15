@@ -37,7 +37,7 @@ func runTranslate(args []string) error {
 	tries := fs.Int("tries", translate.Tries, "how many times one chunk is asked before the file is given up on")
 	floor := fs.Int("floor", glossary.Floor, "the glossary coverage a language needs, as a percentage")
 	force := fs.Bool("force", false, "translate again even where the English has not changed")
-	redo := fs.Bool("redo", false, "translate again the files a hard audit rule refuses, and nothing else")
+	redo := fs.Bool("redo", false, "translate again the files the audit says to ask about again, and nothing else")
 	material := fs.Bool("material", false, "translate again the files the back translation calls materially different, and nothing else")
 	atOnce := fs.Int("jobs", 0, "how many files to translate at once, or 0 for one per lane in the fleet")
 	every := fs.Int("publish", 0, "push the papers the run has finished to the corpus and merge them, once so many files are ready")
@@ -87,11 +87,13 @@ owed the one section it is missing.
 
 A batch also carries nothing a hard audit rule refuses, and a paper one of
 them names stays in the working tree. Use -redo to ask again for exactly
-those files: the run audits the corpus, keeps the files the hard rules are
-unhappy with and translates those and nothing else. Editing one by hand is
-not the repair. The front matter carries the hash of the English the
-translation answers, so an edit either breaks that hash or lies about what
-produced the text.
+those files: the run audits the corpus, keeps the files the rules want asked
+again and translates those and nothing else. That is every hard rule and
+L19, which is the section title left in English, because a title is not in
+the body and asking again is the only repair it has. Editing one by hand is
+not the repair either way. The front matter carries the hash of the English
+the translation answers, so an edit either breaks that hash or lies about
+what produced the text.
 
 An audit rule can see a formula go missing and cannot see a meaning change.
 That is what papers roundtrip is for, and -material asks again for exactly
@@ -134,12 +136,12 @@ the pages it came away from believing something the paper does not say.
 		return err
 	}
 	if *redo {
-		found, err := hardFindings(c)()
+		found, err := redoFindings(c)()
 		if err != nil {
 			return err
 		}
 		if jobs = refusedOnly(found, jobs); len(jobs) == 0 {
-			fmt.Println("no hard audit rule refuses a translation of these papers")
+			fmt.Println("no audit rule asks for a translation of these papers again")
 			return nil
 		}
 	}
@@ -463,10 +465,9 @@ func plan(c *corpus.Corpus, g *glossary.Glossary, papers []corpus.Paper, langs [
 // rules are unhappy with, which over the three papers that were red on
 // tamnd/papers main was five files out of twenty five.
 //
-// Hard rules only, because a soft rule is a report worth reading and not a
-// reason to spend four more questions on a page. A finding that names no
-// file, or names an English file, or names something that is not a section
-// of a paper, keeps nothing: there is no translation in it to ask for again.
+// Which rules count is redoFindings. A finding that names no file, or names
+// an English file, or names something that is not a section of a paper,
+// keeps nothing: there is no translation in it to ask for again.
 func refusedOnly(found []audit.Finding, jobs []job) []job {
 	bad := map[string]bool{}
 	for _, f := range found {
@@ -482,6 +483,26 @@ func refusedOnly(found []audit.Finding, jobs []job) []job {
 	}
 	return out
 }
+
+// redoFindings is the rules -redo acts on: every hard rule, and L19.
+//
+// A hard rule because a file one of them refuses is a file the run will not
+// publish, so asking again is the only way it ever ships. Every other soft
+// rule is a report worth reading and not a reason to spend four more
+// questions on a page.
+//
+// L19 is the exception because it is the one soft rule whose finding has no
+// other repair. The section title is not in the body, so no edit to the
+// prose reaches it, and the front matter carries the hash of the English the
+// translation answers, so a hand edit either breaks the hash or is a lie
+// about what produced the text. Asking again is the whole of the remedy, and
+// the next ask goes to a different host in the fleet, which is where the
+// different answer comes from.
+func redoFindings(c *corpus.Corpus) func() ([]audit.Finding, error) {
+	return findings(c, true, reask)
+}
+
+func reask(r audit.Rule) bool { return r.Hard || r.ID == "L19" }
 
 // judgedMaterial keeps the jobs whose translation the back translation check
 // came away from believing something the paper does not say.

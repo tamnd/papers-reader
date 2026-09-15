@@ -211,9 +211,22 @@ func (s *shipment) audited() {
 }
 
 // hardFindings runs the hard audit rules over the corpus and returns
+// everything they found. It is the publish gate's question: a paper a hard
+// rule refuses does not go to the corpus.
+func hardFindings(c *corpus.Corpus) func() ([]audit.Finding, error) {
+	return findings(c, false, func(r audit.Rule) bool { return r.Hard })
+}
+
+// findings runs some of the audit rules over the corpus and returns
 // everything they found. It reloads each time, because the point of it is to
 // read the files the run has just written.
-func hardFindings(c *corpus.Corpus) func() ([]audit.Finding, error) {
+//
+// keep says which rules the caller wants and soft says whether the soft ones
+// are worth running to find out. Two arguments for what looks like one
+// question, because the publish gate asks this a hundred times in a long run
+// and running the nineteen soft rules each time would be nineteen rules of
+// work thrown away.
+func findings(c *corpus.Corpus, soft bool, keep func(audit.Rule) bool) func() ([]audit.Finding, error) {
 	return func() ([]audit.Finding, error) {
 		in, err := audit.Load(c)
 		if err != nil {
@@ -223,7 +236,10 @@ func hardFindings(c *corpus.Corpus) func() ([]audit.Finding, error) {
 			return nil, err
 		}
 		var out []audit.Finding
-		for _, res := range audit.Run(in, true).Results {
+		for _, res := range audit.Run(in, !soft).Results {
+			if !keep(res.Rule) {
+				continue
+			}
 			if res.Err != nil {
 				return nil, fmt.Errorf("rule %s: %w", res.Rule.ID, res.Err)
 			}

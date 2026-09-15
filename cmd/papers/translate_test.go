@@ -664,3 +664,23 @@ func TestContentPathReadsAPathUnderContent(t *testing.T) {
 		}
 	}
 }
+
+// Which rules -redo acts on. Every hard rule, because a file one of them
+// refuses never ships until it is asked for again, and L19 on its own out
+// of the soft ones, because a section title left in English cannot be
+// repaired any other way.
+func TestWhichRulesRedoActsOn(t *testing.T) {
+	soft := 0
+	for _, r := range audit.Rules() {
+		want := r.Hard || r.ID == "L19"
+		if got := reask(r); got != want {
+			t.Errorf("reask(%s) is %v, want %v", r.ID, got, want)
+		}
+		if !r.Hard && !reask(r) {
+			soft++
+		}
+	}
+	if soft == 0 {
+		t.Error("every soft rule is asked again, and that is not the bargain")
+	}
+}
