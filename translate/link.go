@@ -116,8 +116,11 @@ func Unescape(source, answer string) string {
 		}
 		end := token(rs, s.End)
 		whole := string(rs[s.Start:end])
-		plain := escape.ReplaceAllString(whole, "$1")
-		if plain == whole || strings.Contains(source, whole) || !strings.Contains(source, plain) {
+		if strings.Contains(source, whole) {
+			continue
+		}
+		plain := pick(source, rounds(whole, escape))
+		if plain == "" {
 			continue
 		}
 		b.WriteString(string(rs[at:s.Start]))
@@ -169,13 +172,7 @@ func UnescapeMath(source, answer string) string {
 		if strings.Contains(source, whole) {
 			continue
 		}
-		plain := ""
-		for _, c := range unescaped(whole) {
-			if strings.Contains(source, c) {
-				plain = c
-				break
-			}
-		}
+		plain := pick(source, unescaped(whole))
 		if plain == "" {
 			continue
 		}
@@ -236,6 +233,45 @@ func Repair(source, answer string) string {
 // everything CommonMark lets a backslash escape and nothing else. A
 // backslash in front of a letter is a TeX command and is not touched.
 var escape = regexp.MustCompile(`\\([[:punct:]])`)
+
+// pick is the first of the candidates the source has, or the empty string
+// when it has none of them. A repair that cannot find what it is putting
+// back does not happen, and Verify refuses the answer as it did before.
+func pick(source string, candidates []string) string {
+	for _, c := range candidates {
+		if strings.Contains(source, c) {
+			return c
+		}
+	}
+	return ""
+}
+
+// rounds is the token with the escapes taken out of it once, then twice,
+// then three times.
+//
+// Once is not always enough. A backslash is punctuation, so a model that
+// escapes its own escape writes two of them, and taking one round off
+// "\\~jain" leaves "\~jain", which is neither what the paper printed nor
+// what the model meant. Both addresses that forced this were written that
+// way by a run in September: the tilde in the AIMD paper's address and the
+// parentheses in the Milner citation.
+//
+// Three rounds because two is the deepest anything has come back, and a
+// bound is cheaper than reasoning about a pattern that rewrites its own
+// output.
+func rounds(whole string, re *regexp.Regexp) []string {
+	var out []string
+	s := whole
+	for i := 0; i < 3; i++ {
+		next := re.ReplaceAllString(s, "$1")
+		if next == s {
+			break
+		}
+		out = append(out, next)
+		s = next
+	}
+	return out
+}
 
 // token is the end of the whitespace delimited word that starts at from.
 func token(rs []rune, from int) int {

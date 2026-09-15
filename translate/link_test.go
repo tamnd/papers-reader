@@ -102,6 +102,33 @@ func TestARepairedAddressIsAccepted(t *testing.T) {
 	}
 }
 
+// A model that escapes its own escape writes two backslashes, and one
+// round of unescaping leaves an address that is still not the one on the
+// page. Both addresses below came back that way from a run in September.
+func TestADoublyEscapedAddressIsPutBack(t *testing.T) {
+	for _, c := range []struct {
+		source, answer, want string
+	}{
+		{
+			"See http://www.cse.wustl.edu/~jain for the note.\n",
+			"Xem http://www.cse.wustl.edu/\\\\~jain de biet them.\n",
+			"Xem http://www.cse.wustl.edu/~jain de biet them.\n",
+		},
+		{
+			"See https://doi.org/10.1016/0022-0000(78)90014-4 for the proof.\n",
+			"Xem https://doi.org/10.1016/0022-0000\\\\(78\\\\)90014-4 de biet chung minh.\n",
+			"Xem https://doi.org/10.1016/0022-0000(78)90014-4 de biet chung minh.\n",
+		},
+	} {
+		if got := Unescape(c.source, c.answer); got != c.want {
+			t.Errorf("Unescape gave %q\nand the address is written %q", got, c.want)
+		}
+		if bad := Verify(c.source, Unescape(c.source, c.answer)); bad != nil {
+			t.Errorf("a repaired answer was still refused: %s", bad[0])
+		}
+	}
+}
+
 func TestAnAddressTheSourceEscapedIsLeftAlone(t *testing.T) {
 	// A paper that prints the backslash is a paper whose address has one in
 	// it, and the answer is right to carry it.
