@@ -157,7 +157,7 @@ func Read(p poppler.Layout, f *Furniture) Page {
 		return out
 	}
 
-	pitch := medianPitch(lines)
+	sp := measure(lines, cuts)
 	var cur []poppler.TextLine
 	flush := func() {
 		if len(cur) == 0 {
@@ -199,7 +199,7 @@ func Read(p poppler.Layout, f *Furniture) Page {
 		if taken {
 			continue
 		}
-		if len(cur) > 0 && breaks(cur[len(cur)-1], lines[i], pitch, cuts) {
+		if len(cur) > 0 && breaks(cur[len(cur)-1], lines[i], sp, cuts) {
 			flush()
 		}
 		cur = append(cur, lines[i])
@@ -210,27 +210,120 @@ func Read(p poppler.Layout, f *Furniture) Page {
 
 // breaks says whether a new paragraph starts at this line.
 //
-// Three reasons, and they are in the order of how much they can be trusted:
-// the column changed, the vertical gap is bigger than the paper's leading, or
-// the line is indented past the left edge of the one above it. The second is
-// measured against the paper's own line pitch and not against the gap between
-// the boxes, because the gap between two lines of the same paragraph is a
-// point and a half in a 1967 proceedings and four in a modern preprint, and a
-// threshold on that number is a threshold on the typeface. The third is
-// the weakest of the three and it is what a paper that marks its paragraphs
+// Four reasons, and they are in the order of how much they can be trusted:
+// the column changed, the step down the page is bigger than the paper's line
+// pitch, the white between the two boxes is wider than the paper's leading,
+// or the line is indented past the left edge of the one above it.
+//
+// The second and the third are the same question asked two ways and the
+// paper decides which one answers it. A step is the distance from one line's
+// top to the next one's, and it changes when a line is taller than its
+// neighbours as well as when the space above it is wider: the line on page 3
+// of the Paxos paper that carries a footnote marker is three points taller
+// than the line under it, and the step onto it and the step off it differ by
+// six points with nothing happening in between. Measuring the white instead
+// takes the height out and leaves the space, which is the thing that was
+// meant. Both are measured against what the paper itself usually does,
+// because the white between two lines of one paragraph is a point and a half
+// in a 1967 proceedings and four in a modern preprint, and a threshold in
+// points is a threshold on the typeface.
+//
+// The step rule stays because the two do not catch the same thing. A row
+// that came back in pieces sits at a white of nothing and a step of nothing
+// and neither fires, which is right, and a jump to a display set loose sits
+// at a large step whatever the white does.
+//
+// The fourth is the weakest and it is what a paper that marks its paragraphs
 // with a first line indent and no extra leading needs, which is most of the
 // hundred. A paper that marks them neither way is read as one paragraph per
 // column, and the assembler puts it back together from the punctuation.
-func breaks(prev, l poppler.TextLine, pitch float64, cuts []float64) bool {
+func breaks(prev, l poppler.TextLine, sp spacing, cuts []float64) bool {
 	if Column(prev, cuts) != Column(l, cuts) {
 		return true
 	}
-	if pitch > 0 && l.YMin-prev.YMin > pitch*1.4 {
+	if sp.pitch > 0 && l.YMin-prev.YMin > sp.pitch*1.4 {
+		return true
+	}
+	if sp.height > 0 && l.YMin-prev.YMax-sp.leading > sp.height*extraWhite {
 		return true
 	}
 	const indent = 4 // points, about two characters of a body face
 	return l.XMin > prev.XMin+indent
 }
+
+// extraWhite is how much wider than the paper's own leading the space above a
+// line has to be before the line is a new paragraph, as a share of the height
+// of a line.
+//
+// A third of a line. Under the Paxos paper's section headings the space is
+// four points wider than the leading and a line is nine points high, which is
+// 0.45, and the widest space inside a paragraph of that paper is nothing at
+// all wider than the leading. Over the body pages of six papers set six
+// different ways the measure puts eighty five per cent of pairs in the bottom
+// quarter of a line and the rest strung out to three lines, so anything from
+// a fifth to a half separates the same pairs. A third is the middle of that
+// and it is what lets go of the least on either side.
+//
+// It was set at nothing for a long time, which is to say the rule was not
+// there, and the cost of that was a heading swallowed by the paragraph under
+// it. The Paxos paper published as three sections of a thirty three page
+// paper, because the splitter needs three headings in a row to believe a
+// numbering scheme and every one of that paper's headings was inside the
+// first sentence of its own section.
+const extraWhite = 1.0 / 3
+
+// spacing is what the lines of a page usually do, which is what makes an
+// unusual pair of them unusual.
+type spacing struct {
+	// pitch is the usual distance from one line's top to the next one's.
+	pitch float64
+	// leading is the usual white between one line's bottom and the next
+	// one's top. It is not pitch minus height: a page with one tall line on
+	// it has a height that no pair of lines has, and the white is measured
+	// pair by pair.
+	leading float64
+	// height is the usual height of a line, which is the unit the other two
+	// are judged in.
+	height float64
+}
+
+// measure works out what a page's lines usually do.
+//
+// A pair counts only where it is a step from one line of a column to the
+// next one. The pair that changed column is the foot of one and the head of
+// the other and the space between them is the height of a page. The pair
+// that barely steps at all is one row of the page that came back in pieces,
+// which is what pdftotext does to a figure drawn out of type, and those
+// pieces overlap each other: their whites are negative, there are more of
+// them on a picture page than there are lines of text, and the median of
+// them is not the leading of anything. It was a negative leading off the
+// pieces of a picture that read the second and third lines of a caption as
+// paragraphs of their own.
+func measure(lines []poppler.TextLine, cuts []float64) spacing {
+	var whites, heights []float64
+	for i, l := range lines {
+		if h := l.Height(); h > 0 {
+			heights = append(heights, h)
+		}
+		if i == 0 || Column(lines[i-1], cuts) != Column(l, cuts) {
+			continue
+		}
+		prev := lines[i-1]
+		d := l.YMin - prev.YMin
+		if d <= 0 || d >= maxWhite || d < minStep*min(prev.Height(), l.Height()) {
+			continue
+		}
+		whites = append(whites, l.YMin-prev.YMax)
+	}
+	return spacing{pitch: medianPitch(lines), leading: median(whites), height: median(heights)}
+}
+
+// maxWhite is the largest step from one line to the next that is still two
+// lines of one column, in points. Anything further is a figure, a table or
+// the foot of the page, and counting it would drag the median off the thing
+// being measured. Forty points is half an inch, which is further than any
+// paper in the hundred steps between two lines of a section.
+const maxWhite = 40
 
 // medianPitch is how far a page moves down for one line of text: the usual
 // distance from one line's top to the next one's. It is the only reliable way

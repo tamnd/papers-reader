@@ -248,3 +248,77 @@ func TestADollarSignOnANativePageIsMoneyAndNotADelimiter(t *testing.T) {
 		t.Errorf("a printed dollar sign opened a math span: %q", text)
 	}
 }
+
+// A heading sits in the same column as the prose under it, at the same size,
+// and is marked off by the space above and below it and by nothing else. The
+// step from the heading to the first line of the section is a third wider
+// than the step inside a paragraph on page 3 of the Paxos paper, which is
+// under the 1.4 the pitch rule wants, so before this the heading was the
+// first few words of the paragraph under it. Three of that paper's headings
+// in a row went that way, the splitter needs three in a row to believe a
+// numbering scheme, and a thirty three page paper published as three
+// sections.
+func TestAHeadingSetOffByItsWhiteIsItsOwnParagraph(t *testing.T) {
+	var lines []poppler.TextLine
+	lines = append(lines, put(60, 100, "1 The Problem"))
+	lines = append(lines, put(60, 116, "1.1 The Island of Paxos"))
+	lines = append(lines, column(60, 132,
+		"Early in this millennium the Aegean",
+		"island of Paxos was a thriving centre",
+		"of the mercantile trade of its day, and",
+		"wealth led to political sophistication",
+		"and the Paxons replaced their ancient",
+		"theocracy with a parliament of its own.")...)
+
+	p := read(lines)
+	if len(p.Paragraphs) != 3 {
+		t.Fatalf("read %d paragraphs, want 3: %q", len(p.Paragraphs), p.Text())
+	}
+	for i, want := range []string{"1 The Problem", "1.1 The Island of Paxos"} {
+		if got := p.Paragraphs[i].Text; got != want {
+			t.Errorf("paragraph %d is %q, want %q", i, got, want)
+		}
+	}
+}
+
+// The white above a line is measured against what the paper itself does, so
+// a paper set loose is not read as one paragraph per line. This is the same
+// three lines set on double the leading, and they are still one paragraph.
+func TestALooselyLeadedParagraphIsStillOneParagraph(t *testing.T) {
+	var lines []poppler.TextLine
+	for i, s := range []string{
+		"A thesis is set on double leading and",
+		"every line of it stands as far from the",
+		"line above as a paragraph break would.",
+	} {
+		lines = append(lines, put(60, 100+float64(i)*24, s))
+	}
+
+	p := read(lines)
+	if len(p.Paragraphs) != 1 {
+		t.Fatalf("read %d paragraphs, want 1: %q", len(p.Paragraphs), p.Text())
+	}
+}
+
+// A line that is taller than its neighbours moves the step without moving
+// the space. Line 4 of page 3 of the Paxos paper carries a footnote marker
+// and is three points taller than the rest, so the step onto the line under
+// it is six points longer than the step onto the line above it and nothing
+// has happened. The white is the same on both sides and the paragraph holds
+// together.
+func TestATallLineDoesNotBreakTheParagraphUnderIt(t *testing.T) {
+	tall := put(60, 112, "a line with a footnote marker set above the baseline")
+	tall.YMax = tall.YMin + fontSize + 3
+
+	lines := []poppler.TextLine{
+		put(60, 100, "the first line of the paragraph runs to here"),
+		tall,
+		put(60, 127, "and the third carries the sentence to its end."),
+		put(60, 139, "and a fourth line to measure the leading by."),
+	}
+
+	p := read(lines)
+	if len(p.Paragraphs) != 1 {
+		t.Fatalf("read %d paragraphs, want 1: %q", len(p.Paragraphs), p.Text())
+	}
+}
