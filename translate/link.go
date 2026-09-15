@@ -131,6 +131,70 @@ func Unescape(source, answer string) string {
 	return b.String()
 }
 
+// UnescapeMath takes the Markdown escapes out of a formula a model wrote
+// back with them in.
+//
+// The same tic as the one Unescape undoes in an address, in the one place
+// where it costs the most. A translator that has been told the answer is
+// Markdown sees an underscore in "$\mathrm{BERT}_{\mathrm{BASE}}$" and
+// escapes it, and the answer comes back with "\_" where the source has
+// "_". Every other word of the paragraph is translated and the paragraph is
+// thrown away over one backslash.
+//
+// It does not cure by asking again. The BERT paper was asked three times
+// for the same section on three passes of the run and escaped the same
+// subscript every time, and the run gave up on the file each time.
+//
+// An underscore and a star, and nothing else. Those are the two characters
+// Markdown reads inside a word, so they are the two a model escapes out of
+// habit. The rest of what a backslash can escape in TeX is meant: "\{" and
+// "\%" are how a formula prints a brace and a per cent sign.
+//
+// The repair is only made when the unescaped formula is one the source has
+// and the escaped one is not, which is the same guard Unescape uses. So a
+// paper that itself prints a literal underscore inside a formula is left
+// alone, and a formula the answer invented is still refused.
+func UnescapeMath(source, answer string) string {
+	if !strings.Contains(answer, `\`) {
+		return answer
+	}
+	rs := []rune(answer)
+	var b strings.Builder
+	at := 0
+	for _, s := range Protect(answer) {
+		if s.Kind != Math || s.Start < at {
+			continue
+		}
+		whole := string(rs[s.Start:s.End])
+		plain := mathEscape.ReplaceAllString(whole, "$1")
+		if plain == whole || strings.Contains(source, whole) || !strings.Contains(source, plain) {
+			continue
+		}
+		b.WriteString(string(rs[at:s.Start]))
+		b.WriteString(plain)
+		at = s.End
+	}
+	if at == 0 {
+		return answer
+	}
+	b.WriteString(string(rs[at:]))
+	return b.String()
+}
+
+// mathEscape is a backslash in front of one of the two characters Markdown
+// reads inside a word, which are the two a translator escapes inside a
+// formula that does not need escaping.
+var mathEscape = regexp.MustCompile(`\\([_*])`)
+
+// Repair is the answer with the tics taken out of it that asking again does
+// not cure: a web address turned into a link to itself, an address written
+// back with Markdown escapes in it, and a formula written back the same
+// way. Every one of them leaves the reader the text the paper printed,
+// which is why each is a repair and not a relaxation of the check.
+func Repair(source, answer string) string {
+	return UnescapeMath(source, Unescape(source, Unlink(source, answer)))
+}
+
 // escape is a backslash in front of a piece of ASCII punctuation, which is
 // everything CommonMark lets a backslash escape and nothing else. A
 // backslash in front of a letter is a TeX command and is not touched.

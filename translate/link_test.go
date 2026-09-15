@@ -138,3 +138,49 @@ func TestAnEscapeOutsideAnAddressIsNotTouched(t *testing.T) {
 		}
 	}
 }
+
+// The subscript that stopped the BERT paper, three times on each of three
+// passes of the run.
+func TestAnEscapedFormulaIsPutBack(t *testing.T) {
+	source := "The larger of the two is $\\mathrm{BERT}_{\\mathrm{BASE}}$ on every task.\n"
+	answer := "Mô hình lớn hơn là $\\mathrm{BERT}\\_{\\mathrm{BASE}}$ trên mọi tác vụ.\n"
+	want := "Mô hình lớn hơn là $\\mathrm{BERT}_{\\mathrm{BASE}}$ trên mọi tác vụ.\n"
+	if got := UnescapeMath(source, answer); got != want {
+		t.Errorf("UnescapeMath gave %q\nand the formula is written %q", got, want)
+	}
+	if bad := Verify(source, UnescapeMath(source, answer)); bad != nil {
+		t.Errorf("a repaired answer was still refused: %s", bad[0])
+	}
+}
+
+func TestAFormulaTheSourceEscapedIsLeftAlone(t *testing.T) {
+	// A paper that prints a literal underscore in a formula is a paper
+	// whose formula has a backslash in it, and the answer is right to
+	// carry it.
+	source := "The name is written $\\mathtt{a\\_b}$ in the table.\n"
+	answer := "Tên được viết $\\mathtt{a\\_b}$ trong bảng.\n"
+	if got := UnescapeMath(source, answer); got != answer {
+		t.Errorf("UnescapeMath gave %q and the source is written that way too", got)
+	}
+}
+
+func TestAnInventedFormulaIsNotRepairedIntoAGoodOne(t *testing.T) {
+	source := "The larger of the two is $\\mathrm{BERT}_{\\mathrm{BASE}}$ on every task.\n"
+	answer := "Mô hình lớn hơn là $\\mathrm{GPT}\\_{\\mathrm{LARGE}}$ trên mọi tác vụ.\n"
+	if got := UnescapeMath(source, answer); got != answer {
+		t.Errorf("UnescapeMath gave %q and invented the repair", got)
+	}
+	if Verify(source, answer) == nil {
+		t.Error("Verify accepted a formula the passage did not have")
+	}
+}
+
+// Repair is the three of them in one call, which is what the run makes.
+func TestRepairPutsBackAnAddressAndAFormulaAtOnce(t *testing.T) {
+	source := "See http://x.test/~a for $x_1$ and the rest.\n"
+	answer := "Xem http://x.test/\\~a để biết $x\\_1$ và phần còn lại.\n"
+	want := "Xem http://x.test/~a để biết $x_1$ và phần còn lại.\n"
+	if got := Repair(source, answer); got != want {
+		t.Errorf("Repair gave %q\nand the passage is written %q", got, want)
+	}
+}
