@@ -153,6 +153,32 @@ func TestAnEscapedFormulaIsPutBack(t *testing.T) {
 	}
 }
 
+// The other half of the tic: Markdown writes a literal backslash as two of
+// them, and a model that is escaping its answer does it inside a formula
+// too. In TeX a doubled backslash is a line break, so this one renders
+// wrongly rather than merely comparing wrongly.
+func TestADoubledBackslashIsPutBack(t *testing.T) {
+	source := "We tried $s \\in \\{200, 400\\}$ and kept the larger.\n"
+	answer := "Chung toi thu $s \\in \\\\{200, 400\\\\}$ va giu lai gia tri lon hon.\n"
+	want := "Chung toi thu $s \\in \\{200, 400\\}$ va giu lai gia tri lon hon.\n"
+	if got := UnescapeMath(source, answer); got != want {
+		t.Errorf("UnescapeMath gave %q\nand the formula is written %q", got, want)
+	}
+	if bad := Verify(source, UnescapeMath(source, answer)); bad != nil {
+		t.Errorf("a repaired answer was still refused: %s", bad[0])
+	}
+}
+
+// A formula with a real line break in it keeps the pair. Collapsing it gives
+// something the source does not have, so the repair leaves it where it is.
+func TestALineBreakInsideAFormulaIsLeftAlone(t *testing.T) {
+	source := "The pair is $\\begin{cases} a \\\\ b \\end{cases}$ here.\n"
+	answer := "Cap la $\\begin{cases} a \\\\ b \\end{cases}$ o day.\n"
+	if got := UnescapeMath(source, answer); got != answer {
+		t.Errorf("UnescapeMath gave %q and the source is written that way too", got)
+	}
+}
+
 func TestAFormulaTheSourceEscapedIsLeftAlone(t *testing.T) {
 	// A paper that prints a literal underscore in a formula is a paper
 	// whose formula has a backslash in it, and the answer is right to

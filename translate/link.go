@@ -166,8 +166,17 @@ func UnescapeMath(source, answer string) string {
 			continue
 		}
 		whole := string(rs[s.Start:s.End])
-		plain := mathEscape.ReplaceAllString(whole, "$1")
-		if plain == whole || strings.Contains(source, whole) || !strings.Contains(source, plain) {
+		if strings.Contains(source, whole) {
+			continue
+		}
+		plain := ""
+		for _, c := range unescaped(whole) {
+			if strings.Contains(source, c) {
+				plain = c
+				break
+			}
+		}
+		if plain == "" {
 			continue
 		}
 		b.WriteString(string(rs[at:s.Start]))
@@ -185,6 +194,34 @@ func UnescapeMath(source, answer string) string {
 // reads inside a word, which are the two a translator escapes inside a
 // formula that does not need escaping.
 var mathEscape = regexp.MustCompile(`\\([_*])`)
+
+// unescaped is the formulas a model might have meant by this one, in the
+// order they are worth trying.
+//
+// There are two tics and they come together. One is the backslash in front
+// of an underscore. The other is the backslash in front of a backslash,
+// which is how Markdown writes a literal one: the ResNet paper's
+// "$s \in \{200, 400\}$" came back with every brace doubled. That one is
+// worse than it looks, because a doubled backslash is a line break in TeX
+// rather than nothing, so the formula does not merely fail the comparison,
+// it renders wrongly if it ever gets through.
+//
+// A formula with a real line break in it is left alone by the guard in the
+// caller. Collapsing the pair gives something the source does not have, so
+// nothing matches and nothing is put back.
+func unescaped(whole string) []string {
+	var out []string
+	if s := mathEscape.ReplaceAllString(whole, "$1"); s != whole {
+		out = append(out, s)
+	}
+	if s := strings.ReplaceAll(whole, `\\`, `\`); s != whole {
+		out = append(out, s)
+		if t := mathEscape.ReplaceAllString(s, "$1"); t != s {
+			out = append(out, t)
+		}
+	}
+	return out
+}
 
 // Repair is the answer with the tics taken out of it that asking again does
 // not cure: a web address turned into a link to itself, an address written
