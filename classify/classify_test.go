@@ -39,6 +39,16 @@ func TestClassify(t *testing.T) {
 			Digital, PathLayout,
 		},
 		{
+			"a paper published through dvips, set entirely in nameless bitmaps",
+			Measurement{Pages: 9, First: 2, Last: 8, Chars: 17430, Fonts: 27, Embedded: 27, Bitmap: 27, Unmapped: 27},
+			Digital, PathLayout,
+		},
+		{
+			"a paper with one bitmap among its real fonts",
+			Measurement{Pages: 15, First: 3, Last: 12, Chars: 25380, Fonts: 12, Embedded: 12, Bitmap: 1},
+			Native, PathNative,
+		},
+		{
 			"a scan with an OCR layer",
 			Measurement{Pages: 36, First: 12, Last: 23, Chars: 17676, Maths: 1, Fonts: 4, Unmapped: 4, Scans: 12},
 			OCR, PathVision,
@@ -286,6 +296,31 @@ func TestEveryVerdictAgreesWithItsLayer(t *testing.T) {
 	} {
 		if got := v.Layer.Path(); got != v.Path {
 			t.Errorf("a %s verdict says %s and its layer says %s", v.Layer, v.Path, got)
+		}
+	}
+}
+
+// The Razborov paper is nine pages of TeX pushed through dvips in 1994 and
+// every one of its thirty five fonts is a nameless bitmap. It embeds all of
+// them, it has thousands of characters a page, and none of the other tests
+// sees anything wrong with it, so before this it was read with pdftotext and
+// the set "{x : not x}" landed in the corpus as "f x : : x g". The Vietnamese
+// translation of it was refused nine times over, because the model was being
+// asked to translate a page of CMSY font positions.
+func TestTransliterated(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		m    Measurement
+		want bool
+	}{
+		{"a dvips paper", Measurement{Fonts: 27, Bitmap: 27}, true},
+		{"a paper with a bitmap diagram label", Measurement{Fonts: 12, Bitmap: 1}, false},
+		{"a paper mostly in bitmaps", Measurement{Fonts: 6, Bitmap: 5}, false},
+		{"an ordinary paper", Measurement{Fonts: 12}, false},
+		{"a file with no fonts at all", Measurement{}, false},
+	} {
+		if got := c.m.Transliterated(); got != c.want {
+			t.Errorf("%s is transliterated %v, want %v", c.name, got, c.want)
 		}
 	}
 }

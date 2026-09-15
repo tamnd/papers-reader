@@ -162,6 +162,20 @@ type Font struct {
 	Unicode  bool
 }
 
+// Bitmap reports whether this is a bitmap font that carries no name.
+//
+// Which is dvips output from before PDF was the way TeX was published. The
+// glyphs are little pictures, there is no font name to say what they hold,
+// and the characters pdftotext prints are the positions those pictures sit
+// at in the font rather than the characters the paper set. In the Razborov
+// paper every font is one of these, and the set "{x : not x}" comes out of
+// the file as "f x : : x g", which is what CMSY has at those positions.
+func (f Font) Bitmap() bool { return f.Type == "Type 3" && f.Name == noName }
+
+// noName is what pdffonts prints in the name column for a font that has
+// none.
+const noName = "[none]"
+
 // FontList is what pdffonts reports over a range of pages.
 //
 // The interesting column is the last one, uni, which says whether the font
@@ -188,10 +202,15 @@ func ParseFonts(out []byte) []Font {
 		if len(f) < 6 {
 			continue
 		}
-		// name type encoding emb sub uni object ID
+		// The columns are name, type, encoding, emb, sub, uni and then the
+		// object number and generation, which is two fields and not one. So
+		// everything is counted from the right: the name is the first field,
+		// six fields hold the tail, and the type is whatever is in between,
+		// because a type is "Type 1" or "CID TrueType" and an encoding is
+		// always one word.
 		fonts = append(fonts, Font{
 			Name:     f[0],
-			Type:     strings.Join(f[1:len(f)-6+1], " "),
+			Type:     strings.Join(f[1:len(f)-6], " "),
 			Embedded: f[len(f)-5] == "yes",
 			Unicode:  f[len(f)-3] == "yes",
 		})

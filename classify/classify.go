@@ -125,6 +125,9 @@ type Measurement struct {
 	// embeds nothing and names Times-Roman, because the words are not really
 	// there and whatever the reader has to hand will do to hold them.
 	Fonts, Embedded int
+	// Bitmap is how many of the fonts are nameless Type 3 bitmaps. See
+	// Transliterated for what that does to the text.
+	Bitmap int
 	// Unmapped is how many fonts have no ToUnicode map. This is reported
 	// because it is worth seeing and it decides nothing: pdfTeX omits the map
 	// on a font with a builtin encoding, and half the born digital papers in
@@ -159,6 +162,25 @@ func (m Measurement) Mathematical() bool {
 	return m.Fonts > 0 && float64(m.MathFonts)/float64(m.Fonts) >= MathShare
 }
 
+// Transliterated reports whether the file is set entirely in nameless Type 3
+// bitmap fonts, which means the text pdftotext prints is not the text the
+// paper set.
+//
+// A bitmap font holds little pictures of glyphs and no name to say which
+// glyph is which, so a reader has nothing to map a character code to and
+// falls back on printing the code. What comes out is ASCII and it is the
+// wrong ASCII: the Razborov paper writes the set "{x : not x}" and the file
+// gives up "f x : : x g", because those are the CMSY positions of the brace,
+// the colon and the negation. It reads as text, it passes every test for
+// being text, and it is a transliteration of the shapes on the page.
+//
+// Every font and not most of them. Two papers in the corpus set a diagram
+// label or a logo in a nameless Type 3 and are otherwise perfectly readable,
+// and sending those down the expensive path for a caption would be paying
+// for nothing. A file where there is no other kind of font is a file from
+// the years when TeX was published through dvips, and all of it is pictures.
+func (m Measurement) Transliterated() bool { return m.Fonts > 0 && m.Bitmap == m.Fonts }
+
 // Verdict is the answer, and why.
 type Verdict struct {
 	Layer Layer
@@ -188,6 +210,8 @@ func (m Measurement) Classify() Verdict {
 		return Verdict{OCR, PathVision, "the pages are images with an OCR layer over them, so the text is somebody's reading of a scan and not the paper"}
 	case m.Fonts > 0 && m.Embedded == 0:
 		return Verdict{OCR, PathVision, "the file embeds none of the fonts it names, which is what an OCR layer written over a photograph looks like from the outside"}
+	case m.Transliterated():
+		return Verdict{Digital, PathLayout, "every font in the file is a bitmap with no name, so what pdftotext prints is each glyph's position in its font and not the character the paper set"}
 	case m.Mathematical() && float64(m.Maths)/float64(pages) < MinMaths:
 		return Verdict{Digital, PathLayout, "the mathematical fonts are in the file and the mathematical glyphs are not in the text, so the extraction is mangling the mathematics"}
 	case m.Captions > 0:
@@ -269,6 +293,9 @@ func Measure(ctx context.Context, path string) (Measurement, Verdict, error) {
 		}
 		if MathFont(f.Name) {
 			m.MathFonts++
+		}
+		if f.Bitmap() {
+			m.Bitmap++
 		}
 	}
 
