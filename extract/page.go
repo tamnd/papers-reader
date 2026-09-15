@@ -163,7 +163,7 @@ func Read(p poppler.Layout, f *Furniture) Page {
 		if len(cur) == 0 {
 			return
 		}
-		out.Paragraphs = append(out.Paragraphs, join(cur, cuts))
+		out.Paragraphs = append(out.Paragraphs, Join(cur, cuts))
 		cur = nil
 	}
 	// The tables are found over the whole page first, because a table is
@@ -301,8 +301,14 @@ func quantile(v []float64, q float64) float64 {
 	return v[min(at, len(v)-1)]
 }
 
-// join makes one paragraph out of a run of lines, healing the hyphens.
-func join(lines []poppler.TextLine, cuts []float64) Paragraph {
+// Join makes one paragraph out of a run of lines, healing the hyphens.
+//
+// It is exported for the callers that have taken a paragraph apart and need
+// the pieces put back together the way this package would have done it.
+// Package figures does that to a caption row holding two captions set side
+// by side, and a caption rebuilt any other way loses the healing and reads
+// "perfor- mance".
+func Join(lines []poppler.TextLine, cuts []float64) Paragraph {
 	p := Paragraph{Box: lines[0].Box, Lines: len(lines), Column: Column(lines[0], cuts)}
 	var b strings.Builder
 	for i, l := range lines {

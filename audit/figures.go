@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -403,7 +404,12 @@ func ruleF08(in *Input) ([]Finding, error) {
 	return out, nil
 }
 
-var mention = regexp.MustCompile(`\b(?:Figure|Fig\.)\s+([0-9]{1,3})\b`)
+// mention is a reference to a figure in the prose, and it has to read the
+// number the same way the caption regexp in package figures wrote it. A
+// paper that numbers by section calls its first figure 1.1, and a pattern
+// that stopped at the full stop would ask every one of GPT-3's thirty four
+// figures for a figure 1 that was never there.
+var mention = regexp.MustCompile(`\b(?:Figure|Fig\.)\s+([0-9]{1,3}(?:[.\-][0-9a-zA-Z]+)*|[A-Z](?:[.\-][0-9a-zA-Z]+)+)\b`)
 
 // ruleF09 is soft, and the reason is that it cannot tell the two causes
 // apart. A paper whose prose mentions Figure 7 and which has six figures may
@@ -428,7 +434,7 @@ func ruleF09(in *Input) ([]Finding, error) {
 		if err != nil {
 			return nil, err
 		}
-		missing := map[int]bool{}
+		missing := map[string]bool{}
 		for _, rel := range files {
 			if !strings.HasPrefix(rel, "content/en/") {
 				continue
@@ -438,22 +444,49 @@ func ruleF09(in *Input) ([]Finding, error) {
 				return nil, err
 			}
 			for _, m := range mention.FindAllStringSubmatch(string(b), -1) {
-				v, err := strconv.Atoi(m[1])
-				if err != nil || numbered[m[1]] {
-					continue
+				if !numbered[m[1]] {
+					missing[m[1]] = true
 				}
-				missing[v] = true
 			}
 		}
-		for n := 1; n <= 99; n++ {
-			if !missing[n] {
-				continue
-			}
+		for _, n := range byNumber(missing) {
 			out = append(out, Finding{
 				Rule: "F09", File: "manifests/figures.yaml",
-				Message: fmt.Sprintf("%s mentions Figure %d in its prose and has no such figure", p.ID, n),
+				Message: fmt.Sprintf("%s mentions Figure %s in its prose and has no such figure", p.ID, n),
 			})
 		}
 	}
 	return out, nil
+}
+
+// byNumber is the figure numbers a paper is missing, in the order the paper
+// would list them. Part by part and numerically where a part is a number, so
+// that figure 10 comes after figure 9 and figure 3.2 after figure 3.1.
+func byNumber(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for n := range set {
+		out = append(out, n)
+	}
+	sort.Slice(out, func(i, j int) bool { return before(out[i], out[j]) })
+	return out
+}
+
+func before(a, b string) bool {
+	as, bs := parts(a), parts(b)
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		if as[i] == bs[i] {
+			continue
+		}
+		x, errx := strconv.Atoi(as[i])
+		y, erry := strconv.Atoi(bs[i])
+		if errx == nil && erry == nil {
+			return x < y
+		}
+		return as[i] < bs[i]
+	}
+	return len(as) < len(bs)
+}
+
+func parts(n string) []string {
+	return strings.FieldsFunc(n, func(r rune) bool { return r == '.' || r == '-' })
 }

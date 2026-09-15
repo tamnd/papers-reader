@@ -241,6 +241,51 @@ func TestABandAcrossTwoColumnsIsOneFigure(t *testing.T) {
 	}
 }
 
+// lower moves a run of lines down the page. The two columns of a real paper
+// do not share baselines, and a fixture where they do is read as one column:
+// the words of a row are gathered left to right whatever column they are in,
+// so two columns set level fill the gutter and there is no gutter to find.
+func lower(lines []poppler.TextLine, by float64) []poppler.TextLine {
+	out := make([]poppler.TextLine, 0, len(lines))
+	for _, l := range lines {
+		l.Box.YMin, l.Box.YMax = l.Box.YMin+by, l.Box.YMax+by
+		words := make([]poppler.Word, len(l.Words))
+		for i, w := range l.Words {
+			w.Box.YMin, w.Box.YMax = w.Box.YMin+by, w.Box.YMax+by
+			words[i] = w
+		}
+		l.Words = words
+		out = append(out, l)
+	}
+	return out
+}
+
+// A column is assigned to a line by where the middle of the line falls, so a
+// title set across the page lands in whichever column its middle happens to
+// be in. It is not that column's measure and a figure in that column must not
+// be committed at the width of the sheet.
+func TestATitleAcrossThePageIsNotAColumnsMeasure(t *testing.T) {
+	const gutter = 306.0
+	head := poppler.Box{XMin: colLeft, YMin: topLine - 1, XMax: colRight, YMax: topLine + 1}
+	hole := poppler.Box{XMin: gutter, YMin: 300, XMax: colRight, YMax: 430}
+	titled := func(n int, holes ...poppler.Box) poppler.Layout {
+		holes = append(holes, head)
+		return pageOf(n,
+			[]poppler.TextLine{textLine(colLeft, topLine, colRight, marker(n, 0, colLeft)+" a title across the page")},
+			column(n, colLeft, gutter-18, holes),
+			lower(column(n, gutter+18, colRight, holes), leading/2),
+		)
+	}
+	pages := []poppler.Layout{titled(1), titled(2), titled(3), titled(4, hole)}
+	got := found(t, pages, 3)
+	if len(got) != 1 {
+		t.Fatalf("found %d candidates, want 1: %+v", len(got), got)
+	}
+	if got[0].Box.XMin < gutter {
+		t.Fatalf("the band runs from %.0f, which is left of the gutter and into the other column", got[0].Box.XMin)
+	}
+}
+
 // A plate with one line on it is a page image. The rule that keeps this
 // package away from it is that a page has to carry some text before a hole
 // in it means anything.

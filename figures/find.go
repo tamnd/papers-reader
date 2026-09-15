@@ -160,15 +160,7 @@ func inColumn(p poppler.Layout, lines []poppler.TextLine, cuts []float64, col in
 	}
 	sort.Slice(mine, func(i, j int) bool { return mine[i].YMin < mine[j].YMin })
 
-	// The column's own extent, which is the width a figure in it can have.
-	// Taken from the text and not from the gutters, because a gutter is
-	// halfway between two columns and half a gutter of white margin on each
-	// side of every figure would be white the reader has to look past.
-	left, right := mine[0].XMin, mine[0].XMax
-	for _, l := range mine {
-		left = min(left, l.XMin)
-		right = max(right, l.XMax)
-	}
+	left, right := measure(mine, cuts)
 
 	// The hole above the column's first line, the holes between its lines,
 	// and the hole below its last. A figure at the head of a column with its
@@ -195,6 +187,63 @@ func inColumn(p poppler.Layout, lines []poppler.TextLine, cuts []float64, col in
 		out = append(out, band(p, left, right, h.from, h.to, pitch))
 	}
 	return out
+}
+
+// measure is the column's own extent, which is the width a figure in it can
+// have. Taken from the text and not from the gutters, because a gutter is
+// halfway between two columns and half a gutter of white margin on each side
+// of every figure would be white the reader has to look past.
+//
+// A line that crosses a gutter is left out of it. A column is assigned to a
+// line by where the middle of the line falls, which is the right answer for
+// the question that asks it, and it puts a line set to the full measure of
+// the page into whichever column its middle happens to land in. Such a line
+// is not that column's width and nothing in the column is.
+//
+// Page 1 of the P4 paper is what happens otherwise. The title, the fourteen
+// authors and their six affiliations are all set across the page, their
+// middles fall right of the gutter, and so the right column's measure came
+// back as 75.3 to 555.9, which is the sheet. Figure 1 sits in the right
+// column above its caption and was committed at that width, and the left half
+// of the PNG was two paragraphs of section 1.
+func measure(mine []poppler.TextLine, cuts []float64) (left, right float64) {
+	left, right = 0, 0
+	seen := false
+	for _, l := range mine {
+		if crosses(l, cuts) {
+			continue
+		}
+		if !seen {
+			left, right, seen = l.XMin, l.XMax, true
+			continue
+		}
+		left = min(left, l.XMin)
+		right = max(right, l.XMax)
+	}
+	if seen {
+		return left, right
+	}
+
+	// A column of nothing but full measure lines is a page with no columns,
+	// where the line across the gutter is the paper's measure and not an
+	// exception to it.
+	left, right = mine[0].XMin, mine[0].XMax
+	for _, l := range mine {
+		left = min(left, l.XMin)
+		right = max(right, l.XMax)
+	}
+	return left, right
+}
+
+// crosses reports whether a line is set over a gutter, which is to say over
+// the white the page keeps between one column and the next.
+func crosses(l poppler.TextLine, cuts []float64) bool {
+	for _, c := range cuts {
+		if l.XMin < c && l.XMax > c {
+			return true
+		}
+	}
+	return false
 }
 
 // A hole is a stretch of a column with no text in it, before anything has

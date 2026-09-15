@@ -83,7 +83,7 @@ func (r *Run) Do(ctx context.Context, pages []poppler.Layout) (*Result, error) {
 
 func (r *Run) page(ctx context.Context, page poppler.Layout, f *extract.Furniture, frame Frame, images []poppler.Image, out *Result) error {
 	text := extract.Read(page, f)
-	caps := Captions(text)
+	caps := Captions(text, f.Lines(page))
 	pitch := pitchOf(f.Lines(page))
 
 	// Two passes, because a figure can be found two ways. Find looks for the

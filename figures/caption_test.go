@@ -16,7 +16,7 @@ func par(y0, y1 float64, text string) extract.Paragraph {
 
 func onlyCaption(t *testing.T, text string) Caption {
 	t.Helper()
-	got := Captions(extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(400, 424, text)}})
+	got := Captions(extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(400, 424, text)}}, nil)
 	if len(got) != 1 {
 		t.Fatalf("%q gave %d captions, want 1", text, len(got))
 	}
@@ -63,7 +63,7 @@ func TestASentenceAboutAFigureIsNotACaption(t *testing.T) {
 		"Fig. 2 gives the same result for the smaller model.",
 		"Table 4 lists every setting that was tried.",
 	} {
-		got := Captions(extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(400, 424, text)}})
+		got := Captions(extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(400, 424, text)}}, nil)
 		if len(got) != 0 {
 			t.Errorf("%q was read as a caption", text)
 		}

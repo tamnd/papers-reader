@@ -51,7 +51,7 @@ func anchored(t *testing.T, pages []poppler.Layout, want int) []Found {
 	f := extract.FindFurniture(pages)
 	frame := FindFrame(pages, f)
 	p := pages[want]
-	caps := Captions(extract.Read(p, f))
+	caps := Captions(extract.Read(p, f), f.Lines(p))
 	pitch := pitchOf(f.Lines(p))
 	return Anchor(p, f, frame, caps, Pair(Find(p, f, frame), caps, pitch))
 }
@@ -111,8 +111,10 @@ func TestAFigureDrawnWithTypeIsFoundFromItsCaption(t *testing.T) {
 // PNG, where no reader can search it and no translator can translate it.
 func TestTheHeadingAboveTheFigureIsNotSwallowed(t *testing.T) {
 	got := only(t, anchored(t, append(plain(), typeset()), 3))
-	if got.Box.YMin < 220 {
-		t.Fatalf("the region starts at y=%.0f, above the heading that ends at 220", got.Box.YMin)
+	// The heading is set at 204 and every line of the fixture is ten points
+	// tall, so it ends at 214 and the region has to start below that.
+	if got.Box.YMin < 214 {
+		t.Fatalf("the region starts at y=%.0f, above the heading that ends at 214", got.Box.YMin)
 	}
 	if got.Box.YMin > 240 {
 		t.Fatalf("the region starts at y=%.0f, which is inside the figure", got.Box.YMin)
@@ -128,6 +130,46 @@ func TestTheParagraphAboveTheFigureIsNotSwallowed(t *testing.T) {
 	// The last line of the paragraph sits at 216 and ends at 226.
 	if got.Box.YMin < 226 {
 		t.Fatalf("the region starts at y=%.0f, inside the paragraph that ends at 226", got.Box.YMin)
+	}
+}
+
+// A figure drawn with type has short lines in it, and a short line set
+// flush with the column is the one thing the sideways clip cannot tell from
+// the paper by shape alone. What tells them apart is the measure: a
+// paragraph of the paper runs the width of its column and a picture's
+// lettering does not.
+func TestAShortLineInsideTheFigureDoesNotBringTheRegionIn(t *testing.T) {
+	stray := textLine(colLeft, 300, 200, "the sun was rising")
+	legend := textLine(colLeft, 680, colRight, "Figure 3: an invented caption")
+	page := prosePage(230, append(drawn(240, 640), stray, legend)...)
+	got := only(t, anchored(t, append(plain(), page), 3))
+	if got.Box.XMin > colLeft {
+		t.Fatalf("the region starts at x=%.0f, so the clip came in off a line that is part of the figure", got.Box.XMin)
+	}
+}
+
+// The right hand edge of a column is where most of its lines end, which on
+// justified prose is every line but the last of a paragraph.
+func TestTheRightEdgeOfAColumnIsWhereMostLinesEnd(t *testing.T) {
+	lines := column(9, colLeft, colRight, nil)
+	got, ok := margin1(lines)
+	if !ok {
+		t.Fatal("a column of justified prose has no right hand edge")
+	}
+	if got != colRight {
+		t.Fatalf("the right hand edge is %.0f, want %.0f", got, colRight)
+	}
+}
+
+// Ragged setting has no such edge, and a caller that asks for one is told
+// there is none rather than given the longest line.
+func TestRaggedSettingHasNoRightHandEdge(t *testing.T) {
+	var lines []poppler.TextLine
+	for i, y := 0, 100.0; y < 300; i, y = i+1, y+leading {
+		lines = append(lines, textLine(colLeft, y, colLeft+40+float64(i)*7, marker(9, i, colLeft)))
+	}
+	if got, ok := margin1(lines); ok {
+		t.Fatalf("ragged setting came back with a right hand edge at %.0f", got)
 	}
 }
 
@@ -271,7 +313,7 @@ func TestACaptionFromAnotherPageIsIgnored(t *testing.T) {
 	f := extract.FindFurniture(pages)
 	frame := FindFrame(pages, f)
 	p := pages[3]
-	caps := Captions(extract.Read(p, f))
+	caps := Captions(extract.Read(p, f), f.Lines(p))
 	if len(caps) == 0 {
 		t.Fatal("the fixture has no caption on it")
 	}
