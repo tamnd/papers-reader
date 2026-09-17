@@ -711,16 +711,25 @@ func ruleG04(in *Input) ([]Finding, error) {
 	}
 	var out []Finding
 	seen := 0
+	// One count per paper and per language, the way the assigner keeps one.
+	// The content is loaded in path order, which is content/<lang>/<paper>/,
+	// so the files of a paper in a language arrive together and in the same
+	// name order the assigner walked them in.
+	var keys tags.Keys
+	group := ""
 	for _, f := range in.Content {
 		if f.Broken() {
 			continue
+		}
+		if g := f.Paper + "/" + string(f.Lang); g != group {
+			group, keys = g, tags.Keys{}
 		}
 		if f.Front.Tag != "" {
 			if _, err := tags.ParseTag(f.Front.Tag); err != nil {
 				out = append(out, Finding{Rule: "G04", File: f.Path, Message: err.Error()})
 			}
 		}
-		for _, a := range fileTags(f) {
+		for _, a := range fileTags(f, keys) {
 			seen++
 			anchor, ok := reg.Anchor(a.Tag)
 			switch {
@@ -749,13 +758,21 @@ func ruleG04(in *Input) ([]Finding, error) {
 // because papers split lifted its heading up there and left no line in the
 // body for an attribute block to sit on. Everything else is a block in the
 // body, in the order it appears.
-func fileTags(f *File) []tags.Attr {
+// keys counts the keys the paper has asked for so far and is what makes the
+// second section a paper numbered 1 come out as s1-2 here as well as in the
+// assigner. It is counted for every item and not only for the file's own
+// section, because the assigner counts every item too and a count that skipped
+// the figures would number the sections wrong.
+func fileTags(f *File, keys tags.Keys) []tags.Attr {
 	var out []tags.Attr
-	if f.Front.Tag != "" {
+	if key := tags.SectionKey(f.Front.Section, f.Front.Kind); key != "" {
+		key = keys.Unique(key)
 		if t, err := tags.ParseTag(f.Front.Tag); err == nil {
-			key := tags.SectionKey(f.Front.Section, f.Front.Kind)
 			out = append(out, tags.Attr{Anchor: tags.Anchor(f.Paper, key), Classes: []string{"section"}, Tag: t})
 		}
+	}
+	for _, it := range tags.Scan(f.Body) {
+		keys.Unique(it.Key)
 	}
 	return append(out, tags.ParseAttrs(f.Body)...)
 }

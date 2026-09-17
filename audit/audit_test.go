@@ -435,3 +435,39 @@ func TestFindingString(t *testing.T) {
 		}
 	}
 }
+
+// Jacobson numbers three ways of losing equilibrium 1, 2 and 3, and then
+// numbers Slow-start 1 again, so two of its files claim section 1. The
+// assigner counted the repeat and wrote s1-2 on the second one; the rule did
+// not count and read the file as s1, so it refused a tag the assigner had
+// just written and no run could clear it.
+func TestG04CountsASectionNumberAPaperUsedTwice(t *testing.T) {
+	const first = "content/en/vaswani-2017-attention/02_the_connection.md"
+	const again = "content/en/vaswani-2017-attention/05_slow_start.md"
+	head := "paper: vaswani-2017-attention\ntitle: Attention Is All You Need\nkind: section\nlang: en\nsection: \"1\"\n"
+	reg := "0256,vaswani-2017-attention-s1\n0259,vaswani-2017-attention-s1-2\n"
+
+	in := build(t, map[string]string{
+		"tags/tags": reg,
+		first:       file(head+"tag: \"0256\"\n", "text\n"),
+		again:       file(head+"tag: \"0259\"\n", "text\n"),
+	})
+	res := result(t, Run(in, true), "G04")
+	if res.NotRun {
+		t.Fatal("G04 did not run")
+	}
+	if res.Failed() {
+		t.Errorf("G04 objected to the second section a paper numbered 1: %v", res.Findings)
+	}
+
+	// The other way round is still wrong: the two files carry each other's
+	// tags and the register says so.
+	in = build(t, map[string]string{
+		"tags/tags": reg,
+		first:       file(head+"tag: \"0259\"\n", "text\n"),
+		again:       file(head+"tag: \"0256\"\n", "text\n"),
+	})
+	if res := result(t, Run(in, true), "G04"); len(res.Findings) != 2 {
+		t.Errorf("G04 found %d swapped tags, want 2: %v", len(res.Findings), res.Findings)
+	}
+}

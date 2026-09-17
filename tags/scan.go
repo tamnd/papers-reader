@@ -48,6 +48,45 @@ type Item struct {
 // within the paper that printed the number it came from.
 func Anchor(paper, key string) string { return paper + "-" + key }
 
+// Keys counts the keys one paper has asked for, so that a paper which printed
+// the same number twice gets two anchors and not one.
+//
+// A key comes from what the paper printed, so two things a paper printed the
+// same name for want the same key. The ResNet appendix has two sections headed
+// MS COCO and two headed PASCAL VOC, one pair under Object Detection Baselines
+// and one under Object Detection Improvements, and both pairs came out sharing
+// an anchor and therefore a tag. Jacobson is the same shape a level up: the
+// paper numbers three ways of losing equilibrium 1, 2 and 3, then numbers
+// Slow-start 1 again, so two files claim section 1.
+//
+// The first of a name keeps the bare key, so nothing already published moves.
+// The rest are numbered from two in reading order, which is as permanent as
+// the key itself: both come from what the paper says and in the order it says
+// it.
+//
+// Shared with the audit, which needs the same count in rule G04. The assigner
+// had it and the rule did not, so the assigner wrote s1-2 on the second
+// section numbered 1 and the rule read the file as s1 and refused the tag. Two
+// papers were held out of the corpus on that and nothing could clear it.
+//
+// A Keys is per paper and per language, because an anchor is only unique
+// within the paper it names and a translation has to start counting from the
+// same place its English did.
+type Keys map[string]int
+
+// Unique is the key an item takes given what the paper has asked for already.
+//
+// It counts, so it has to be called for every item in reading order and not
+// only for the ones the caller wants an answer about. A caller that skips the
+// figures will number the sections wrong.
+func (k Keys) Unique(key string) string {
+	k[key]++
+	if n := k[key]; n > 1 {
+		return fmt.Sprintf("%s-%d", key, n)
+	}
+	return key
+}
+
 // SectionKey is the anchor key for the section a whole file is.
 //
 // papers split lifts a file's own heading into the front matter, so unlike

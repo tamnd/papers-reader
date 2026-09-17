@@ -160,7 +160,7 @@ type assignment struct {
 	writes []write
 	// used counts the keys one paper has asked for, and is emptied between
 	// papers because an anchor is only unique within the paper it names.
-	used map[string]int
+	used tags.Keys
 }
 
 // paper walks one paper, English first and then every translation of it.
@@ -198,7 +198,7 @@ func (a *assignment) walk(id string, lang corpus.Lang) error {
 	// unique has to start from the same place in a translation as it did in
 	// the English or the second section of a repeated name gets the first
 	// one's key.
-	a.used = map[string]int{}
+	a.used = tags.Keys{}
 	dir := a.corpus.Content(lang, id)
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -236,7 +236,7 @@ func (a *assignment) file(id, path string, lang corpus.Lang) error {
 	// The file's own section comes first, because it is the heading every
 	// heading inside the body sits under and reading order starts with it.
 	if key := tags.SectionKey(front.Section, front.Kind); key != "" {
-		t, known, err := a.tagFor(id, a.unique(key), "section", lang)
+		t, known, err := a.tagFor(id, a.used.Unique(key), "section", lang)
 		if err != nil {
 			return err
 		}
@@ -254,7 +254,7 @@ func (a *assignment) file(id, path string, lang corpus.Lang) error {
 	// because the count is what tells the second heading of a name from the
 	// first and a run that skipped one would give the next one its number.
 	for i := range items {
-		items[i].Key = a.unique(items[i].Key)
+		items[i].Key = a.used.Unique(items[i].Key)
 	}
 	blocks := make([]string, len(items))
 	for i, it := range items {
@@ -287,30 +287,6 @@ func (a *assignment) file(id, path string, lang corpus.Lang) error {
 	}
 	a.writes = append(a.writes, write{path: path, body: out})
 	return nil
-}
-
-// unique is the key a paper gets for something it has asked for by that name
-// before.
-//
-// A key comes from what the paper printed, so two things a paper printed the
-// same name for want the same key. The ResNet appendix has two sections
-// headed MS COCO and two headed PASCAL VOC, one pair under Object Detection
-// Baselines and one under Object Detection Improvements, and both pairs came
-// out sharing an anchor and therefore a tag. That is four ways wrong: the
-// HTML has a repeated id, a link to one of them lands on the other, the
-// register says one tag names two things, and rule G06 reads the second
-// occurrence as a tag that went backwards.
-//
-// The first of a name keeps the bare key, so nothing already published moves.
-// The rest are numbered from two in reading order, which is as permanent as
-// the key itself: both come from what the paper says and in the order it says
-// it.
-func (a *assignment) unique(key string) string {
-	a.used[key]++
-	if n := a.used[key]; n > 1 {
-		return fmt.Sprintf("%s-%d", key, n)
-	}
-	return key
 }
 
 // tagFor is the tag one file gets for one anchor, and whether there is one.
