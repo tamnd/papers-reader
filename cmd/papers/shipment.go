@@ -133,14 +133,7 @@ func (s *shipment) take() []string {
 	if len(paths) == 0 {
 		return nil
 	}
-	for _, r := range publish.Roots {
-		if r == "content" {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(s.c.Root, r)); err == nil {
-			paths = append(paths, r)
-		}
-	}
+	paths = append(paths, otherRoots(s.c)...)
 	s.ready, s.files = nil, 0
 	return paths
 }

@@ -25,6 +25,78 @@ import (
 // nobody able to say which of the two was wrong.
 var Folio = regexp.MustCompile(`(?i)^\s*[-–—|]*\s*(?:page\s+)?\d{1,4}\s*[-–—|]*\s*$`)
 
+// unfolio takes the page numbers out of a paragraph, and returns the empty
+// string for a paragraph that was nothing else.
+//
+// A folio arrives on its own most of the time and the whole paragraph goes.
+// Paxos is the other case: the extractor read "The Part-Time Parliament ·"
+// and "11" as one paragraph of two lines, because the running head and the
+// number print on the same band of the page and nothing between them is wide
+// enough to read as a break. Rule T10 refuses a page number on a line of its
+// own wherever it sits, so the splitter has to read lines too.
+//
+// What is left of such a paragraph is the running head, which is furniture as
+// much as the number is, so a short remainder goes with it. Short is ten
+// words: a running head is a fragment of the title or the name of the
+// journal, and "Communications of the ACM" is the longest of the four in the
+// corpus at four. A longer paragraph keeps everything but the number,
+// because a paragraph of real prose that swept a folio up has prose in it
+// worth keeping.
+func unfolio(text string) string {
+	if table(text) {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	kept := make([]string, 0, len(lines))
+	cut := false
+	for _, l := range lines {
+		if Folio.MatchString(l) {
+			cut = true
+			continue
+		}
+		kept = append(kept, l)
+	}
+	if !cut {
+		return text
+	}
+	rest := strings.TrimSpace(strings.Join(kept, "\n"))
+	if len(strings.Fields(rest)) < 10 {
+		return ""
+	}
+	return rest
+}
+
+// table says whether a paragraph is a Markdown table, which is the one place
+// a line of one number is not a page number.
+//
+// A table has the delimiter row under its header and nothing else in a paper
+// does: pipes, dashes, colons and space, with at least one of the first two.
+// A row that holds a single number matches a folio exactly, and a table with
+// a row taken out of it no longer says what the paper said.
+func table(text string) bool {
+	for _, l := range strings.Split(text, "\n") {
+		pipe, dash, only := false, false, true
+		for _, r := range l {
+			switch r {
+			case '|':
+				pipe = true
+			case '-':
+				dash = true
+			case ':', ' ', '\t':
+			default:
+				only = false
+			}
+			if !only {
+				break
+			}
+		}
+		if only && pipe && dash {
+			return true
+		}
+	}
+	return false
+}
+
 // A Section is one top level section of a paper: the part of the document
 // between one level one heading and the next, with its subheadings inside it.
 //
@@ -216,12 +288,17 @@ func body(paragraphs []assemble.Paragraph, start, end int, sub map[int]Heading, 
 	var b strings.Builder
 	for i := start; i < end; i++ {
 		p := paragraphs[i]
+		_, isSub := sub[i]
+		text := p.Text
 		// A folio contributes nothing to the section and nothing to its page
 		// range either: the page it sits on is in the range already, because
 		// a page whose only content was its own number would not have been
-		// cut into a section in the first place.
-		if _, ok := sub[i]; !ok && Folio.MatchString(p.Text) {
-			continue
+		// cut into a section in the first place. A heading is left alone,
+		// because a section numbered 11 is not page 11.
+		if !isSub && !bare[i] {
+			if text = unfolio(text); text == "" {
+				continue
+			}
 		}
 		if first == 0 || p.Page < first {
 			first = p.Page
@@ -232,11 +309,10 @@ func body(paragraphs []assemble.Paragraph, start, end int, sub map[int]Heading, 
 		if b.Len() > 0 {
 			b.WriteString("\n\n")
 		}
-		text := p.Text
 		if bare[i] {
 			text, _ = unmark(text)
 		}
-		if _, ok := sub[i]; ok {
+		if isSub {
 			// Level three because the section's own heading is level two and
 			// is in the front matter rather than in the file.
 			//

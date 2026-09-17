@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/tamnd/papers-reader/audit"
 	"github.com/tamnd/papers-reader/corpus"
@@ -73,6 +75,7 @@ No PDF and no EPUB is ever staged, whatever .gitignore says.
 	if name == "" {
 		name = publish.Branch("", 0)
 	}
+	ctx := context.Background()
 	var paths []string
 	if *ids != "" {
 		chosen, err := papersNamed(c, *ids)
@@ -83,8 +86,13 @@ No PDF and no EPUB is ever staged, whatever .gitignore says.
 			return err
 		}
 		paths = paperPaths(c, chosen)
+	} else {
+		var err error
+		if paths, err = ready(ctx, c); err != nil {
+			return err
+		}
 	}
-	res, err := push(context.Background(), c, *base, name, opening, paths, !*hold, *dry)
+	res, err := push(ctx, c, *base, name, opening, paths, !*hold, *dry)
 	if err != nil {
 		if errors.Is(err, publish.ErrNothing) {
 			fmt.Println("nothing has been written that is not already in the corpus")
@@ -194,6 +202,18 @@ func paperPaths(c *corpus.Corpus, ids []string) []string {
 	if len(paths) == 0 {
 		return nil
 	}
+	return append(paths, otherRoots(c)...)
+}
+
+// otherRoots is the roots that are not content. They travel with every batch
+// whatever it holds under content, because none of them is written per paper
+// in a way a path can express: the figures manifest is one file over the
+// whole corpus.
+//
+// Only directories that exist, because git add is given these verbatim and
+// errors on a pathspec that matches nothing.
+func otherRoots(c *corpus.Corpus) []string {
+	var paths []string
 	for _, r := range publish.Roots {
 		if r == "content" {
 			continue
@@ -203,6 +223,103 @@ func paperPaths(c *corpus.Corpus, ids []string) []string {
 		}
 	}
 	return paths
+}
+
+// ready is what a publish that named no papers stages: the papers with
+// something to push that the hard audit does not refuse, and then the roots
+// that are not a paper.
+//
+// A publish with no --id used to stage every root whole and never ran the
+// audit at all. The gate was on --id only, so a run could put one paper at a
+// time through it or send the whole tree straight past it, and the whole
+// tree is what a pipeline reaches for when it has a day of work to push. The
+// help has said all along that a paper a hard rule refuses is not published,
+// and for a batch of fourteen papers with twelve of them refused that was
+// simply untrue.
+//
+// A refused paper is dropped and the rest of the batch goes. That is the
+// choice a translation batch makes too, for the same reason: a rule that
+// fires on one paper is no reason to hold the other eighty, and the refused
+// one stays in the working tree for the next pass to fix and try again.
+//
+// The papers come off the working tree and not the manifest, because a paper
+// with nothing written is a paper there is no reason to audit and a finding
+// about one would hold back a batch it was never in.
+func ready(ctx context.Context, c *corpus.Corpus) ([]string, error) {
+	changes, err := publish.Changed(ctx, publish.Exec, c.Root, []string{"content"})
+	if err != nil {
+		return nil, err
+	}
+	ids := changedPapers(changes)
+	if len(ids) == 0 {
+		// Nothing under content to gate, so the batch is the manifests and
+		// the reports on their own and it goes as it always did.
+		return publish.Roots, nil
+	}
+	found, err := hardFindings(c)()
+	if err != nil {
+		return nil, err
+	}
+	keep := cleared(ids, found)
+	if len(keep) == 0 {
+		return otherRoots(c), nil
+	}
+	return paperPaths(c, keep), nil
+}
+
+// changedPapers is the papers a list of changes touches, sorted and without
+// repeats.
+//
+// A path under content is content/<lang>/<id>/<file> and anything shorter is
+// not a paper: the language directory itself arrives as one line when git is
+// listing an untracked tree, and a directory is not something to audit.
+func changedPapers(changes []publish.Change) []string {
+	seen := map[string]bool{}
+	var ids []string
+	for _, ch := range changes {
+		parts := strings.Split(filepath.ToSlash(ch.Path), "/")
+		if len(parts) < 4 || parts[0] != "content" {
+			continue
+		}
+		if id := parts[2]; !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// cleared is the papers of a batch that no hard finding names. What it drops
+// it says so, with the rule and the file, because a paper that quietly does
+// not appear in a pull request is a paper nobody goes looking for.
+//
+// A finding that names none of them is printed and holds nothing. Those are
+// the rules about the repository rather than about a paper, and there is no
+// honest paper to blame one on. If one is failing then CI says so on the
+// pull request, which is the right place for a thing that is true of the
+// whole corpus.
+func cleared(ids []string, found []audit.Finding) []string {
+	bad := map[string]string{}
+	for _, f := range found {
+		id := blamed(f.File, ids)
+		if id == "" {
+			fmt.Printf("%s\n", f)
+			continue
+		}
+		if _, was := bad[id]; !was {
+			bad[id] = f.String()
+		}
+	}
+	var keep []string
+	for _, id := range ids {
+		if why, no := bad[id]; no {
+			fmt.Printf("%s is held back, a hard audit rule refuses it: %s\n", id, why)
+			continue
+		}
+		keep = append(keep, id)
+	}
+	return keep
 }
 
 // clear runs the hard audit and refuses the batch when a rule names one of

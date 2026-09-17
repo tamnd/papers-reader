@@ -463,3 +463,54 @@ func TestAHeadingThatIsANumberIsNotAPageNumber(t *testing.T) {
 		t.Errorf("the subheading went with the page numbers:\n%s", intro.Body)
 	}
 }
+
+// The extractor read the running head and the folio as one paragraph of two
+// lines, because they print on the same band of the page. Three sections of
+// Paxos carried a page number that nothing in the toolchain could take out.
+func TestARunningHeadCarryingAPageNumberIsNotPartOfTheSection(t *testing.T) {
+	d := doc(
+		"# 1. Ballots", prose,
+		"The Part-Time Parliament ·\n11",
+		prose,
+		"# 2. Quorums", prose,
+		"# 3. Decrees", prose,
+	)
+	r := Split(d)
+	body := section(t, r, "01_ballots.md").Body
+	if strings.Contains(body, "11") || strings.Contains(body, "Part-Time Parliament") {
+		t.Errorf("the running head and its page number are still in the section:\n%s", body)
+	}
+	if !strings.Contains(body, prose) {
+		t.Errorf("the prose around it is gone:\n%s", body)
+	}
+}
+
+// A paragraph of real prose that swept a folio up keeps the prose. Only the
+// number goes, because the rest of it is what the paper says.
+func TestAParagraphOfProseThatSweptUpAFolioKeepsTheProse(t *testing.T) {
+	d := doc(
+		"# 1. Ballots", prose+"\n7",
+		"# 2. Quorums", prose,
+		"# 3. Decrees", prose,
+	)
+	body := section(t, Split(d), "01_ballots.md").Body
+	if !strings.Contains(body, prose) {
+		t.Errorf("the prose is gone:\n%s", body)
+	}
+	for _, l := range strings.Split(body, "\n") {
+		if Folio.MatchString(l) {
+			t.Errorf("%q is still a page number on a line of its own", l)
+		}
+	}
+}
+
+// A one column table of numbers is not a run of page numbers, and a table
+// with its rows taken out no longer says what the paper said.
+func TestARowOfATableIsNotAPageNumber(t *testing.T) {
+	rows := "| Packets |\n| --- |\n| 400 |\n| 512 |"
+	d := doc("# 1. Performance", rows, "# 2. Results", prose, "# 3. Conclusion", prose)
+	body := section(t, Split(d), "01_performance.md").Body
+	if !strings.Contains(body, "400") || !strings.Contains(body, "512") {
+		t.Errorf("the table lost a row:\n%s", body)
+	}
+}
