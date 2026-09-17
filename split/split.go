@@ -2,12 +2,28 @@ package split
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/tamnd/papers-reader/assemble"
 )
+
+// Folio matches a paragraph that is nothing but a page number, with or
+// without the rules and dashes a paper sets around one.
+//
+// The extractor learns page furniture from the whole paper: a line in the
+// same place on most pages is a running head and comes off there. A paper
+// that prints its folio on six pages out of forty defeats that, because six
+// is not most, and the number arrives here as a paragraph of its own. It is
+// never anything else. A numbered list writes "1." with the stop, a display
+// equation is inside its dollars, and body prose is not one number.
+//
+// Shared with the audit, which checks the same shape in rule T10. Two copies
+// of it would mean the splitter writing a file the rule then refuses with
+// nobody able to say which of the two was wrong.
+var Folio = regexp.MustCompile(`(?i)^\s*[-–—|]*\s*(?:page\s+)?\d{1,4}\s*[-–—|]*\s*$`)
 
 // A Section is one top level section of a paper: the part of the document
 // between one level one heading and the next, with its subheadings inside it.
@@ -200,6 +216,13 @@ func body(paragraphs []assemble.Paragraph, start, end int, sub map[int]Heading, 
 	var b strings.Builder
 	for i := start; i < end; i++ {
 		p := paragraphs[i]
+		// A folio contributes nothing to the section and nothing to its page
+		// range either: the page it sits on is in the range already, because
+		// a page whose only content was its own number would not have been
+		// cut into a section in the first place.
+		if _, ok := sub[i]; !ok && Folio.MatchString(p.Text) {
+			continue
+		}
 		if first == 0 || p.Page < first {
 			first = p.Page
 		}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/tamnd/papers-reader/assemble"
@@ -98,7 +99,7 @@ func runSplit(args []string) error {
 	all := fs.Bool("all", false, "split every paper that has extracted pages")
 	force := fs.Bool("force", false, "overwrite files somebody has edited by hand")
 	accept := fs.Bool("accept", false, "restamp files somebody has edited by hand and mark them edited")
-	prune := fs.Bool("prune", false, "delete the files an earlier split left behind")
+	prune := fs.Bool("prune", false, "delete the files an earlier split left behind, and their translations")
 	dry := fs.Bool("dry-run", false, "print what would be written and write nothing")
 	long := fs.Bool("v", false, "print every section")
 	fs.Usage = func() {
@@ -124,7 +125,9 @@ it is, because the usual reason for one is that a section boundary moved and
 that is worth seeing rather than reading out of a diff. --prune is how you
 delete them once you have looked. Two files for one section is two files
 carrying the same section number, which fails audit rule T04 until one of
-them goes.
+them goes. --prune takes the translations of those sections with them, for
+the same reason: a Vietnamese file whose English is gone carries the old
+section number too and no later run has any reason to touch it.
 
 A correction is protected the moment it is made and it fails audit rule T03
 until somebody says they meant it, which is the right way round: the audit
@@ -136,10 +139,6 @@ because putting a fence round a file nobody has edited would stop the
 splitter keeping it up to date. It covers the translations as well as the
 English, because a Japanese file gets corrected for the same reasons and
 papers translate reads the same flag.
-
-A file from an earlier split that this one did not produce is reported and
-not deleted, because the usual reason for one is that a section boundary
-moved and that is worth seeing.
 
 A restricted paper gets its front matter and an abstract of at most 250
 words. Nothing else about it may be published, so nothing else is written.
@@ -338,8 +337,59 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, prune
 		if err := split.Prune(c.Content(corpus.EN, p.ID), report.Stale); err != nil {
 			return n, err
 		}
+		left, err := orphans(c, p.ID, files)
+		if err != nil {
+			return n, err
+		}
+		for _, o := range left {
+			n.notes = append(n.notes, fmt.Sprintf("%s is a translation of a section this split did not produce and has been deleted", o))
+		}
 	}
 	return n, nil
+}
+
+// orphans deletes the translated files whose English this split did not
+// produce, and names what it deleted.
+//
+// The English directory is pruned above and the three translated ones are
+// the same problem seen a step later. A translator writes one file per
+// English file, so a section that changed its title leaves a Vietnamese file
+// behind exactly as it leaves an English one, and the Vietnamese copy is
+// worse: it has the old section number in its front matter, rule T04 reads
+// two files as section 02, the publish gate holds the paper, and no later
+// run touches the file because there is no English to translate into it.
+// Paxos sat in that state with two files numbered 02 in both languages.
+//
+// Only alongside --prune, because this is the same decision about the same
+// sections and splitting the two apart would give a corpus half cleaned.
+func orphans(c *corpus.Corpus, id string, files []split.File) ([]string, error) {
+	want := map[string]bool{}
+	for _, f := range files {
+		want[f.Name] = true
+	}
+	var out []string
+	for _, l := range corpus.Langs {
+		if !l.Translated() {
+			continue
+		}
+		dir := c.Content(l, id)
+		names, err := filepath.Glob(filepath.Join(dir, "*.md"))
+		if err != nil {
+			return nil, err
+		}
+		for _, path := range names {
+			name := filepath.Base(path)
+			if want[name] {
+				continue
+			}
+			if err := os.Remove(path); err != nil {
+				return nil, err
+			}
+			out = append(out, filepath.Join(string(l), name))
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // cite rewrites the in-text citations of every section into links, using

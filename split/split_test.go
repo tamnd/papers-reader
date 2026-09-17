@@ -420,3 +420,46 @@ func TestOnlyTheFrontMattersOwnHeadingsGoBare(t *testing.T) {
 		t.Errorf("the subheading lost its marker too:\n%s", intro.Body)
 	}
 }
+
+// Paxos printed its folio on six pages out of thirty, which is too few for
+// the extractor's furniture detector to learn, so the numbers arrived in the
+// body as paragraphs of their own and rule T10 refused the file.
+func TestABarePageNumberIsNotPartOfTheSection(t *testing.T) {
+	r := Split(doc(
+		"A Paper About Something",
+		"1 Introduction", prose,
+		"9",
+		prose,
+		"2 Method", prose,
+		"- 11 -",
+		prose,
+		"3 Results", prose,
+	))
+	for _, name := range []string{"01_introduction.md", "02_method.md"} {
+		s := section(t, r, name)
+		for _, line := range strings.Split(s.Body, "\n") {
+			if Folio.MatchString(line) && strings.TrimSpace(line) != "" {
+				t.Errorf("%s keeps the page number %q:\n%s", name, strings.TrimSpace(line), s.Body)
+			}
+		}
+		if !strings.Contains(s.Body, "This is a paragraph") {
+			t.Errorf("%s lost its prose:\n%s", name, s.Body)
+		}
+	}
+}
+
+// A heading that reads as a number is a heading and stays. Shannon numbers
+// his appendices and nothing else, so appendix 5 is a section called 5.
+func TestAHeadingThatIsANumberIsNotAPageNumber(t *testing.T) {
+	r := Split(doc(
+		"A Paper About Something",
+		"1 Introduction", prose,
+		"1.1 A Subsection", prose,
+		"2 Method", prose,
+		"3 Results", prose,
+	))
+	intro := section(t, r, "01_introduction.md")
+	if !strings.Contains(intro.Body, "### 1.1 A Subsection") {
+		t.Errorf("the subheading went with the page numbers:\n%s", intro.Body)
+	}
+}

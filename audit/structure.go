@@ -489,9 +489,9 @@ func subheads(body string) int {
 	return n
 }
 
-// folio matches a line that is only a page number, with or without the rules
-// and dashes a paper sets around one.
-var folio = regexp.MustCompile(`(?i)^\s*[-–—|]*\s*(?:page\s+)?\d{1,4}\s*[-–—|]*\s*$`)
+// folio matches a line that is only a page number. It is the splitter's own
+// pattern: see split.Folio for why the two have to be one.
+var folio = split.Folio
 
 // ruleT10 is the last line of defence against page furniture, and it is where
 // the running heads that the extractor's own detector missed turn up.
@@ -502,6 +502,9 @@ var folio = regexp.MustCompile(`(?i)^\s*[-–—|]*\s*(?:page\s+)?\d{1,4}\s*[-�
 // that prints the section title as the head so that the line differs on every
 // page. Those arrive here, as a bare number on a line of its own or as a line
 // that repeats.
+//
+// The splitter drops a bare folio of its own accord now, so what this reports
+// is a file written before it did, or one somebody has edited by hand.
 //
 // Only a bare folio is reported, and not a line of prose that happens to be
 // short. The rule has to be one a person can act on: a finding that says
