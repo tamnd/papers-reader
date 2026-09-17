@@ -173,19 +173,34 @@ the decision to do so is recorded in that file rather than in this one.
 	for _, p := range todo {
 		rec, _ := recorded.ByID(p.ID)
 		n, err := splitOne(c, p, rec, *force, *prune, *dry, *long)
-		switch {
-		case err != nil:
+		if err != nil {
 			fmt.Printf("  %-34s %v\n", p.ID, err)
-		case n.sections == 0:
 			continue
-		default:
+		}
+		// After the split and not inside it, so that a paper with no pages
+		// left to split still has its translations swept. That paper is the
+		// one that needs it: nothing else in the toolchain will ever touch
+		// its files again.
+		if *prune && !*dry {
+			left, err := orphans(c, p.ID)
+			if err != nil {
+				return err
+			}
+			for _, o := range left {
+				n.notes = append(n.notes, fmt.Sprintf("%s is a translation of a section that has no English and has been deleted", o))
+			}
+		}
+		if n.sections == 0 && len(n.notes) == 0 {
+			continue
+		}
+		if n.sections > 0 {
 			papers++
 			written += n.written
 			kept += n.kept
-			fmt.Printf("  %-34s %s\n", p.ID, n)
-			for _, note := range n.notes {
-				fmt.Printf("    %s\n", note)
-			}
+		}
+		fmt.Printf("  %-34s %s\n", p.ID, n)
+		for _, note := range n.notes {
+			fmt.Printf("    %s\n", note)
 		}
 	}
 	if *dry {
@@ -337,35 +352,39 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, prune
 		if err := split.Prune(c.Content(corpus.EN, p.ID), report.Stale); err != nil {
 			return n, err
 		}
-		left, err := orphans(c, p.ID, files)
-		if err != nil {
-			return n, err
-		}
-		for _, o := range left {
-			n.notes = append(n.notes, fmt.Sprintf("%s is a translation of a section this split did not produce and has been deleted", o))
-		}
 	}
 	return n, nil
 }
 
-// orphans deletes the translated files whose English this split did not
-// produce, and names what it deleted.
+// orphans deletes the translated files that have no English beside them, and
+// names what it deleted.
 //
-// The English directory is pruned above and the three translated ones are
-// the same problem seen a step later. A translator writes one file per
-// English file, so a section that changed its title leaves a Vietnamese file
-// behind exactly as it leaves an English one, and the Vietnamese copy is
-// worse: it has the old section number in its front matter, rule T04 reads
-// two files as section 02, the publish gate holds the paper, and no later
-// run touches the file because there is no English to translate into it.
-// Paxos sat in that state with two files numbered 02 in both languages.
+// The English directory is pruned first and the three translated ones are the
+// same problem seen a step later. A translator writes one file per English
+// file, so a section that changed its title leaves a Vietnamese file behind
+// exactly as it leaves an English one, and the Vietnamese copy is worse: it
+// has the old section number in its front matter, rule T04 reads two files as
+// section 17, the publish gate holds the paper, and no later run touches the
+// file because there is no English to translate into it. Paxos sat in that
+// state with two files numbered 02 in both languages and GPT-3 with two
+// numbered 17 in Vietnamese.
+//
+// What it compares against is the English on disk and not the files this run
+// produced, because a paper whose extracted pages have been cleaned up splits
+// into nothing and still has translations to sweep. GPT-3 was that case: the
+// splitter could not run on it at all and the stale Vietnamese file was
+// beyond reach of the only thing that deletes one.
 //
 // Only alongside --prune, because this is the same decision about the same
 // sections and splitting the two apart would give a corpus half cleaned.
-func orphans(c *corpus.Corpus, id string, files []split.File) ([]string, error) {
+func orphans(c *corpus.Corpus, id string) ([]string, error) {
+	english, err := filepath.Glob(filepath.Join(c.Content(corpus.EN, id), "*.md"))
+	if err != nil {
+		return nil, err
+	}
 	want := map[string]bool{}
-	for _, f := range files {
-		want[f.Name] = true
+	for _, path := range english {
+		want[filepath.Base(path)] = true
 	}
 	var out []string
 	for _, l := range corpus.Langs {

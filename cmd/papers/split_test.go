@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/tamnd/papers-reader/corpus"
-	"github.com/tamnd/papers-reader/split"
 )
 
 // stub writes empty content files so that a test can say which files a
@@ -44,12 +43,11 @@ func held(t *testing.T, c *corpus.Corpus, l corpus.Lang, id string) []string {
 // files numbered 02 is a hard T04 failure, so the paper never published.
 func TestATranslationOfASectionThatIsGoneIsDeleted(t *testing.T) {
 	c := &corpus.Corpus{Root: t.TempDir()}
-	files := []split.File{{Name: "00_front.md"}, {Name: "02_the_single_decree_synod.md"}}
 	stub(t, c, corpus.EN, "a-paper", "00_front.md", "02_the_single_decree_synod.md")
 	stub(t, c, corpus.VI, "a-paper", "00_front.md", "02_the_single_decree_synod.md", "02_references.md")
 	stub(t, c, corpus.ZH, "a-paper", "00_front.md", "02_references.md")
 
-	gone, err := orphans(c, "a-paper", files)
+	gone, err := orphans(c, "a-paper")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +67,7 @@ func TestATranslationOfASectionThatIsGoneIsDeleted(t *testing.T) {
 func TestAPaperWithNoTranslationsHasNoOrphans(t *testing.T) {
 	c := &corpus.Corpus{Root: t.TempDir()}
 	stub(t, c, corpus.EN, "a-paper", "00_front.md")
-	gone, err := orphans(c, "a-paper", []split.File{{Name: "00_front.md"}})
+	gone, err := orphans(c, "a-paper")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,4 +86,25 @@ func equal(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// GPT-3 had its extracted pages cleaned up, so the splitter could not run on
+// it at all, and a Vietnamese file numbered 17 with no English beside it was
+// out of reach of the only thing that deletes one. It failed three hard rules
+// and held the whole paper out of the corpus.
+func TestATranslationIsSweptEvenWhenNothingWasSplit(t *testing.T) {
+	c := &corpus.Corpus{Root: t.TempDir()}
+	stub(t, c, corpus.EN, "a-paper", "18_references.md")
+	stub(t, c, corpus.VI, "a-paper", "17_references.md", "18_references.md")
+
+	gone, err := orphans(c, "a-paper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"vi/17_references.md"}; !equal(gone, want) {
+		t.Errorf("deleted %v, want %v", gone, want)
+	}
+	if got := held(t, c, corpus.VI, "a-paper"); !equal(got, []string{"18_references.md"}) {
+		t.Errorf("the Vietnamese directory holds %v", got)
+	}
 }
