@@ -163,7 +163,7 @@ func (r *Run) one(ctx context.Context, page poppler.Layout, c Candidate, images 
 		Method:  got.Method,
 		// Measured on what was trimmed and committed, not on the hole it
 		// was found in. The rule is about the picture.
-		Fraction: round(Fraction(got.Box, page)),
+		Fraction: roundFraction(Fraction(got.Box, page)),
 		Width:    got.Width,
 		Height:   got.Height,
 		Bytes:    len(got.Data),

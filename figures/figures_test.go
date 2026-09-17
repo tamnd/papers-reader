@@ -149,3 +149,24 @@ func TestTheHashIsOfTheBytesAsCommitted(t *testing.T) {
 		t.Fatalf("the hash is %d characters, want 64", len(a))
 	}
 }
+
+// Shannon's schematic is 44 points by 49 on a page of 612 by 792, which two
+// decimal places wrote as 0, and a fraction of 0 is what rule F06 reads as a
+// figure whose fraction was never recorded.
+func TestATinyFigureStillRecordsAFraction(t *testing.T) {
+	for _, c := range []struct {
+		in   float64
+		want float64
+	}{
+		{0.00446, 0.0045},
+		{0.000001, 0.0001},
+		{0.75, 0.75},
+		{0.1949, 0.1949},
+		{0, 0},
+		{-1, 0},
+	} {
+		if got := roundFraction(c.in); got != c.want {
+			t.Errorf("roundFraction(%v) is %v, want %v", c.in, got, c.want)
+		}
+	}
+}

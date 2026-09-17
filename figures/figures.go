@@ -103,6 +103,26 @@ func round(f float64) float64 {
 	return float64(int64(f*100+0.5)) / 100
 }
 
+// roundFraction is four decimal places, and never zero for a figure that has
+// any area at all.
+//
+// Two places is right for a coordinate in points and wrong for a number
+// between nought and one. Shannon's first figure is a schematic 44 points by
+// 49 on a page of 612 by 792, which is 0.45% of it, and two places wrote
+// that as 0. Rule F06 reads a fraction of zero as a figure whose fraction
+// was never recorded, refuses it, and the whole corpus has been failing the
+// hard audit on that one line. A tiny figure is the safest kind there is:
+// what F06 exists to catch is a figure that covers the page.
+func roundFraction(f float64) float64 {
+	if f <= 0 {
+		return 0
+	}
+	if r := float64(int64(f*10000+0.5)) / 10000; r > 0 {
+		return r
+	}
+	return 0.0001
+}
+
 // Name is the file the figure is committed as, under figures/<id>.
 func (f Figure) Name() string { return f.ID + ".png" }
 
