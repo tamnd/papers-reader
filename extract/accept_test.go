@@ -575,6 +575,39 @@ func TestTheTagShapesAReaderWritesAreStillMarkup(t *testing.T) {
 	}
 }
 
+// The two shapes the reading actually lost its place in, a column specifier
+// that never ended and a pattern string of one letter, cut down to size.
+func TestAPageThatRepeatsItselfIsRefused(t *testing.T) {
+	for _, text := range []string{
+		"The table is laid out like this:\n\n\\[\n\\begin{array}{" + strings.Repeat("c", 900),
+		"The worst case for the pattern:\n\n" + strings.Repeat("a ", 600),
+		"A row of the table:\n\n" + strings.Repeat("| --- ", 200) + "|\n",
+	} {
+		var c Checker
+		faults := c.Check(1, text)
+		if !has(faults, A12) {
+			t.Errorf("a page that repeats itself was accepted: %v", rules(faults))
+		}
+	}
+}
+
+// What a paper really prints has to survive it. A wide table holds its
+// columns apart with spaces, a heading gets a rule of hyphens under it, and
+// a paper about string matching writes out strings of one letter on purpose.
+func TestTheRepetitionAPaperPrintsIsKept(t *testing.T) {
+	for _, text := range []string{
+		"Throughput" + strings.Repeat(" ", 159) + "4.1\n",
+		"Results\n" + strings.Repeat("-", 127) + "\n",
+		"The pattern cccccccccc occurs in the text accaccaccacc twice.\n",
+		"| a | b |\n|" + strings.Repeat(" --- |", 20) + "\n",
+	} {
+		var c Checker
+		if faults := c.Check(1, text); has(faults, A12) {
+			t.Errorf("%q was read as a model repeating itself", text)
+		}
+	}
+}
+
 func TestMarkupInAListingIsPartOfTheListing(t *testing.T) {
 	var c Checker
 	text := "The template is:\n\n```html\n<table><tr><td>1</td></tr></table>\n```\n"

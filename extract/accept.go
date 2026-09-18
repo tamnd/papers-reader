@@ -11,7 +11,7 @@ import (
 	"github.com/tamnd/papers-reader/mathtex"
 )
 
-// The eleven acceptance rules. A page is checked before it is written, and a
+// The twelve acceptance rules. A page is checked before it is written, and a
 // page that fails goes back on the queue rather than into the corpus.
 //
 // They are numbered because the numbers end up in the queue, in the reports
@@ -35,6 +35,9 @@ const (
 	A10 = "A10 the page came back with markup the corpus has no spelling for"
 	// A11 is the one that catches mathematics flattened into the prose.
 	A11 = "A11 the page is doing mathematics and has not one math span"
+	// A12 is the one that catches a model that stopped reading and started
+	// repeating itself. See looping.
+	A12 = "A12 the page repeats one short thing until it runs out of room"
 )
 
 // A Fault is one rule one page broke.
@@ -55,7 +58,7 @@ func (f Fault) Error() string {
 	return fmt.Sprintf("%s: %s", f.Rule, f.Detail)
 }
 
-// A Checker applies the ten rules to the pages of one paper.
+// A Checker applies the twelve rules to the pages of one paper.
 //
 // One per paper and not one per page, because rule A5 is about the paper: a
 // page is too short relative to the other pages of the same paper, and there
@@ -349,6 +352,10 @@ func (c *Checker) faults(page int, text string) []Fault {
 		add(A1, fmt.Sprintf("the page reads like an answer to the question rather than the page: %q", s), at)
 		return out
 	}
+	if unit, run, at := looping(text); run >= Loop {
+		add(A12, fmt.Sprintf("the page repeats %q for %d characters, so the reading stopped somewhere in the middle and the rest is a model talking to itself", unit, run), at)
+		return out
+	}
 
 	// The math rules read the page with the listings taken out of it. A
 	// fenced block is not prose and not mathematics: a dollar in it is a shell
@@ -521,6 +528,67 @@ var refusals = []string{
 // answer or the start of it, and a page of a paper that happens to quote one
 // of these sentences quotes it somewhere in the middle.
 const refusalHead = 400
+
+// Loop is how much of one thing over and over stops being a page and starts
+// being a model that got stuck.
+//
+// Measured over the corpus as it stands. The longest stretch of real
+// repetition anybody prints is 159 characters, a rule of spaces holding the
+// columns apart on page 63 of the GPT-3 paper, and the next few are the same
+// thing: table separators, a row of hyphens under a heading, the dots in a
+// contents leader. The shortest degeneration is 16962 characters. There is
+// nothing at all between the two, so the threshold sits three times above
+// the longest page anybody wrote and thirty times below the shortest page a
+// model lost its place on.
+const Loop = 512
+
+// LoopUnit is how long the repeating thing may be for looping to find it.
+//
+// Every loop seen so far is a character or a token: `cccc` from a column
+// specifier that never ended, `a a a a` from a pattern string in the KMP
+// paper, `| --- ` from a table. Six covers all of them and sixteen leaves
+// room. A model that repeats a whole sentence is not caught here, and does
+// not have to be: that page fails A5 on its length or A9 on the text layer
+// it stopped following.
+const LoopUnit = 16
+
+// looping is the longest stretch of the page that is one short thing
+// repeated, with the thing and the line it starts on.
+//
+// This is the fourth reading of the KMP paper, and it is the one that
+// explains the other three. Pages 1, 2, 3 and 12 came back at around 95000
+// characters each, against 2500 for every other page of it, because the
+// model opened `\begin{array}{cccc` and wrote c until it ran out of room, or
+// started on Knuth's pattern $a^n$ and wrote `a a a a` for forty thousand
+// characters. None of the math rules catch that. The span is never closed,
+// so A2 does fire, but only after A4 has been handed a formula the size of a
+// novel to parse, and the page is written and then split and then audited
+// and then translated. Refusing it here costs one retry and saves all of it.
+//
+// The comparison is by byte, so a unit can land in the middle of a rune and
+// come out as an escape in the message. That is worth it for a rule that has
+// to run over every page of every reading: the bytes of a repeating rune
+// repeat too, which is all this has to see.
+func looping(text string) (unit string, run int, line int) {
+	best, at, period := 0, 0, 0
+	for p := 1; p <= LoopUnit && p < len(text); p++ {
+		n := 0
+		for i := p; i < len(text); i++ {
+			if text[i] != text[i-p] {
+				n = 0
+				continue
+			}
+			n++
+			if n+p > best {
+				best, at, period = n+p, i-n-p+1, p
+			}
+		}
+	}
+	if best == 0 {
+		return "", 0, 0
+	}
+	return text[at : at+period], best, 1 + strings.Count(text[:at], "\n")
+}
 
 func refusal(text string) (string, int) {
 	head := strings.ToLower(strings.TrimSpace(text))
