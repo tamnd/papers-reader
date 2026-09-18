@@ -643,12 +643,13 @@ func ruleM13(in *Input) ([]Finding, error) {
 			return nil
 		}
 		var out []Finding
+		prose := commentClause(f.Body)
 		spans, unclosed := mathtex.Split(f.Body)
 		if unclosed != nil {
 			spans = append(spans, *unclosed)
 		}
 		for _, s := range spans {
-			if !inRanges(fenced, s.Line) {
+			if !inRanges(fenced, s.Line) || prose[s.Line] {
 				continue
 			}
 			out = append(out, Finding{
@@ -659,6 +660,50 @@ func ruleM13(in *Input) ([]Finding, error) {
 		return out
 	})
 }
+
+// commentClause marks the lines of a body that fall inside an ALGOL comment
+// clause, counting lines from one.
+//
+// A comment clause is the one place inside a listing where mathematics set
+// as mathematics is right. ALGOL 60 writes documentation as `comment` and
+// then English up to the next semicolon, and it is English: Pfaltz explains
+// his line integral procedure by giving the Riemann-Stieltjes sum it
+// approximates, and Floyd's LOGC says which principal value it computes.
+// The reader wrote both as math spans and both are inside the fence, and
+// they were the last three M13 findings in the corpus.
+//
+// Flattening them is not an option. A sum written as the word sum is a lie
+// about the page, which is the whole argument code.Unmath rests on, and it
+// cuts the other way here: the page really did print a formula. So the rule
+// looks away instead.
+//
+// The keyword has to be at the head of a line, which is where ALGOL sets it
+// and where both of these are. A clause opened in the middle of a line is
+// left for the rule to report, because that shape has not turned up and a
+// rule that guessed at it would be guessing.
+func commentClause(body string) map[int]bool {
+	out := map[int]bool{}
+	lines := strings.Split(body, "\n")
+	for i := 0; i < len(lines); i++ {
+		if !commentKeyword.MatchString(lines[i]) {
+			continue
+		}
+		rest := lines[i][strings.Index(strings.ToLower(lines[i]), "comment")+len("comment"):]
+		for {
+			out[i+1] = true
+			if strings.Contains(rest, ";") || i+1 >= len(lines) {
+				break
+			}
+			i++
+			rest = lines[i]
+		}
+	}
+	return out
+}
+
+// commentKeyword is the ALGOL comment keyword at the head of a line. Upper
+// case is allowed because the older papers set their listings that way.
+var commentKeyword = regexp.MustCompile(`^\s*(?i:comment)\b`)
 
 // codeRanges is the line ranges of the fenced code blocks in a body,
 // inclusive of the fences, counting lines from one.

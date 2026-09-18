@@ -334,6 +334,26 @@ func TestM13LeavesALanguageThatWritesItsOwnDollar(t *testing.T) {
 	}
 }
 
+// A comment clause is the one place inside a listing where mathematics set
+// as mathematics is right. ALGOL writes documentation as `comment` and then
+// English up to the next semicolon, and a formula in English is a formula.
+func TestM13LeavesAFormulaInAnAlgolCommentClause(t *testing.T) {
+	body := "the procedure reads\n\n```text\nprocedure SUMUP(A, N);\ncomment SUMUP forms the partial sum $\\sum_{i=1}^{n} a_i$ over the array;\nbegin\n    total := 0\nend\n```\n\nand then stops." + pad
+	if res := result(t, onePaper(t, body), "M13"); res.Failed() {
+		t.Errorf("M13 objected to mathematics in a comment clause: %v", res.Findings)
+	}
+}
+
+// The clause runs to the semicolon and not to the end of the line, so a
+// span on a program line under a one line comment is still reported.
+func TestM13StillReportsTheProgramLineUnderACommentClause(t *testing.T) {
+	body := "the procedure reads\n\n```text\ncomment SUMUP forms a partial sum;\nbegin\n    total := $a_1$\nend\n```\n\nand then stops." + pad
+	res := result(t, onePaper(t, body), "M13")
+	if !res.Failed() {
+		t.Fatal("M13 let a span on a program line through")
+	}
+}
+
 // The group has to be able to say it did not run. A corpus with content in
 // it and no mathematics is the normal state of a corpus extracted natively,
 // and the span rules passing on it would be a claim nobody checked.
