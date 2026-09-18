@@ -8,22 +8,24 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
+	"github.com/tamnd/papers-reader/report"
 	"github.com/tamnd/papers-reader/split"
 	"github.com/tamnd/papers-reader/tags"
 )
 
 // Rules is every rule the toolchain implements today, in id order.
 //
-// Nine groups and ninety-three rules, which is all the ones designed and two
-// more. The last to arrive was S10, which came out of a restricted paper
-// that published the wrong paper's text: every other rule read it and found
-// nothing, because a well formed publication of the wrong paper is well
-// formed.
+// Nine groups and ninety-seven rules, which is all the ones designed and a
+// handful more. The last to arrive was S11, which counts the pages of a
+// paper that never reached the corpus: a page a reader refused leaves a hole
+// in the middle of an argument and every other rule passes over it, because
+// the files around the hole are perfectly well formed.
 func Rules() []Rule {
 	out := []Rule{
 		{
@@ -75,6 +77,11 @@ func Rules() []Rule {
 			ID: "S10", Hard: true,
 			What:  "the quotation published from a restricted paper is from that paper.",
 			Check: ruleS10,
+		},
+		{
+			ID:    "S11",
+			What:  "every page of a paper published in full is in one of its files.",
+			Check: ruleS11,
 		},
 	}
 	out = append(out, structureRules()...)
@@ -861,4 +868,132 @@ func trackedFiles(root string) ([]string, error) {
 		}
 	}
 	return paths, nil
+}
+
+// ruleS11 counts the pages of a paper that never reached the corpus.
+//
+// A page a reader refused is a hole in the middle of a paper, and nothing
+// else in the audit can see it. The file the page should be in is well
+// formed, its hash is right, its mathematics parses and its front matter
+// says which pages of the PDF it came off. Every rule passes and three
+// pages of the argument are missing.
+//
+// The LeNet paper is what this was written against. Two of its forty eight
+// pages are in the corpus and it counts as published in full in the
+// coverage report, because that report reads how many files a paper has and
+// not how much of the paper is in them. Cook's proof that satisfiability is
+// complete lost its last three pages the same way, to a reader that would
+// not give up the mathematics on them.
+//
+// The pages come from the front matter and the count from sources.yaml, so
+// this reads the corpus as it is committed and runs in CI like the rest of
+// the group. It asks only about a paper published in full: a stub is the
+// front matter and page one by design, and asking it for the other forty
+// seven would be asking every stub in the corpus the same useless question.
+//
+// Soft, because the corpus cannot tell a page a reader refused from a page
+// nobody should publish. The last page of an offprint is the start of the
+// next article in the issue, a scan carries the blank verso, and both are
+// pages the extractor is right to leave out. The rule names the pages and a
+// person decides which of the two it is.
+func ruleS11(in *Input) ([]Finding, error) {
+	have := map[string]map[int]bool{}
+	files := map[string][]string{}
+	for _, f := range in.Content {
+		if f.Broken() || f.Lang != corpus.EN {
+			continue
+		}
+		files[f.Paper] = append(files[f.Paper], f.Path)
+		if have[f.Paper] == nil {
+			have[f.Paper] = map[int]bool{}
+		}
+		for _, n := range pageList(f.Front.PDFPages) {
+			have[f.Paper][n] = true
+		}
+	}
+	asked := 0
+	var out []Finding
+	for _, p := range in.Papers.Papers {
+		rec, ok := in.Sources.ByID(p.ID)
+		if !ok || rec.Pages <= 0 || report.StateOf(files[p.ID]) != report.Full {
+			continue
+		}
+		asked++
+		var missing []int
+		for n := 1; n <= rec.Pages; n++ {
+			if !have[p.ID][n] {
+				missing = append(missing, n)
+			}
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		out = append(out, Finding{
+			Rule: "S11", File: "content/en/" + p.ID,
+			Message: fmt.Sprintf("%s of the %d page PDF %s in no file: %s",
+				plural(len(missing), "page"), rec.Pages,
+				is(len(missing)), runs(missing)),
+		})
+	}
+	if asked == 0 {
+		return nil, ErrNotRun
+	}
+	return out, nil
+}
+
+// is agrees the verb with the count, because "3 pages of the 8 page PDF is
+// in no file" reads as a mistake and the reader stops on it.
+func is(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
+}
+
+// pageList is the pages a pdf_pages field names, one number or a range.
+func pageList(s string) []int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	from, to, ok := strings.Cut(s, "-")
+	a, err := strconv.Atoi(strings.TrimSpace(from))
+	if err != nil {
+		return nil
+	}
+	if !ok {
+		return []int{a}
+	}
+	b, err := strconv.Atoi(strings.TrimSpace(to))
+	if err != nil || b < a {
+		return nil
+	}
+	out := make([]int, 0, b-a+1)
+	for n := a; n <= b; n++ {
+		out = append(out, n)
+	}
+	return out
+}
+
+// runs writes a list of page numbers the way a person would say it, so that
+// a paper missing everything after page 2 reads "3 to 48" and not as forty
+// six numbers with commas between them.
+func runs(pages []int) string {
+	var parts []string
+	for i := 0; i < len(pages); {
+		j := i
+		for j+1 < len(pages) && pages[j+1] == pages[j]+1 {
+			j++
+		}
+		switch {
+		case j == i:
+			parts = append(parts, strconv.Itoa(pages[i]))
+		case j == i+1:
+			parts = append(parts, strconv.Itoa(pages[i])+" and "+strconv.Itoa(pages[j]))
+		default:
+			parts = append(parts, strconv.Itoa(pages[i])+" to "+strconv.Itoa(pages[j]))
+		}
+		i = j + 1
+	}
+	return strings.Join(parts, ", ")
 }

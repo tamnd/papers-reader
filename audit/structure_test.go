@@ -478,6 +478,49 @@ func TestS09AcceptsAPaperAndItsBlankVerso(t *testing.T) {
 	}
 }
 
+// S11 is the hole nothing else can see. Cook's proof lost its last three
+// pages to a reader that would not give up the mathematics on them, and
+// every file around the hole is well formed.
+func TestS11CountsThePagesThatNeverArrived(t *testing.T) {
+	files := map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/codd-1970-relational/00_front.md":   file("paper: codd-1970-relational\ntitle: A Relational Model\nkind: front\nlang: en\npdf_pages: \"1\"\n", abstract),
+		"content/en/codd-1970-relational/01_section.md": file("paper: codd-1970-relational\ntitle: A Relational Model\nkind: section\nlang: en\npdf_pages: 2-8\n", abstract),
+	}
+	res := result(t, Run(in(t, files), false), "S11")
+	if len(res.Findings) != 1 {
+		t.Fatalf("S11 found %d, want 1: %v", len(res.Findings), res.Findings)
+	}
+	if !strings.Contains(res.Findings[0].Message, "9 to 11") {
+		t.Errorf("S11 does not name the pages: %s", res.Findings[0].Message)
+	}
+}
+
+// A paper whose files cover every page is not reported, and a stub is never
+// asked: the front matter and page one is what a stub is.
+func TestS11AcceptsAWholePaperAndPassesOverAStub(t *testing.T) {
+	files := map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/codd-1970-relational/00_front.md":   file("paper: codd-1970-relational\ntitle: A Relational Model\nkind: front\nlang: en\npdf_pages: 1-6\n", abstract),
+		"content/en/codd-1970-relational/01_section.md": file("paper: codd-1970-relational\ntitle: A Relational Model\nkind: section\nlang: en\npdf_pages: 7-11\n", abstract),
+		"content/en/vaswani-2017-attention/00_front.md": file("paper: vaswani-2017-attention\ntitle: Attention Is All You Need\nkind: front\nlang: en\npdf_pages: \"1\"\n", abstract),
+	}
+	if res := result(t, Run(in(t, files), false), "S11"); res.Failed() {
+		t.Errorf("S11 reported a paper that is all here: %v", res.Findings)
+	}
+}
+
+// S11 is soft. The last page of an offprint is the start of the next
+// article in the issue and a scan carries the blank verso, and the corpus
+// cannot tell either from a page a reader refused.
+func TestS11IsSoft(t *testing.T) {
+	for _, r := range Rules() {
+		if r.ID == "S11" && r.Hard {
+			t.Fatal("S11 is hard, and a page nobody should publish looks the same as a page that was refused")
+		}
+	}
+}
+
 // S10 is the rule for the fault that got past every other one: the front
 // file of a restricted paper carrying a different paper's text, whole,
 // because the pages that were read were not the pages the paper is on.
