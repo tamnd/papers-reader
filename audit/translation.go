@@ -13,6 +13,7 @@ import (
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/glossary"
 	"github.com/tamnd/papers-reader/markdown"
+	"github.com/tamnd/papers-reader/roundtrip"
 	"github.com/tamnd/papers-reader/split"
 	"github.com/tamnd/papers-reader/translate"
 )
@@ -267,6 +268,11 @@ func translationRules() []Rule {
 			ID: "L20", Hard: false,
 			What:  "every translation answers the English as it now stands.",
 			Check: ruleL20,
+		},
+		{
+			ID: "L21", Hard: false,
+			What:  "no translation is left carrying a materially different verdict.",
+			Check: ruleL21,
 		},
 	}
 }
@@ -1750,6 +1756,38 @@ func ruleL20(in *Input) ([]Finding, error) {
 		return []Finding{{
 			Rule: "L20", File: p.tr.Path,
 			Message: fmt.Sprintf("this answers %s as it was and that file has been written again since, so it needs translating again", p.en.Path),
+		}}
+	})
+}
+
+// ruleL21 is the translation the back translation check came away from
+// believing something the paper does not say, still sitting in the corpus.
+//
+// The verdict is written onto the page and not only into the report,
+// because it is what puts the page back on the translate queue: papers
+// translate -material reads the front matter and asks again for exactly
+// these files. So a verdict here is work the corpus has already decided to
+// do, and a file carrying one is that work not yet done.
+//
+// Soft, for the same reason L20 is. Asking again costs a model run and the
+// file is a translation either way, so holding a paper out of the corpus
+// over it would trade a published paper for an unpublished one.
+//
+// It exists because nothing said the number out loud. reports/roundtrip.md
+// named nine Vietnamese files as materially different and not one of them
+// still carried the verdict, the Vietnamese having been written again in
+// the four days since, while seven Chinese and Japanese files did carry one
+// and went unmentioned. The report is a record of a run and the front
+// matter is the state of the corpus, and the two had drifted with nothing
+// reading them together. This reads the state.
+func ruleL21(in *Input) ([]Finding, error) {
+	return eachTranslationFile(in, func(p pair) []Finding {
+		if p.tr.Front.Roundtrip != string(roundtrip.Material) {
+			return nil
+		}
+		return []Finding{{
+			Rule: "L21", File: p.tr.Path,
+			Message: "the back translation of this came away believing something the English does not say, so it needs translating again",
 		}}
 	})
 }

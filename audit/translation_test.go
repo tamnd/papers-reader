@@ -1145,6 +1145,47 @@ func TestL20SaysNothingAboutACurrentTranslation(t *testing.T) {
 	}
 }
 
+// A verdict of differs-materially is work the corpus has already decided to
+// do, and a file still carrying one is that work not yet done. Nothing said
+// so until this rule: seven Chinese and Japanese files sat in the corpus
+// with the verdict on them while the report a person reads named nine
+// Vietnamese files that no longer carried it at all.
+func TestL21FindsATranslationTheBackTranslationRefused(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+		"content/vi/vaswani-2017-attention/01_section.md": file(
+			answer(corpus.VI, "section", englishBody)+"roundtrip: differs-materially\n", viBody),
+	}), false)
+
+	res := result(t, rep, "L21")
+	if len(res.Findings) != 1 {
+		t.Fatalf("L21 found %d on one refused translation: %v", len(res.Findings), res.Findings)
+	}
+}
+
+// Differing in wording is the check saying the translation is right and
+// says it differently, which is what a translation is. Only a material
+// difference is work owed.
+func TestL21LeavesAWordingDifferenceAlone(t *testing.T) {
+	for _, verdict := range []string{"same", "differs-in-wording", ""} {
+		front := answer(corpus.VI, "section", englishBody)
+		if verdict != "" {
+			front += "roundtrip: " + verdict + "\n"
+		}
+		rep := Run(build(t, map[string]string{
+			"manifests/sources.yaml":                          openSources,
+			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+			"content/vi/vaswani-2017-attention/01_section.md": file(front, viBody),
+		}), false)
+		if res := result(t, rep, "L21"); res.Failed() {
+			t.Errorf("L21 reported a translation the check passed as %q: %v", verdict, res.Findings)
+		}
+	}
+}
+
 // The Paxos front page grew from an abstract to six pages and the Japanese
 // of the old abstract was reported as having dropped two citations, both
 // headings and half the paper. One finding about a stale file, not a
