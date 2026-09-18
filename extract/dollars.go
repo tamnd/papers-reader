@@ -28,6 +28,7 @@ import (
 // and anything the rules below are not sure about is left exactly as it came.
 func Dollars(s string) string {
 	lines := strings.Split(s, "\n")
+	lines = standing(lines, codeLines(lines))
 	code := codeLines(lines)
 	for i, line := range lines {
 		if code[i] {
@@ -36,6 +37,62 @@ func Dollars(s string) string {
 		lines[i] = inline(line)
 	}
 	return strings.Join(numbers(display(lines, code)), "\n")
+}
+
+// standing handles the `\(` that stands on a line of its own.
+//
+// inline below will not pair across a line break, and says why: a formula
+// that has grown one in the middle of a sentence is a page that went wrong
+// somewhere else, and pairing it up would tidy the evidence away. That
+// reasoning holds and this is not the case it is about. An opener alone on
+// its line is not a broken inline formula, it is a display written with the
+// inline delimiters, and two papers do it: Lamport sets the invariants of
+// the Paxos protocol as blocks of conjuncts with `\\` between them, and
+// Bayer opens the line and puts the symbol and its closer on the next one to
+// give a glossary of what goes into the timing formula.
+//
+// Which of the two it is, is the closing line. A closer alone on its own
+// line as well is a display, and gets handed to display below as `\[` and
+// `\]` so that one function stays the only place that knows what a display
+// looks like. A closer with the rest of a sentence after it is the glossary,
+// and the line break is only where the reader wrapped, so the lines are
+// joined and inline pairs them on the line it makes.
+//
+// Everything else is left as it came, which is what sends it to the audit.
+// Milner has three formulas that open with `\[` and close with `\)` and
+// Hoare has one that closes with `\}`, and a mismatched pair is a misreading
+// rather than a dialect: there is no way to know from here which of the two
+// delimiters is the one the page actually printed.
+func standing(lines []string, code []bool) []string {
+	for i := 0; i < len(lines); i++ {
+		if code[i] || strings.TrimSpace(lines[i]) != `\(` {
+			continue
+		}
+		end := -1
+		for j := i + 1; j < len(lines); j++ {
+			if code[j] || strings.TrimSpace(lines[j]) == "" || strings.Contains(lines[j], `\(`) || opensDisplay(lines[j]) {
+				break
+			}
+			if strings.Contains(lines[j], `\)`) {
+				end = j
+				break
+			}
+		}
+		if end < 0 {
+			continue
+		}
+		if strings.TrimSpace(lines[end]) == `\)` {
+			lines[i], lines[end] = `\[`, `\]`
+			i = end
+			continue
+		}
+		joined := strings.Join(lines[i:end+1], " ")
+		lines = append(lines[:i], append([]string{joined}, lines[end+1:]...)...)
+		// The lines after this one have moved, and so has every fence in
+		// them, so the map of what is code has to be drawn again.
+		code = codeLines(lines)
+	}
+	return lines
 }
 
 // codeLines marks the lines inside a fenced code block, including the fences

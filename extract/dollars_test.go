@@ -187,3 +187,49 @@ func TestTidyUnwrapsAndConvertsInOnePass(t *testing.T) {
 		t.Errorf("Tidy() = %q, want %q", got, want)
 	}
 }
+
+// The Lamport shape. An opener and a closer each on a line of their own with
+// conjuncts and TeX line breaks between them is a display, and goes through
+// the same path as one written with the display delimiters.
+func TestAnOpenerOnItsOwnLineWithAnOpenerToMatchIsADisplay(t *testing.T) {
+	in := "I4(p) holds when:\n\n\\(\n\\land a = b \\\\\n\\land c \\geq d\n\\)\n"
+	want := "I4(p) holds when:\n\n$$\n\\land a = b \\\\\n\\land c \\geq d\n$$\n"
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars() = %q, want %q", got, want)
+	}
+}
+
+// The Bayer shape. A glossary of the symbols in a formula, one to a line,
+// where the reader put the opener at the end of one line and the symbol and
+// its closer at the start of the next.
+func TestAnOpenerOnItsOwnLineWithProseAfterTheCloserIsJoined(t *testing.T) {
+	in := "\\(\n\\alpha: \\) fixed time spent per page.\n"
+	want := "$\\alpha:$ fixed time spent per page.\n"
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars() = %q, want %q", got, want)
+	}
+}
+
+// A pair that does not match is a misreading and not a dialect, so it stays
+// where the audit can see it. There is no way to tell from here which of the
+// two delimiters is the one the page printed.
+func TestAMismatchedPairIsLeftForTheAudit(t *testing.T) {
+	for _, in := range []string{
+		"\\[(\\lambda v \\cdot v)\\) in $V$.\n",
+		"| \\( (r := r-y) \\} |\n",
+		"and then \\) on its own.\n",
+	} {
+		if got := Dollars(in); got != in {
+			t.Errorf("Dollars(%q) = %q, want it left alone", in, got)
+		}
+	}
+}
+
+// An opener on its own line with nothing to close it leaves the rest of the
+// page alone, the same as every other half a pair in here.
+func TestAnOpenerOnItsOwnLineWithNoCloserIsLeftAlone(t *testing.T) {
+	in := "\\(\n\\alpha + \\beta\n\nThe next paragraph.\n"
+	if got := Dollars(in); got != in {
+		t.Errorf("Dollars() = %q, want it left alone", got)
+	}
+}
