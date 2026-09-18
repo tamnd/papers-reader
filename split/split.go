@@ -143,6 +143,15 @@ type Result struct {
 // 00_front.md.
 func Split(d *assemble.Document) *Result { return Titled(d, "") }
 
+// mastheads is how many headings the title is looked for among.
+//
+// Three. What can stand over a title is the journal's name, the section of
+// the journal, and a doi or a copyright line, and no paper in the corpus
+// prints more than two of them as headings. Searching further would start
+// to reach real sections in a paper whose title never came back as a
+// heading at all.
+const mastheads = 3
+
 // Titled is Split for a paper whose title is known, which lets it tell the
 // title block from the first section.
 //
@@ -158,15 +167,6 @@ func Split(d *assemble.Document) *Result { return Titled(d, "") }
 // is the paper's title, and anything else is a section however it is set. Only
 // the first heading is offered the comparison, because a paper that prints its
 // title again is printing a running head.
-// mastheads is how many headings the title is looked for among.
-//
-// Three. What can stand over a title is the journal's name, the section of
-// the journal, and a doi or a copyright line, and no paper in the corpus
-// prints more than two of them as headings. Searching further would start
-// to reach real sections in a paper whose title never came back as a
-// heading at all.
-const mastheads = 3
-
 func Titled(d *assemble.Document, title string) *Result {
 	// Unrun first, because everything below counts paragraphs and a heading
 	// that is still inside one is a heading nothing here can find.

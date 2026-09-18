@@ -266,6 +266,62 @@ func TestARomanNumeralThatIsNotOneIsNotASection(t *testing.T) {
 	}
 }
 
+// The RSA paper numbers its sections with roman numerals and prints no stop
+// after any of them, and sets some of them off with two spaces.
+func TestARomanNumeralWithoutAStopIsStillASection(t *testing.T) {
+	s, hs := Headings([]string{
+		"A Method for Obtaining Digital Signatures",
+		"I Introduction", prose,
+		"II Public-Key Cryptosystems", prose,
+		"III  Privacy", prose,
+		"IV  Signatures", prose,
+	})
+	if s != SchemeRoman {
+		t.Fatalf("the numbering scheme is %q, want %q", s, SchemeRoman)
+	}
+	want := []string{"Introduction", "Public-Key Cryptosystems", "Privacy", "Signatures"}
+	if got := titles(hs); !equal(got, want) {
+		t.Errorf("the headings are %v, want %v", got, want)
+	}
+}
+
+// Without the stop the title is the only thing left saying this is a
+// heading and not a sentence that opens with a symbol.
+func TestAStoplessNumeralNeedsATitleThatLooksLikeOne(t *testing.T) {
+	for _, text := range []string{
+		"I think the argument above settles it",
+		"V is the set of vertices",
+		"X and Y are independent",
+	} {
+		if _, _, _, ok := parseNumber(SchemeRoman, text); ok {
+			t.Errorf("%q was read as a section number", text)
+		}
+	}
+	for _, text := range []string{
+		"I Introduction",
+		"V  Our Encryption and Decryption Methods",
+		"X. avoiding reblocking when encrypting a signed message",
+	} {
+		if _, _, _, ok := parseNumber(SchemeRoman, text); !ok {
+			t.Errorf("%q was not read as a section number", text)
+		}
+	}
+}
+
+// A formula on its own line is short, has no terminal punctuation and is
+// mostly capitals, which is everything the typographic detector looks for.
+func TestADisplayFormulaIsNotAHeading(t *testing.T) {
+	_, hs := Headings([]string{
+		"AN ENCRYPTION METHOD", prose,
+		"$$ E(D(M)) = M. $$", prose,
+		`\[ S = D_b(m) \]`, prose,
+	})
+	want := []string{"An Encryption Method"}
+	if got := titles(hs); !equal(got, want) {
+		t.Errorf("the headings are %v, want %v", got, want)
+	}
+}
+
 func titles(hs []Heading) []string {
 	out := make([]string, len(hs))
 	for i, h := range hs {

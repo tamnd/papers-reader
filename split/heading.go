@@ -79,10 +79,21 @@ const gap = `[ \t\x{00A0}\x{1680}\x{2000}-\x{200A}\x{202F}\x{205F}\x{3000}]`
 
 var (
 	arabic = regexp.MustCompile(`^(\d+(?:\.\d+)*)\.?` + gap + `+(\S.*)$`)
-	// A roman numeral without the full stop is the word I, the roman numeral
-	// with it is a section, and the papers that use roman numerals all print
-	// the stop.
-	roman = regexp.MustCompile(`^([IVXL]+)\.` + gap + `+(\S.*)$`)
+	// A roman numeral with a full stop after it is a section, "IV. RESULTS",
+	// and the stop is what tells it from the word I. Not every paper prints
+	// one. The RSA paper heads its sections "I Introduction" and "V  Our
+	// Encryption and Decryption Methods", so nothing here read a number off
+	// any of them, the paper had no numbering scheme, and the typographic
+	// fallback cut it into three files at two display formulas.
+	//
+	// So the stop is optional and parseNumber asks for something else in its
+	// place: a title that starts with a capital. What the stop is guarding
+	// against is a line of prose that opens with the word I or with a symbol
+	// named V or X, and prose after the first word is lower case. The chain
+	// is the other half of it. A stopless numeral only becomes a heading as
+	// part of a run of at least three in order, which no paper in the corpus
+	// produces by accident.
+	roman = regexp.MustCompile(`^([IVXL]+)(\.?)` + gap + `+(\S.*)$`)
 	sign  = regexp.MustCompile(`^§` + gap + `*(\d+(?:\.\d+)*)\.?` + gap + `*(\S.*)$`)
 	// atx is a heading the extractor already found. The layout path writes
 	// one for every block its model labelled a heading, and the native path
@@ -182,7 +193,12 @@ func parseNumber(s Scheme, text string) (num string, parts []int, title string, 
 		if n == 0 {
 			return "", nil, "", false
 		}
-		return m[1], []int{n}, m[2], true
+		// The numeral had no stop, so the title has to carry the evidence.
+		// See roman above.
+		if m[2] == "" && !capitalised(m[3]) {
+			return "", nil, "", false
+		}
+		return m[1], []int{n}, m[3], true
 	}
 	for _, f := range strings.Split(m[1], ".") {
 		n, err := strconv.Atoi(f)
@@ -192,6 +208,17 @@ func parseNumber(s Scheme, text string) (num string, parts []int, title string, 
 		parts = append(parts, n)
 	}
 	return m[1], parts, m[2], true
+}
+
+// capitalised says whether a title starts the way a section title does. A
+// paper capitalises the first word of a heading whatever else it does with
+// the rest, and a line of prose that happens to start with a numeral does
+// not: "V is the set of vertices".
+func capitalised(title string) bool {
+	for _, r := range title {
+		return unicode.IsUpper(r)
+	}
+	return false
 }
 
 var romanDigits = map[rune]int{'I': 1, 'V': 5, 'X': 10, 'L': 50}
@@ -226,8 +253,19 @@ func romanValue(s string) int {
 // A paragraph that ends in a full stop is a sentence. A paragraph that runs
 // past a line is a paragraph. Neither is a heading, and both are what a
 // numbered list inside the prose looks like.
+//
+// Nor is a display formula, however short. A formula standing on its own is
+// a line of capitals with no terminal punctuation, which is exactly what the
+// typographic detector is looking for, and the RSA paper lost two sections
+// to it: "$$ E(D(M)) = M. $$" and "$$ S = D_b(m) $$" both became headings
+// and the files were named after them. Mathematics inside a heading is fine
+// and "THE CLASS $P$" is a real one, so it is only a paragraph that opens
+// with a display delimiter that is refused here.
 func candidate(text string) bool {
 	if text == "" || len([]rune(text)) > maxHeading {
+		return false
+	}
+	if strings.HasPrefix(text, "$$") || strings.HasPrefix(text, `\[`) {
 		return false
 	}
 	switch text[len(text)-1] {
