@@ -29,3 +29,13 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    ignore:
+      # TypeScript 7 is the native compiler and it does not ship the
+      # programmatic API that astro check calls, so the build step fails
+      # before it reaches a single file: "The TypeScript module loaded
+      # (found 7.0.2) does not expose the programmatic API that astro check
+      # relies on." Nothing in this repository can fix that. Astro is
+      # tracking it in withastro/roadmap discussion 1321, and this comes off
+      # when a release of @astrojs/check widens its peer range past 6.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
