@@ -1,6 +1,7 @@
 package refs
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/tamnd/papers-reader/assemble"
@@ -126,5 +127,79 @@ func TestALongUnmarkedParagraphIsStillNotAHeading(t *testing.T) {
 	section := Bibliography(d)
 	if len(section) != 2 {
 		t.Errorf("the bibliography is %v and both entries belong to it", got(section))
+	}
+}
+
+// The last page of a two column paper is where the reading order goes wrong.
+// The heading and the first entry are at the foot of the left column and the
+// rest carry on at the top of the right one, so a reader that takes the right
+// column first files most of the bibliography as the end of the appendix.
+func TestEntriesTheReadingOrderScatteredAreGatheredBack(t *testing.T) {
+	d := doc(
+		"APPENDIX",
+		"[2] B. Boehm, Software and its impact, 1973.",
+		"[3] W. Cammack, Improving the programming process, 1973.",
+		"[4] D. Knuth, Structured programming, 1974.",
+		"the complexity would be computed as follows.",
+		"REFERENCES",
+		"[1] C. Berge, Graphs and Hypergraphs, 1973.",
+	)
+	got := Bibliography(d)
+	if len(got) != 4 {
+		t.Fatalf("the bibliography has %d paragraphs, want 4: %v", len(got), got)
+	}
+	for i, want := range []string{"[1]", "[2]", "[3]", "[4]"} {
+		if !strings.HasPrefix(got[i].Text, want) {
+			t.Errorf("paragraph %d is %q, want it to start %s", i, got[i].Text, want)
+		}
+	}
+}
+
+// A numbered list in the body of a paper is common. One that happens to
+// continue the bibliography's numbering from exactly where it stopped is not,
+// and nothing short of that is moved.
+func TestANumberedListInTheBodyIsNotGathered(t *testing.T) {
+	d := doc(
+		"the three cases are",
+		"[1] the loop is never entered,",
+		"[2] the loop runs once,",
+		"REFERENCES",
+		"[1] C. Berge, Graphs and Hypergraphs, 1973.",
+		"[2] B. Boehm, Software and its impact, 1973.",
+	)
+	if got := Bibliography(d); len(got) != 2 {
+		t.Errorf("the bibliography has %d paragraphs, want 2: %v", len(got), got)
+	}
+}
+
+// The journals of the nineteen seventies print the author biographies straight
+// after the references with no heading over them.
+func TestAnAuthorBiographyEndsTheBibliography(t *testing.T) {
+	d := doc(
+		"REFERENCES",
+		"[1] C. Berge, Graphs and Hypergraphs, 1973.",
+		"Thomas J. McCabe was born in Central Falls, RI, on November 28, 1941.",
+		"He has been employed since 1966 by the Department of Defense.",
+	)
+	got := Bibliography(d)
+	if len(got) != 1 {
+		t.Fatalf("the bibliography has %d paragraphs, want 1: %v", len(got), got)
+	}
+}
+
+// A membership grade sits between the name and the phrase, and two authors
+// sharing a paragraph are born in the plural.
+func TestABiographyIsRecognisedWithAGradeOrTwoAuthors(t *testing.T) {
+	for _, text := range []string{
+		"Robert H. Dennard (M'65) was born in Terrell, Tex., in 1932.",
+		"Alice Smith and Bob Jones were born in Leeds.",
+	} {
+		if !isBiography(text) {
+			t.Errorf("isBiography(%q) = false, want true", text)
+		}
+	}
+	// A reference is not a biography however the title reads.
+	if isBiography("[4] D. E. Knuth, \"How the structured program was born,\" 1974.") {
+		t.Error("a reference was read as a biography")
 	}
 }

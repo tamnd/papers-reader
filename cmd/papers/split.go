@@ -349,11 +349,46 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, prune
 		n.notes = append(n.notes, fmt.Sprintf("%s %s", name, what))
 	}
 	if prune {
-		if err := split.Prune(c.Content(corpus.EN, p.ID), report.Stale); err != nil {
+		if short, err := partial(c, p.ID, rec); err != nil {
+			return n, err
+		} else if short != "" {
+			n.notes = append(n.notes, short)
+		} else if err := split.Prune(c.Content(corpus.EN, p.ID), report.Stale); err != nil {
 			return n, err
 		}
 	}
 	return n, nil
+}
+
+// partial says why this paper must not be pruned, or the empty string if it
+// may be.
+//
+// Pruning deletes what this run did not produce, which is the right answer
+// when the run read the whole paper and the wrong one when it did not. Three
+// papers in the corpus are extracted down to three pages each, left over from
+// when the restricted papers were capped there, and a split of three pages of
+// a thirty eight page paper produces one section. Pruning on that deleted
+// nine committed sections of Gamma, eight of the Ethernet paper and the whole
+// front matter of AlphaGo, in English and in Vietnamese, and every one of
+// them was text an earlier and better extraction had produced. They were only
+// still there because the work directory is not committed and the content is.
+//
+// The test is the same one audit rule S11 makes: the pages under work have to
+// reach the last page the PDF has. A paper whose page count nobody recorded
+// is pruned as before, because there is nothing to compare against and
+// refusing on no evidence would leave every stale file in the corpus forever.
+func partial(c *corpus.Corpus, id string, rec *corpus.Source) (string, error) {
+	if rec == nil || rec.Pages <= 0 {
+		return "", nil
+	}
+	numbers, err := (&extract.Store{Dir: c.Work(id, "pages")}).Pages()
+	if err != nil {
+		return "", err
+	}
+	if len(numbers) >= rec.Pages {
+		return "", nil
+	}
+	return fmt.Sprintf("only %d of the %d pages are extracted, so nothing is pruned: a partial split would delete sections an earlier one wrote", len(numbers), rec.Pages), nil
 }
 
 // orphans deletes the translated files that have no English beside them, and
