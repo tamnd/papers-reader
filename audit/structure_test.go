@@ -242,6 +242,23 @@ func TestT06CountsInEnglish(t *testing.T) {
 	}
 }
 
+// The abstract is younger than the oldest papers here. McCarthy 1960 goes
+// from the title straight into the introduction and there is no abstract in
+// the PDF to find. Both it and Jacobson 1988 passed this rule while they
+// were in the corpus as a front file holding the first pages whole, and
+// failed it the day they were read in full and the introduction became a
+// section of its own. A paper does not stop being a paper by being finished.
+func TestT06LeavesAPaperWithABodyAlone(t *testing.T) {
+	files := map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), "Recursive Functions of Symbolic Expressions\n\nJohn McCarthy\n\nApril 1960\n"),
+		"content/en/vaswani-2017-attention/01_intro.md": file(section("section"), strings.Repeat("A programming system called LISP has been developed for the IBM 704. ", 8)+"\n"),
+	}
+	if res := result(t, Run(in(t, files), true), "T06"); res.Failed() {
+		t.Errorf("T06 refuses a paper that has no abstract to have: %v", res.Findings)
+	}
+}
+
 // A language without spaces in it has words all the same. The Japanese
 // front matter of the GAN paper failed this rule as a title block on the
 // day it was written, with an abstract of eight sentences in it.

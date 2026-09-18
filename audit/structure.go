@@ -342,6 +342,18 @@ const abstractWords = split.AbstractParagraph
 // splitter folds that heading into this file, and the ones that do not head
 // it are exactly the ones a heading test would fail. So the test is on the
 // prose: an abstract is a paragraph, and a paragraph is longer than a title.
+//
+// A paper with a body behind the front is not a catalogue entry whatever its
+// front says, so this only reads the front of a paper that has nothing else.
+// The abstract is younger than the papers at the start of this corpus:
+// McCarthy 1960 opens on the title and goes straight into the introduction,
+// and so does Jacobson 1988, and neither of them has an abstract to find
+// anywhere in the PDF. Both used to pass because they were in the corpus as
+// a front file and nothing else, and the front held the first pages whole.
+// Reading them in full split the introduction off into its own section, the
+// front became the title block it always was, and this refused the two
+// papers for having been published properly. A rule that a paper fails by
+// being finished is measuring the wrong thing.
 func ruleT06(in *Input) ([]Finding, error) {
 	if !anyContent(in) {
 		return nil, ErrNotRun
@@ -363,7 +375,7 @@ func ruleT06(in *Input) ([]Finding, error) {
 			})
 			continue
 		}
-		if front.Broken() {
+		if front.Broken() || len(files) > 1 {
 			continue
 		}
 		if n := longestParagraph(front.Body); n < abstractWords {
