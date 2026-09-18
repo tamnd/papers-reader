@@ -151,7 +151,8 @@ func Do(ctx context.Context, b *Batch) (*Result, error) {
 	}
 
 	logf("committing %d files as %s", len(changes), b.Branch)
-	if _, err := git(ctx, b.Dir, "git", "commit", "-m", b.Title, "-m", b.Body); err != nil {
+	commit := append([]string{"commit", "-m", b.Title, "-m", b.Body, "--"}, roots...)
+	if _, err := git(ctx, b.Dir, "git", commit...); err != nil {
 		return nil, err
 	}
 	if _, err := git(ctx, b.Dir, "git", "push", "--quiet", "origin", "HEAD:refs/heads/"+b.Branch); err != nil {
@@ -173,18 +174,54 @@ func Do(ctx context.Context, b *Batch) (*Result, error) {
 	}
 	res.Merged = true
 
-	// The local branch is moved to what the remote now has, and the working
-	// tree is left exactly as it is. The squash commit holds the tree that
-	// was just committed, so a soft reset onto it leaves a clean index for
-	// those paths and leaves every file the run has written since the staging
-	// sitting there as a change, which is the next batch.
+	// The local branch is moved to what the remote now has. The working tree
+	// keeps every file the run has written since the staging, which is the
+	// next batch.
+	//
+	// A mixed reset rather than a soft one. Soft moves HEAD and leaves the
+	// index alone, so the index went on holding the tree this batch had just
+	// committed while HEAD moved to a main that other people had been pushing
+	// to. Everything they had changed outside this run was then a staged
+	// revert of their work, and the next batch's commit took the whole index
+	// and carried it along. That is tamnd/papers#107: a run staged twelve
+	// Vietnamese files and pushed a thirteenth change nobody asked for, moving
+	// the CI toolchain pin back two releases, so the corpus was audited by a
+	// version whose fixed rules it no longer had.
+	//
+	// The commit above names the roots for the same reason, so that a commit
+	// is the roots whatever else is in the index. Guard is the check before
+	// the fact and it reads git status under the roots, which is the right
+	// scope for what the run has written and the wrong scope for what somebody
+	// else already staged.
 	if _, err := git(ctx, b.Dir, "git", "fetch", "--quiet", "origin", base); err != nil {
 		return res, err
 	}
-	if _, err := git(ctx, b.Dir, "git", "reset", "--soft", "origin/"+base); err != nil {
+	if _, err := git(ctx, b.Dir, "git", "reset", "--quiet", "--mixed", "origin/"+base); err != nil {
+		return res, err
+	}
+	rest := append([]string{"checkout", "--quiet", "origin/" + base}, outside(roots)...)
+	if _, err := git(ctx, b.Dir, "git", rest...); err != nil {
 		return res, err
 	}
 	return res, nil
+}
+
+// outside is the pathspec for everything in the repository that is not one of
+// the roots, as arguments to git checkout.
+//
+// The mixed reset above puts the index back to main and leaves the working
+// tree alone, which is right for the roots because the files the run has
+// written since the staging are the next batch. It is wrong for everything
+// else: a file somebody changed on main stays on disk at the version this
+// checkout last saw, reported as a local modification for ever after. So
+// everything else is taken from main, which leaves the checkout as main plus
+// the corpus files this run has written and nothing besides.
+func outside(roots []string) []string {
+	out := []string{"--", "."}
+	for _, r := range roots {
+		out = append(out, ":(exclude)"+r)
+	}
+	return out
 }
 
 // A Change is one path the run has written.

@@ -68,7 +68,8 @@ func TestABatchIsCommittedPushedAndMerged(t *testing.T) {
 		"gh pr create --base main --head run-abc-1",
 		"gh pr merge run-abc-1 --squash --admin --delete-branch",
 		"git fetch --quiet origin main",
-		"git reset --soft origin/main",
+		"git reset --quiet --mixed origin/main",
+		"git checkout --quiet origin/main --",
 	}
 	if len(f.said) != len(want) {
 		t.Fatalf("ran %d commands, want %d:\n%s", len(f.said), len(want), strings.Join(f.said, "\n"))
@@ -80,19 +81,53 @@ func TestABatchIsCommittedPushedAndMerged(t *testing.T) {
 	}
 }
 
-// The working tree is what the run is still writing into, so the one thing
-// this must never do is move a file under it.
-func TestNothingIsCheckedOut(t *testing.T) {
+// The corpus directories are what the run is still writing into, so the one
+// thing this must never do is move a file under them. Everything else in the
+// checkout is taken back from main, because a run leaving other people's
+// changes reverted in its tree is what put a two release old toolchain pin
+// into tamnd/papers#107.
+func TestNothingUnderTheCorpusIsCheckedOut(t *testing.T) {
 	f := onMain("?? content/vi/a-1900-x/01_intro.md\n")
 	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Merge: true, Git: f.git}); err != nil {
 		t.Fatal(err)
 	}
 	for _, line := range f.said {
-		for _, bad := range []string{"checkout", "switch", "stash", "clean", "reset --hard", "reset --mixed", "pull"} {
+		for _, bad := range []string{"switch", "stash", "clean", "reset --hard", "pull"} {
 			if strings.Contains(line, bad) {
-				t.Errorf("%q touches the working tree", line)
+				t.Errorf("%q takes the run's files away from under it", line)
 			}
 		}
+		if !strings.Contains(line, "checkout") {
+			continue
+		}
+		for _, r := range Roots {
+			if !strings.Contains(line, ":(exclude)"+r) {
+				t.Errorf("%q checks out over %s, which the run is writing", line, r)
+			}
+		}
+	}
+}
+
+// The index is not the run's to commit. A soft reset after a merge left
+// everything main had moved on to staged as a revert of it, and the next
+// batch committed the index whole and carried that revert into the corpus.
+func TestABatchCommitsTheCorpusDirectoriesAndNotWhateverElseIsStaged(t *testing.T) {
+	f := onMain("?? content/vi/a-1900-x/01_intro.md\n")
+	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Merge: true, Git: f.git}); err != nil {
+		t.Fatal(err)
+	}
+	var commit string
+	for _, line := range f.said {
+		if strings.HasPrefix(line, "git commit") {
+			commit = line
+		}
+	}
+	_, paths, found := strings.Cut(commit, " -- ")
+	if !found {
+		t.Fatalf("the commit names no paths and takes the whole index: %q", commit)
+	}
+	if paths != strings.Join(Roots, " ") {
+		t.Errorf("the commit names %q, want the corpus directories", paths)
 	}
 }
 
