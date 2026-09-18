@@ -162,6 +162,10 @@ func Titled(d *assemble.Document, title string) *Result {
 	// Unrun first, because everything below counts paragraphs and a heading
 	// that is still inside one is a heading nothing here can find.
 	paragraphs := Unrun(d.Paragraphs)
+	// After Unrun, because a bibliography that came back with its heading
+	// stuck to the first entry is a bibliography that has its heading, and
+	// before the headings are read, because that is the point of it.
+	paragraphs, supplied := headReferences(paragraphs)
 	texts := make([]string, len(paragraphs))
 	for i, p := range paragraphs {
 		texts[i] = p.Text
@@ -228,6 +232,9 @@ func Titled(d *assemble.Document, title string) *Result {
 	}
 	if len(r.Sections) == 1 {
 		r.Notes = append(r.Notes, "no section headings were found: the paper is one file")
+	}
+	if supplied {
+		r.Notes = append(r.Notes, "the bibliography has no heading of its own and one was supplied where the entries begin")
 	}
 	for _, h := range cuts {
 		if h.How == Typographic {
