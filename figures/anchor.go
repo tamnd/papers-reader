@@ -400,6 +400,7 @@ func above(p poppler.Layout, lines []poppler.TextLine, cuts []float64, frame Fra
 	// out the same size either way. What it must not reach is type that
 	// belongs to something else, so it stops short of anything set level
 	// with it, which on a two column page is the column next door.
+	lo, hi := room(caps, c)
 	if !frame.Empty() {
 		l, r := min(left, frame.Left), max(right, frame.Right)
 		for _, o := range lines {
@@ -413,9 +414,32 @@ func above(p poppler.Layout, lines []poppler.TextLine, cuts []float64, frame Fra
 				r = min(r, o.XMin-margin*body)
 			}
 		}
-		lo, hi := room(caps, c)
 		left, right = min(left, max(l, lo)), max(right, min(r, hi))
 	}
+
+	// And then the line between two figures set side by side, again, because
+	// the block above can only push an edge out and this has to be able to
+	// pull one in.
+	//
+	// Everything up to here widens: the seed is the caption, the lines
+	// inside take it as wide as they reach, and the block above takes it
+	// wider still. That is right when the region is narrower than the room
+	// it has, which is the case it was written for. It cannot help when the
+	// region is already wider, and a region seeded from a pair of charts is:
+	// the lettering inside it is the lettering of both of them, so the width
+	// is the whole measure before room is ever consulted, and min and max
+	// against a number inside that keep the whole measure.
+	//
+	// Page 26 of the Gamma paper is two charts with "Figure 12" under the
+	// left one and "Figure 13" under the right. Both regions came out as the
+	// full measure, so the corpus committed a picture of both charts twice,
+	// once under each number, and so it did for 14 and 15 on page 27 and for
+	// 17 and 18 on page 30.
+	//
+	// Bringing the edge in this far is safe in a way that pushing it out is
+	// not. The caption is still inside what is left, by construction: the
+	// line is drawn in the white between this caption and the next one.
+	left, right = max(left, lo), min(right, hi)
 
 	// Last, off anything beside the region that is the paper talking.
 	//

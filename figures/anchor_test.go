@@ -173,6 +173,33 @@ func TestRaggedSettingHasNoRightHandEdge(t *testing.T) {
 	}
 }
 
+// Two charts set across the measure with a caption under each. The lettering
+// drawn into them is one row of type running across both, so a region seeded
+// from it is as wide as the pair whichever caption it was grown for, and the
+// gutter between the two captions is the only thing on the page that says
+// where one picture ends and the next begins.
+func TestTwoFiguresSideBySideAreNotOnePictureTwice(t *testing.T) {
+	mid := (colLeft + colRight) / 2
+	extra := append(drawn(240, 640),
+		textLine(colLeft, 680, colLeft+48, "Figure 12"),
+		textLine(mid+40, 680, mid+88, "Figure 13"))
+	got := captioned(anchored(t, append(plain(), prosePage(198, extra...)), 3))
+	if len(got) != 2 {
+		t.Fatalf("found %d captioned regions, want one for each of the two captions: %+v", len(got), got)
+	}
+	left, right := got[0], got[1]
+	if left.Box.XMin > right.Box.XMin {
+		left, right = right, left
+	}
+	if left.Box.XMax > right.Box.XMin {
+		t.Fatalf("the two regions overlap, %v and %v, so both of them hold both charts", left.Box, right.Box)
+	}
+	if left.Caption.Number != "12" || right.Caption.Number != "13" {
+		t.Fatalf("the left region is figure %q and the right one is figure %q, want 12 then 13",
+			left.Caption.Number, right.Caption.Number)
+	}
+}
+
 // A caption above is another figure. Swallowing it would put one figure's
 // caption inside the other figure's PNG and lose a caption from the corpus.
 func TestACaptionAboveStopsTheGrowth(t *testing.T) {

@@ -83,7 +83,7 @@ func opens(text string, area poppler.Box, page int) (Caption, bool) {
 	// reference to a figure and not a caption. The test is the punctuation
 	// the typesetter put after the number: a caption has some, a sentence
 	// does not.
-	if !separated(text, m[0]) {
+	if !separated(text, m[0], m[2]) {
 		return Caption{}, false
 	}
 	return Caption{
@@ -352,18 +352,33 @@ func cover(lines []poppler.TextLine) poppler.Box {
 // separated says whether what follows the number looks like a caption
 // rather than a sentence carrying on.
 //
-// Two ways it can: the typesetter put a colon, a full stop, a dash or a
-// parenthesis after the number, or the paper sets its captions with nothing
-// but space, in which case the word after the number starts a sentence with
-// a capital. "Figure 3 shows" is neither and is a cross reference in the
-// body.
-func separated(text, head string) bool {
+// Three ways it can: the typesetter put a colon, a full stop, a dash or a
+// parenthesis after the number, or nothing follows the number at all, or the
+// paper sets its captions with nothing but space, in which case the word
+// after the number starts a sentence with a capital. "Figure 3 shows" is
+// none of them and is a cross reference in the body.
+//
+// Nothing following the number is the Gamma paper. It captions all nineteen
+// of its figures with the word and the number and no description, so every
+// caption on every plate reads "Figure 19" and stops. Read as a sentence
+// carrying on, that is a sentence with nothing in it, and treating it as one
+// cost the paper twelve of its figures: rule F09 named every one of them as
+// mentioned in the prose with no picture to show, and the three that did get
+// through were pairs set side by side that came out as one crop carrying
+// both numbers, "Figure 12 Figure 13". A cross reference is a sentence about
+// a figure and a sentence needs more words than this has.
+//
+// A number is required for that case and only that case. The number is
+// optional in the pattern, so text that is the bare word Figure and nothing
+// else would otherwise arrive here and be taken as a caption of no figure in
+// particular.
+func separated(text, head, number string) bool {
 	if strings.ContainsAny(last(head), ".:)") {
 		return true
 	}
 	rest := strings.TrimSpace(text[len(head):])
 	if rest == "" {
-		return false
+		return number != ""
 	}
 	if strings.HasPrefix(rest, "-") || strings.HasPrefix(rest, "—") {
 		return true

@@ -81,6 +81,36 @@ func TestTheWholeCaptionIsKept(t *testing.T) {
 	}
 }
 
+// The Gamma paper captions all nineteen of its figures with the word and the
+// number and nothing else, and a caption that is only its own opening is not
+// a sentence carrying on about a figure somewhere else.
+func TestACaptionWithNothingAfterTheNumberIsStillACaption(t *testing.T) {
+	for _, c := range []struct {
+		text   string
+		number string
+	}{
+		{"Figure 19", "19"},
+		{"Fig. 4", "4"},
+		{"Table 5", "5"},
+	} {
+		got := onlyCaption(t, c.text)
+		if got.Number != c.number {
+			t.Errorf("%q is numbered %q, want %q", c.text, got.Number, c.number)
+		}
+	}
+}
+
+// The number is what the corpus files a figure under and what rule F09 reads
+// to say a figure the prose mentions is missing, so the one case above needs
+// one. A word on its own is not enough to go on.
+func TestTheBareWordWithNoNumberAndNothingAfterItIsNotACaption(t *testing.T) {
+	for _, text := range []string{"Figure", "Table", "Chart"} {
+		if got := Captions(extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(400, 424, text)}}, nil); len(got) != 0 {
+			t.Errorf("%q was read as a caption", text)
+		}
+	}
+}
+
 func TestACaptionWithNoNumberIsStillACaption(t *testing.T) {
 	got := onlyCaption(t, "Figure: the one diagram in the paper")
 	if got.Kind != "figure" {
