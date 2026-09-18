@@ -47,6 +47,127 @@ func Bibliography(d *assemble.Document) []assemble.Paragraph {
 	return gathered(d.Paragraphs[:start], d.Paragraphs[start:end])
 }
 
+// Reorder moves the entries the column order scattered back into the
+// reference section of the document itself, and says whether it moved any.
+//
+// Bibliography gathers the same entries for the index it builds, and that is
+// not enough on its own. The section file the splitter writes is cut from
+// this document, so with the document left as it came the index held seven
+// references and the references section of the paper printed one, with the
+// other six stranded at the foot of the appendix. Audit rule R08 is the one
+// that notices, and it is right to: an index that names text the page it
+// points at does not have is worse than no index.
+//
+// So the move is made once, here, before anything reads the document. The
+// splitter and the index builder both go through it and both see the paper
+// in the order the page meant.
+func Reorder(d *assemble.Document) bool {
+	if d == nil {
+		return false
+	}
+	head, end := span(d)
+	if head < 0 {
+		return false
+	}
+	last := counted(d.Paragraphs[head+1 : end])
+	if last == 0 {
+		return false
+	}
+	at, from, to := runIn(d.Paragraphs[:head], last+1)
+	if at < 0 {
+		return false
+	}
+	lines := strings.Split(d.Paragraphs[at].Text, "\n")
+	run := make([]assemble.Paragraph, 0, to-from)
+	for _, line := range lines[from:to] {
+		run = append(run, assemble.Paragraph{Text: line, Page: d.Paragraphs[at].Page, Pages: 1})
+	}
+	kept := strings.TrimSpace(strings.Join(append(append([]string{}, lines[:from]...), lines[to:]...), "\n"))
+
+	out := make([]assemble.Paragraph, 0, len(d.Paragraphs)+len(run))
+	for i, p := range d.Paragraphs {
+		if i == at {
+			if kept == "" {
+				continue
+			}
+			p.Text = kept
+		}
+		out = append(out, p)
+		if i == end-1 {
+			out = append(out, run...)
+		}
+	}
+	d.Paragraphs = out
+	return true
+}
+
+// span is the index of the bibliography heading and the index one past the
+// last paragraph of the section, or -1 if the paper has no heading.
+func span(d *assemble.Document) (int, int) {
+	head := -1
+	for i := len(d.Paragraphs) - 1; i >= 0; i-- {
+		if isBibliographyHeading(d.Paragraphs[i].Text) {
+			head = i
+			break
+		}
+	}
+	if head < 0 {
+		return -1, 0
+	}
+	end := len(d.Paragraphs)
+	for i := head + 1; i < end; i++ {
+		if endsBibliography(d.Paragraphs[i].Text) {
+			end = i
+			break
+		}
+	}
+	if head+1 >= end {
+		return -1, 0
+	}
+	return head, end
+}
+
+// counted is the last entry number of a section whose entries count up from
+// one with no gaps, and zero for a section that does anything else. A
+// bibliography that is already out of order is left alone: there is no
+// telling where a run belongs in it.
+func counted(section []assemble.Paragraph) int {
+	last := 0
+	for _, p := range section {
+		n, ok := labelled(p.Text)
+		if !ok {
+			continue
+		}
+		if n != last+1 {
+			return 0
+		}
+		last = n
+	}
+	return last
+}
+
+// runIn is the paragraph holding a run of at least two entries numbered from
+// first upwards, and the half open range of its lines the run covers.
+func runIn(ps []assemble.Paragraph, first int) (int, int, int) {
+	for i, p := range ps {
+		lines := strings.Split(p.Text, "\n")
+		for from := range lines {
+			to := from
+			for to < len(lines) {
+				n, ok := labelled(lines[to])
+				if !ok || n != first+to-from {
+					break
+				}
+				to++
+			}
+			if to-from >= 2 {
+				return i, from, to
+			}
+		}
+	}
+	return -1, 0, 0
+}
+
 // label is a bracketed entry number at the head of a paragraph, which is the
 // one bibliography style whose entries can be put back in order by reading
 // them. The other three are not gathered, because a surname or a bare "12."

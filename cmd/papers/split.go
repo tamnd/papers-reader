@@ -516,6 +516,12 @@ func document(c *corpus.Corpus, id string) (*assemble.Document, error) {
 		})
 	}
 	doc := assemble.Join(pages)
+	// Both readers of a document go through here, so the reference list is
+	// put back in order once rather than in each of them. The splitter cuts
+	// the section file from this document and the index is built from the
+	// same paragraphs, and moving the entries in one and not the other gives
+	// an index that names text the page it points at does not have.
+	refs.Reorder(doc)
 	// After the join, because a listing can carry over a page break and the
 	// tag belongs to the whole of it. Before the split, because the split is
 	// what writes the file and a fence with no tag on it is rule C02.

@@ -203,3 +203,40 @@ func TestABiographyIsRecognisedWithAGradeOrTwoAuthors(t *testing.T) {
 		t.Error("a reference was read as a biography")
 	}
 }
+
+// Gathering the entries for the index is not enough on its own. The section
+// file is cut from the document, so the document has to be put in order too
+// or the index names text the page it points at does not have.
+func TestReorderMovesTheEntriesInTheDocument(t *testing.T) {
+	d := doc(
+		"APPENDIX",
+		"the flow graph is\n[2] B. Boehm, Software and its impact, 1973.\n[3] W. Cammack, Improving the programming process, 1973.",
+		"REFERENCES",
+		"[1] C. Berge, Graphs and Hypergraphs, 1973.",
+	)
+	if !Reorder(d) {
+		t.Fatal("Reorder moved nothing")
+	}
+	got := d.Text()
+	if strings.Index(got, "[2] B. Boehm") < strings.Index(got, "REFERENCES") {
+		t.Errorf("the entries are still above the heading:\n%s", got)
+	}
+	if !strings.Contains(got, "the flow graph is") {
+		t.Errorf("the prose around the entries went with them:\n%s", got)
+	}
+	if n := len(Bibliography(d)); n != 3 {
+		t.Errorf("the bibliography has %d paragraphs, want 3", n)
+	}
+}
+
+// A paper whose references are all where they belong is left as it is.
+func TestReorderLeavesAPaperInOrderAlone(t *testing.T) {
+	d := doc(
+		"REFERENCES",
+		"[1] C. Berge, Graphs and Hypergraphs, 1973.",
+		"[2] B. Boehm, Software and its impact, 1973.",
+	)
+	if Reorder(d) {
+		t.Errorf("Reorder moved something:\n%s", d.Text())
+	}
+}
