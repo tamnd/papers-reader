@@ -1679,9 +1679,26 @@ var providerErrors = []string{
 	"upstream error", "\"error\":", "'error':",
 }
 
+// ruleL17 is the rule that a translation is a translation and not one of the
+// things that get written to disk when the asking failed: a provider's error
+// body, an apology, or an empty file where the prose should be. See apologies
+// and providerErrors.
+//
+// An empty translation of an empty English section is none of those. It is
+// the only right answer. A paper whose appendix is a heading with A1 and A2
+// under it has a section that carries no prose of its own, and the splitter
+// writes that heading to a file like any other. Lamport's Paxos is the one
+// here: "Appendix: Proof of Consistency of the Synodic Protocol" with nothing
+// beneath it but the two subsections, which are their own files. Without the
+// exemption the rule asked for a translation of nothing, which no answer
+// could satisfy, and it held the whole paper out of the corpus while it
+// asked.
 func ruleL17(in *Input) ([]Finding, error) {
 	return eachTranslationFile(in, func(p pair) []Finding {
 		if strings.TrimSpace(p.tr.Body) == "" {
+			if strings.TrimSpace(p.en.Body) == "" {
+				return nil
+			}
 			return []Finding{{
 				Rule: "L17", File: p.tr.Path,
 				Message: "the file has no body, and its English has " + fmt.Sprint(len(strings.Fields(p.en.Body))) + " words",

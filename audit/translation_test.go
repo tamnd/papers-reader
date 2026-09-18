@@ -1104,6 +1104,14 @@ func TestL17FindsAnEmptyTranslation(t *testing.T) {
 	}
 }
 
+// A section that is a heading with its subsections under it carries no prose
+// of its own, and the only right translation of no prose is no prose.
+func TestL17LeavesAnEmptyTranslationOfAnEmptySection(t *testing.T) {
+	if res := result(t, pairOf(t, corpus.VI, "\n", "\n"), "L17"); res.Failed() {
+		t.Errorf("L17 asked for a translation of a section with nothing in it: %v", res.Findings)
+	}
+}
+
 func TestL18FindsAListingThatMoved(t *testing.T) {
 	tr := strings.Replace(viBody, "return n", "return m", 1)
 	if res := result(t, pairOf(t, corpus.VI, englishBody, tr), "L18"); !res.Failed() {
