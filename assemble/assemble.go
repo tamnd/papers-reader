@@ -119,7 +119,7 @@ func Join(pages []Page) *Document {
 			d.Paragraphs = append(d.Paragraphs, Paragraph{Text: text, Page: p.Number, Pages: 1})
 		}
 	}
-	d.Paragraphs = fenced(d.Paragraphs)
+	d.Paragraphs = fenced(unprosed(d.Paragraphs))
 	return d
 }
 
@@ -160,6 +160,56 @@ func Join(pages []Page) *Document {
 // Nothing here fences a paragraph that arrived fenced. The layout path writes
 // its own fences and this is for the native path, which writes prose and
 // nothing else.
+// unprosed cuts the prose off the end of a listing that has some stuck to it.
+//
+// A paragraph is a run of lines between blank ones, and the page decides
+// where the blank ones are. Tarjan's page 12 ends the strongly connected
+// components algorithm with END; and sets THEOREM 13 on the next line, at the
+// same indentation and with no line between, because the theorem and the
+// algorithm it is about are one indented block on the page. So the theorem,
+// its statement and the whole of its proof arrive as part of the listing
+// paragraph, and every one of them goes inside the fence: two thirds of a
+// page of English set in monospace with no line wrapping.
+//
+// Emphasis is what tells them apart. The page sets a theorem statement in
+// italics and the reader writes that as *...*, and a program does not carry
+// emphasis: an asterisk in a listing is multiplication or a pointer and it
+// does not come in a matched pair around a phrase of English. So a trailing
+// run of lines that carry emphasis is where the listing stopped and the prose
+// started, and it becomes a paragraph of its own.
+//
+// Only the tail is cut, and only when there is a listing left in front of it.
+// Emphasis in the middle of a listing is a reader marking up a comment, which
+// is a different mistake with a different repair, and a paragraph that is
+// emphasis all the way down was never a listing to begin with.
+func unprosed(ps []Paragraph) []Paragraph {
+	out := make([]Paragraph, 0, len(ps))
+	for _, p := range ps {
+		lines := strings.Split(p.Text, "\n")
+		cut := len(lines)
+		for cut > 0 && emphasised(lines[cut-1]) {
+			cut--
+		}
+		if cut == 0 || cut == len(lines) || !listing(strings.Join(lines[:cut], "\n")) {
+			out = append(out, p)
+			continue
+		}
+		out = append(out,
+			Paragraph{Text: strings.Join(lines[:cut], "\n"), Page: p.Page, Pages: p.Pages},
+			Paragraph{Text: strings.TrimSpace(strings.Join(lines[cut:], "\n")), Page: p.Page, Pages: p.Pages},
+		)
+	}
+	return out
+}
+
+// emphasis is a phrase between a matched pair of asterisks or underscores,
+// which is how the reader writes the italics a page sets a theorem statement
+// in. The phrase has to hold a letter, so that a line of arithmetic with two
+// multiplications on it is not read as a phrase in italics.
+var emphasis = regexp.MustCompile(`(\*|_)[^*_\n]*\p{L}[^*_\n]*(\*|_)`)
+
+func emphasised(line string) bool { return emphasis.MatchString(line) }
+
 func fenced(ps []Paragraph) []Paragraph {
 	out := make([]Paragraph, 0, len(ps))
 	for i := 0; i < len(ps); {
