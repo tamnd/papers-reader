@@ -131,6 +131,9 @@ func Do(ctx context.Context, b *Batch) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := sync(ctx, git, b.Dir, base, roots, changes); err != nil {
+		return nil, err
+	}
 	if len(changes) == 0 {
 		return nil, ErrNothing
 	}
@@ -204,6 +207,102 @@ func Do(ctx context.Context, b *Batch) (*Result, error) {
 		return res, err
 	}
 	return res, nil
+}
+
+// sync brings the corpus directories up to what other people have pushed,
+// for the files this run has not written.
+//
+// The run's checkout stands still under the roots. That is what lets the run
+// keep writing while a batch is pushed, and it is also how a run reverts work
+// it never saw. A file somebody else added to the corpus is not in this
+// checkout, and after the batch moves the local branch to main git reports it
+// as deleted; a file somebody else changed is here at the old version and git
+// reports it as modified. The next batch stages the roots, so it commits the
+// deletion and the modification, and the run has quietly taken their work out
+// again.
+//
+// That is tamnd/papers#115. A translation run pushing Vietnamese removed
+// thirteen figures of the Gamma paper and twenty-one manifest entries,
+// an hour after tamnd/papers#113 added them, because its checkout was made
+// before they existed. Nothing in the pull request said so: the title was
+// four papers in Vietnamese and the figures were in the list of files at the
+// bottom with no diff a reader would look at twice.
+//
+// The fix is the one comparison that tells the two apart. HEAD is where this
+// checkout last synced, so what main has moved on to since is the difference
+// between HEAD and origin/main, and what the run has written is what git
+// status reports. A path in the first and not the second is somebody else's
+// and is taken from main. A path in both is a file the run is holding a new
+// version of, and the run's version wins, which is what it did before.
+//
+// Taken and not merged, because the corpus is files written by a toolchain
+// rather than code two people edited, and a run that stopped on a conflict at
+// three in the morning would be a run that stopped.
+func sync(ctx context.Context, git Git, dir, base string, roots []string, mine []Change) error {
+	if _, err := git(ctx, dir, "git", "fetch", "--quiet", "origin", base); err != nil {
+		return err
+	}
+	args := append([]string{"diff", "--name-only", "HEAD", "origin/" + base, "--"}, roots...)
+	out, err := git(ctx, dir, "git", args...)
+	if err != nil {
+		return err
+	}
+	written := make(map[string]bool, len(mine))
+	for _, c := range mine {
+		written[c.Path] = true
+	}
+	var theirs []string
+	for _, p := range lines(out) {
+		if !written[p] {
+			theirs = append(theirs, p)
+		}
+	}
+	if len(theirs) == 0 {
+		return nil
+	}
+
+	// A path main has moved on from may be a path main no longer has, and
+	// git checkout takes none of them if it is asked for one that is not
+	// there. So the two are asked for separately: what main holds is taken
+	// from main, and what main has dropped is dropped here too.
+	held, err := git(ctx, dir, "git", append([]string{"ls-tree", "-r", "--name-only", "origin/" + base, "--"}, theirs...)...)
+	if err != nil {
+		return err
+	}
+	there := make(map[string]bool)
+	for _, p := range lines(held) {
+		there[p] = true
+	}
+	var take, drop []string
+	for _, p := range theirs {
+		if there[p] {
+			take = append(take, p)
+		} else {
+			drop = append(drop, p)
+		}
+	}
+	if len(take) > 0 {
+		if _, err := git(ctx, dir, "git", append([]string{"checkout", "origin/" + base, "--"}, take...)...); err != nil {
+			return err
+		}
+	}
+	if len(drop) > 0 {
+		if _, err := git(ctx, dir, "git", append([]string{"rm", "--quiet", "--force", "--"}, drop...)...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// lines is the non empty lines of what a command printed.
+func lines(out string) []string {
+	var got []string
+	for _, l := range strings.Split(out, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			got = append(got, l)
+		}
+	}
+	return got
 }
 
 // outside is the pathspec for everything in the repository that is not one of

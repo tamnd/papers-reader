@@ -61,6 +61,8 @@ func TestABatchIsCommittedPushedAndMerged(t *testing.T) {
 	want := []string{
 		"git rev-parse --abbrev-ref HEAD",
 		"git status --porcelain",
+		"git fetch --quiet origin main",
+		"git diff --name-only HEAD origin/main",
 		"git add --",
 		"git diff --cached --name-only",
 		"git commit -m content: a-1900-x in Vietnamese",
@@ -81,12 +83,12 @@ func TestABatchIsCommittedPushedAndMerged(t *testing.T) {
 	}
 }
 
-// The corpus directories are what the run is still writing into, so the one
-// thing this must never do is move a file under them. Everything else in the
-// checkout is taken back from main, because a run leaving other people's
-// changes reverted in its tree is what put a two release old toolchain pin
-// into tamnd/papers#107.
-func TestNothingUnderTheCorpusIsCheckedOut(t *testing.T) {
+// The corpus directories are what the run is still writing into, so nothing
+// may be checked out over them wholesale. Everything else in the checkout is
+// taken back from main, because a run leaving other people's changes
+// reverted in its tree is what put a two release old toolchain pin into
+// tamnd/papers#107.
+func TestNothingUnderTheCorpusIsCheckedOutWholesale(t *testing.T) {
 	f := onMain("?? content/vi/a-1900-x/01_intro.md\n")
 	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Merge: true, Git: f.git}); err != nil {
 		t.Fatal(err)
@@ -101,9 +103,61 @@ func TestNothingUnderTheCorpusIsCheckedOut(t *testing.T) {
 			continue
 		}
 		for _, r := range Roots {
-			if !strings.Contains(line, ":(exclude)"+r) {
+			if strings.Contains(line, " "+r) && !strings.Contains(line, ":(exclude)"+r) {
 				t.Errorf("%q checks out over %s, which the run is writing", line, r)
 			}
+		}
+	}
+}
+
+// A file somebody else pushed while the run was going is not in the run's
+// checkout, and everything git has to say about it says the run deleted it.
+// Staging that is how tamnd/papers#115 took thirteen figures of the Gamma
+// paper back out an hour after tamnd/papers#113 put them in.
+func TestWhatSomebodyElsePushedIsTakenAndNotReverted(t *testing.T) {
+	f := onMain("?? content/vi/a-1900-x/01_intro.md\n M manifests/figures.yaml\n")
+	f.say["git diff --name-only HEAD origin/main"] = strings.Join([]string{
+		"figures/b-1990-y/f05.png",
+		"manifests/figures.yaml",
+		"content/en/c-1970-z/03_gone.md",
+		"",
+	}, "\n")
+	f.say["git ls-tree"] = "figures/b-1990-y/f05.png\nmanifests/figures.yaml\n"
+	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Merge: true, Git: f.git}); err != nil {
+		t.Fatal(err)
+	}
+	var took, dropped string
+	for _, line := range f.said {
+		switch {
+		case strings.HasPrefix(line, "git checkout origin/main --"):
+			took = line
+		case strings.HasPrefix(line, "git rm"):
+			dropped = line
+		}
+	}
+	if !strings.Contains(took, "figures/b-1990-y/f05.png") {
+		t.Errorf("the figure somebody else pushed was not taken: %q", took)
+	}
+	// The run is holding a new version of the manifest, so the run's version
+	// is the one that goes in and main's is not pulled over it.
+	if strings.Contains(took, "manifests/figures.yaml") {
+		t.Errorf("main was checked out over a file the run has written: %q", took)
+	}
+	if !strings.Contains(dropped, "content/en/c-1970-z/03_gone.md") {
+		t.Errorf("a file main no longer holds was kept, and the next batch puts it back: %q", dropped)
+	}
+}
+
+// Nothing to take is the usual case, and it costs one command and no
+// checkout at all.
+func TestACheckoutThatIsUpToDateIsLeftAlone(t *testing.T) {
+	f := onMain("?? content/vi/a-1900-x/01_intro.md\n")
+	if _, err := Do(context.Background(), &Batch{Dir: "/tmp/papers", Branch: "b", Merge: true, Git: f.git}); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range f.said {
+		if strings.HasPrefix(line, "git checkout origin/main --") || strings.HasPrefix(line, "git ls-tree") {
+			t.Errorf("%q ran with nothing to take", line)
 		}
 	}
 }
