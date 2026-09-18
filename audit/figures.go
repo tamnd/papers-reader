@@ -416,7 +416,15 @@ var mention = regexp.MustCompile(`\b(?:Figure|Fig\.)\s+([0-9]{1,3}(?:[.\-][0-9a-
 
 // legend is a caption standing at the head of its own line, which is how the
 // assembler writes one and is not how a sentence refers to a figure.
-var legend = regexp.MustCompile(`^(?:Figure|Fig\.)\s+([0-9]{1,3}(?:[.\-][0-9a-zA-Z]+)*|[A-Z](?:[.\-][0-9a-zA-Z]+)+)\s*[:.]`)
+//
+// The part in brackets is a figure the paper drew in pieces and captioned
+// piece by piece. Codd's Figure 3 is a set of relations before normalisation
+// and the same set after it, and the page captions them "Fig. 3(a)." and
+// "Fig. 3(b).". The bracket is outside the group, so both lines say the
+// figure that is present is figure 3, which is the number the prose asks for
+// when it says "the collection of relations exhibited in Figure 3(a)" and is
+// what package figures records for a region under either caption.
+var legend = regexp.MustCompile(`^(?:Figure|Fig\.)\s+([0-9]{1,3}(?:[.\-][0-9a-zA-Z]+)*|[A-Z](?:[.\-][0-9a-zA-Z]+)+)(?:\([0-9a-zA-Z]{1,2}\))?\s*[:.]`)
 
 // ruleF09 is soft, and the reason is that it cannot tell the two causes
 // apart. A paper whose prose mentions Figure 7 and which has six figures may

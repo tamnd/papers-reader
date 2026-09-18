@@ -47,6 +47,12 @@ import (
 // dollars round the second kind is no loss: A10 refuses the page for the
 // table either way.
 //
+// Unhash runs after all three of those, because it repairs what is inside a
+// math span and the three of them decide what a math span is. A cell Untable
+// wrote in dollars and a script Unscript put dollars round are mathematics by
+// the time it looks, and a number sign in either of them is the character the
+// page printed just as it is in a formula the reader delimited itself.
+//
 // Dollars runs before Untable so that a cell already written in TeX's own
 // delimiters is in this corpus's delimiters by the time the table is read.
 // Untable puts dollars round a cell that is bare TeX, and a cell it had
@@ -62,6 +68,7 @@ func Tidy(s string) string {
 	s = Money(s)
 	s = Untable(s)
 	s = Unscript(s)
+	s = Unhash(s)
 	s = Unlink(s)
 	s = Delink(s)
 	return strings.TrimSpace(s)

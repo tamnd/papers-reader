@@ -402,6 +402,20 @@ func TestF09ReadsTheRestOfACaptionLine(t *testing.T) {
 	}
 }
 
+// A figure drawn in pieces is captioned piece by piece, and the prose asks
+// for it by the same name. Codd's Figure 3 is a set of relations before
+// normalisation and the same set after it.
+func TestF09ReadsACaptionWithAPartInBrackets(t *testing.T) {
+	in := corpusOf(t, []figures.Figure{record("vaswani-2017-attention", "f01")}, map[string]string{
+		"figures/vaswani-2017-attention/f01.png": picture(t, 600, 400),
+		"content/en/vaswani-2017-attention/02_section.md": front("vaswani-2017-attention", "section",
+			"The set in Figure 3(a) becomes the set in Figure 3(b).\n\nFig. 3(a). Unnormalized set\n\nFig. 3(b). Normalized set"),
+	})
+	if res := result(t, Run(in, false), "F09"); res.Failed() {
+		t.Errorf("F09 asked for a figure the reader can already see: %v", res.Findings)
+	}
+}
+
 func TestF09IsSoft(t *testing.T) {
 	for _, r := range Rules() {
 		if r.ID == "F09" && r.Hard {
