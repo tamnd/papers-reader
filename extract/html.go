@@ -410,7 +410,17 @@ var (
 	// anyTag is an opening, closing or self closing tag. The name has to be
 	// letters and digits, which is what keeps `<satoshin@gmx.com>` and
 	// `<n, k>` out of it before the list above is even consulted.
-	anyTag = regexp.MustCompile(`<\s*/?\s*([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>`)
+	//
+	// What comes after the name matters just as much. A tag closes on the
+	// name, or has a space and then its attributes, and nothing else: there
+	// is no such thing as an HTML tag whose name is followed by a comma.
+	// Ending the name on a word boundary instead was reading Karp's ordered
+	// pairs as markup. He writes an edge as `<u,v>`, u is the underline tag,
+	// and page 18 of the reducibility paper was refused as HTML three times
+	// over and then lost. The same shape is everywhere in this corpus, `<i,
+	// j>` for an index pair, `<s,t>` for the ends of a path, `<p,q>` for a
+	// pair of predicates, and every one of those letters is a tag name.
+	anyTag = regexp.MustCompile(`<\s*/?\s*([a-zA-Z][a-zA-Z0-9]*)\s*(?:/?>|\s[^>]*>)`)
 	// backticks is an inline code span. A paper about the web writes
 	// `<table>` in prose and means the word, not the markup.
 	backticks = regexp.MustCompile("`[^`]*`")

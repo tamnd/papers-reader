@@ -548,6 +548,33 @@ func TestATokenInAngleBracketsIsNotMarkup(t *testing.T) {
 	}
 }
 
+// An ordered pair is not a tag, however much the letters in it look like
+// one. Karp writes an edge as an ordered pair of vertices, u is the
+// underline tag, and page 18 of the reducibility paper was refused as HTML
+// three times over and then lost. Every letter used here is on the tag list.
+func TestAnOrderedPairIsNotMarkup(t *testing.T) {
+	var c Checker
+	text := "An edge <u,v> joins two vertices, a path runs from <s,t>, and the\n" +
+		"entry at <i, j> is one where the predicates <p,q> agree.\n"
+	if faults := c.Check(1, text); has(faults, A10) {
+		t.Errorf("a page of ordered pairs was refused as HTML: %v", faults)
+	}
+}
+
+// The other half of the same change. Tightening what follows a tag name has
+// to leave every shape a reader really writes still being caught.
+func TestTheTagShapesAReaderWritesAreStillMarkup(t *testing.T) {
+	for _, tag := range []string{
+		"<table>", "</table>", "<br/>", "<br />", "<td colspan=\"2\">",
+		"<sub>", "<body>", "<a href=\"https://example.org\">", "< table >",
+	} {
+		var c Checker
+		if faults := c.Check(1, "Some prose and then "+tag+" on the page.\n"); !has(faults, A10) {
+			t.Errorf("%s was not read as markup", tag)
+		}
+	}
+}
+
 func TestMarkupInAListingIsPartOfTheListing(t *testing.T) {
 	var c Checker
 	text := "The template is:\n\n```html\n<table><tr><td>1</td></tr></table>\n```\n"
