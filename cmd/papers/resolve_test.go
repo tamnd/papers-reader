@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/tamnd/papers-reader/corpus"
+	"github.com/tamnd/papers-reader/fetch"
 )
 
 func manifestOf(ids ...string) *corpus.Papers {
@@ -78,6 +79,30 @@ func TestASkippedPaperIsNotAMissingPaper(t *testing.T) {
 	// going to the network, which is the whole reason for the split.
 	got, err = choosePapers(m, "chiu-1989-aimd", "")
 	picked(t, got, err, "chiu-1989-aimd")
+}
+
+// The download uses choosePapers and not selectPapers, so a record somebody
+// entered by hand is offered to it. Skipping a hand record is right for
+// resolve, where asking the services again would throw the decision away,
+// and wrong for the download, which is carrying the decision out. While the
+// two shared a selector, Shamir's IP = PSPACE and the authors' own copy of
+// the LSTM paper both sat in the corpus reported as not fetched yet with a
+// working URL in the record, and no flag would fetch either of them.
+func TestAHandRecordIsStillSomethingToDownload(t *testing.T) {
+	m := manifestOf("shamir-1992-ippspace")
+	rec := corpus.Source{
+		ID:     "shamir-1992-ippspace",
+		By:     corpus.ByHand,
+		URL:    "https://example.org/paper.pdf",
+		Access: corpus.AccessRestricted,
+	}
+
+	got, err := choosePapers(m, "", "")
+	picked(t, got, err, "shamir-1992-ippspace")
+
+	if ok, why := fetch.May(&rec); !ok {
+		t.Errorf("the download would not take a hand record with a location: %s", why)
+	}
 }
 
 func TestAResolvedPaperIsOnlyOfferedAgainOnRequest(t *testing.T) {

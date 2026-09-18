@@ -78,7 +78,18 @@ of them, with the same User-Agent and the same checks on what comes back.
 		return err
 	}
 
-	todo, err := selectPapers(manifest, recorded, *ids, *field, true)
+	// Every paper the manifest names, and not selectPapers, which is the
+	// selector for resolve. That one skips a record a person decided,
+	// because asking the resolver services again would throw the decision
+	// away. Downloading throws nothing away: the record already says where
+	// the file is, and fetching it is carrying the decision out rather than
+	// overruling it. Sharing the one selector meant a paper somebody had
+	// found by hand could never be downloaded by the toolchain at all, and
+	// both of the papers found that way, Shamir's IP = PSPACE and the
+	// authors' own copy of the LSTM paper, sat in the corpus reported as not
+	// fetched yet with a working URL in the record. What there is nothing to
+	// fetch for is reported by fetch.May below, which says why in each case.
+	todo, err := choosePapers(manifest, *ids, *field)
 	if err != nil {
 		return err
 	}
