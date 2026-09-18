@@ -112,6 +112,16 @@ func (s *shipment) pending() int { return s.files }
 // the whole point is that the half-written paper two lanes over stays where
 // it is.
 //
+// The English goes with them whether or not the run was writing it. A
+// translation says in its front matter which English file it answers and
+// carries that file's hash, so a translation published without it is twenty
+// two files pointing at nothing. That is rule L04, and it is what happened to
+// dewitt-1990-gamma and metcalfe-1976-ethernet: a run writing Vietnamese
+// staged content/vi and nothing else, the English had been extracted in the
+// same working tree and had never been committed, and main was red until
+// somebody pushed the English by hand. Staging it costs nothing when it is
+// already in the corpus, because then git has nothing to add.
+//
 // Only paths that exist, because git add is given these verbatim and errors
 // on a pathspec that matches nothing, which would stop a batch over a
 // language a paper has no directory for.
@@ -120,7 +130,7 @@ func (s *shipment) take() []string {
 	s.audited()
 	sort.Strings(s.ready)
 	for _, id := range s.ready {
-		for _, l := range s.langs {
+		for _, l := range withEnglish(s.langs) {
 			dir := s.c.Content(l, id)
 			if _, err := os.Stat(dir); err != nil {
 				continue
@@ -136,6 +146,18 @@ func (s *shipment) take() []string {
 	paths = append(paths, otherRoots(s.c)...)
 	s.ready, s.files = nil, 0
 	return paths
+}
+
+// withEnglish is langs with English on the end of it if it is not in it
+// already, in the order given, so that the batch stages the files a
+// translation answers along with the translation.
+func withEnglish(langs []corpus.Lang) []corpus.Lang {
+	for _, l := range langs {
+		if l == corpus.EN {
+			return langs
+		}
+	}
+	return append(append([]corpus.Lang{}, langs...), corpus.EN)
 }
 
 // audited holds back the papers a hard audit rule refuses.

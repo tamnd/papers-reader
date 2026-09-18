@@ -111,6 +111,42 @@ func TestAWholePaperStagesItsOwnDirectoriesAndNothingElse(t *testing.T) {
 	}
 }
 
+// A translation names the English file it answers and carries that file's
+// hash, so a batch that stages the translation and not the English publishes
+// files pointing at nothing. Rule L04 catches it after the fact. This is the
+// gamma and ethernet case: twenty two Vietnamese files went in against an
+// English directory holding one page of front matter.
+func TestABatchStagesTheEnglishItsTranslationsAnswer(t *testing.T) {
+	c, s := shipped(t, []corpus.Lang{corpus.VI})
+	for _, name := range []string{"00_front.md", "01_first.md", "02_second.md"} {
+		writing(t, c, corpus.VI, "a-1970-paper", name)
+		s.done("a-1970-paper", true)
+	}
+	got := s.take()
+	if !slices.Contains(got, filepath.FromSlash("content/en/a-1970-paper")) {
+		t.Errorf("a Vietnamese batch does not stage the English it answers: %v", got)
+	}
+}
+
+// English asked for once is English staged once, because git add is given
+// these verbatim.
+func TestABatchNamesTheEnglishOnceWhenItIsWritingIt(t *testing.T) {
+	c, s := shipped(t, []corpus.Lang{corpus.EN})
+	for _, name := range []string{"00_front.md", "01_first.md", "02_second.md"} {
+		writing(t, c, corpus.EN, "a-1970-paper", name)
+		s.done("a-1970-paper", true)
+	}
+	var n int
+	for _, p := range s.take() {
+		if p == filepath.FromSlash("content/en/a-1970-paper") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("the batch stages the English %d times, want once", n)
+	}
+}
+
 func TestAPaperWithAFileThatFailedIsHeldBack(t *testing.T) {
 	c, s := shipped(t, []corpus.Lang{corpus.VI})
 	writing(t, c, corpus.VI, "a-1970-paper", "00_front.md")
