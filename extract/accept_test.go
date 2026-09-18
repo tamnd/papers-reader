@@ -239,6 +239,108 @@ func TestTheLengthRuleNamesWhateverItMeasuredAgainst(t *testing.T) {
 	}
 }
 
+// inked is a checker whose pages have been measured for ink and have no text
+// layer at all, which is what a scan gives A5. An ordinary page is five and a
+// half per cent ink, which is what Cook's pages measure.
+func inked(share map[int]float64) *Checker {
+	return &Checker{Model: true, Ink: func(page int) (float64, bool) {
+		s, ok := share[page]
+		if !ok {
+			s = 1
+		}
+		return 0.055 * s, true
+	}}
+}
+
+// Page 8 of Cook's paper. It is the end of the bibliography, two references
+// and a folio on an otherwise empty sheet, and it came back at 287 characters
+// against a paper averaging 3679. It was read three times at three
+// resolutions, it was correct all three times, and A5 refused it all three
+// times because a scan has no text layer to say the page is empty. The ink on
+// the page says it.
+func TestAPageWithAlmostNoInkOnItIsNotRefusedForBeingShort(t *testing.T) {
+	c := inked(map[int]float64{9: 0.1})
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	if faults := c.Check(9, full[:int(0.1*float64(len(full)))]); has(faults, A5) {
+		t.Errorf("a short reading of a nearly empty page gave %v", rules(faults))
+	}
+}
+
+// And the teeth are still in it. A reading that stopped part way down a page
+// with as much ink on it as every other page is a truncated reading.
+func TestATruncatedPageIsStillRefusedWhenThePageIsFullOfInk(t *testing.T) {
+	c := inked(nil)
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	if faults := c.Check(9, "a sentence.\n"); !has(faults, A5) {
+		t.Errorf("a truncated page on a full page of ink gave %v", rules(faults))
+	}
+}
+
+// Ink is a ceiling and never a floor. A page covered in a half tone
+// photograph is nearly all ink and holds no words at all, so a page with
+// three times the ink of its neighbours is still measured against the paper
+// and a truncated reading of it is still refused.
+func TestAPageCoveredInInkDoesNotRaiseWhatIsExpectedOfIt(t *testing.T) {
+	c := inked(map[int]float64{9: 3})
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	if faults := c.Check(9, full); has(faults, A5) {
+		t.Errorf("an ordinary reading of a page heavy with ink gave %v", rules(faults))
+	}
+}
+
+// A paper that has both is measured against its text layer, because prose on
+// the page is a better account of what a reading should hold than ink is: ink
+// counts a rule, a folio and the black of a photograph the same as a letter.
+func TestTheTextLayerIsPreferredToTheInk(t *testing.T) {
+	c := layered(nil)
+	c.Ink = func(int) (float64, bool) { return 0.001, true }
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		if faults := c.Check(i, full); len(faults) != 0 {
+			t.Fatalf("page %d of the run in was refused: %v", i, faults)
+		}
+	}
+	faults := c.Check(9, "a sentence.\n")
+	if !has(faults, A5) {
+		t.Fatalf("a truncated page on a full page of the file gave %v", rules(faults))
+	}
+	if !strings.Contains(faults[0].Detail, "text layer") {
+		t.Errorf("A5 says %q, which is not what it should have measured against", faults[0].Detail)
+	}
+}
+
+// What the rule says has to send a person to the right place, and on a scan
+// the place is the page and not the paper.
+func TestTheLengthRuleSaysWhenItMeasuredAgainstTheInk(t *testing.T) {
+	c := inked(map[int]float64{9: 0.5})
+	full := strings.Repeat("a sentence of the paper that runs to a reasonable length. ", 20)
+	for i := 1; i <= 8; i++ {
+		c.Check(i, full)
+	}
+	faults := c.Check(9, "a sentence.\n")
+	if len(faults) == 0 {
+		t.Fatal("the truncated page was accepted")
+	}
+	if !strings.Contains(faults[0].Detail, "the ink on it") {
+		t.Errorf("A5 says %q, which does not say what it measured against", faults[0].Detail)
+	}
+}
+
 func TestTheLengthRuleSaysNothingUntilItHasSeenEnoughPages(t *testing.T) {
 	c := Checker{Model: true}
 	long := strings.Repeat("a sentence of the paper. ", 40)

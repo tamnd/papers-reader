@@ -93,6 +93,14 @@ type Checker struct {
 	// rule that refuses a page for not reproducing a typo would be worse than
 	// no rule. Born digital only.
 	Layer func(page int) (string, bool)
+	// Ink is how much of the rendered page is covered in ink, as a fraction,
+	// and nil means nobody measured. It is the evidence rule A5 has about a
+	// page of a scan, where Layer has none: see expected.
+	//
+	// A function for the same reason Layer is one. Measuring costs a PNG
+	// decode, most pages never need it, and the second return says this page
+	// was not measured rather than that it is blank.
+	Ink func(page int) (float64, bool)
 	// Model says these pages were read by a model, which is what turns on
 	// rule A5.
 	//
@@ -122,6 +130,13 @@ type Checker struct {
 	// average worth comparing a page that has one against.
 	ln    int
 	lmean float64
+
+	// in and imean are the same again over how much ink the rendered page
+	// carries. Separate from both of the others because a paper can be
+	// measured on some pages and not on others, and because a page can have
+	// a layer and ink or ink alone.
+	in    int
+	imean float64
 }
 
 // MinLengthSample is how many pages have to have been seen before A5 says
@@ -194,21 +209,36 @@ func (c *Checker) observe(page int, text string) {
 		c.ln++
 		c.lmean += (l - c.lmean) / float64(c.ln)
 	}
+	if i, ok := c.ink(page); ok {
+		c.in++
+		c.imean += (i - c.imean) / float64(c.in)
+	}
 }
 
-// tooShort is what A5 says about a page, which is two different sentences.
+// tooShort is what A5 says about a page, which is three different sentences.
 //
 // When the expectation came from the page's own text layer, saying the paper
 // averages 4426 characters would be telling a person the wrong thing to go
 // and check: the complaint is not that the page is unlike the others, it is
 // that the reading is unlike the page. Naming the file's own count is what
-// sends them to the right place.
-func (c *Checker) tooShort(text string, want float64, fromLayer bool) string {
-	if fromLayer {
+// sends them to the right place, and the ink on the page is the same thing
+// again for a paper that has no layer to name.
+func (c *Checker) tooShort(text string, want float64, from string) string {
+	switch from {
+	case fromLayer:
 		return fmt.Sprintf("the page is %d characters where the file's own text layer on it is worth about %.0f", len(text), want)
+	case fromInk:
+		return fmt.Sprintf("the page is %d characters where the ink on it is worth about %.0f", len(text), want)
 	}
 	return fmt.Sprintf("the page is %d characters where this paper's pages average %.0f", len(text), c.mean)
 }
+
+// Where the expectation A5 measures a reading against came from.
+const (
+	fromPaper = ""
+	fromLayer = "layer"
+	fromInk   = "ink"
+)
 
 // layer is how much prose the file's own text layer holds on a page, and
 // whether it holds any. A paper read by a model off a scan has no layer and
@@ -222,6 +252,14 @@ func (c *Checker) layer(page int) (float64, bool) {
 		return 0, false
 	}
 	return float64(len(text)), true
+}
+
+// ink is how much of a page is covered in ink, and whether anybody measured.
+func (c *Checker) ink(page int) (float64, bool) {
+	if c.Ink == nil {
+		return 0, false
+	}
+	return c.Ink(page)
 }
 
 // expected is how long a reading of this page ought to be, in characters,
@@ -260,21 +298,41 @@ func (c *Checker) layer(page int) (float64, bool) {
 // missing.
 //
 // It needs a sample of pages that have a layer before it means anything, the
-// same as the mean it scales, and on a paper read off a scan there is no
-// layer at all and this is the plain average.
-func (c *Checker) expected(page, got int) (float64, bool) {
-	if c.ln < MinLengthSample || c.lmean <= 0 {
-		return c.mean, false
+// same as the mean it scales.
+//
+// A paper read off a scan has no layer on any page of it, and for those the
+// ink on the rendered page is the evidence instead. The two are read in
+// opposite directions and both directions are the safe one. Prose is a floor
+// under what a page holds, so the layer may raise the expectation and never
+// lower it. Ink is a ceiling over what a page holds, because a page cannot
+// print two thousand characters in a twentieth of the ink its neighbours
+// spend on two thousand, so the ink may lower the expectation and never
+// raise it. A page covered in a photograph is nearly all ink and holds no
+// words, which is why raising on ink would be wrong.
+//
+// Cook's last page is what this is for: two references and a folio on an
+// otherwise empty sheet, 287 characters of correct reading against a paper
+// averaging 3679, refused three times at three resolutions. It is half a
+// per cent ink where the paper averages five and a half, so what is expected
+// of the reading comes down with it and the page is accepted.
+func (c *Checker) expected(page, got int) (float64, string) {
+	if c.ln >= MinLengthSample && c.lmean > 0 {
+		if l, ok := c.layer(page); ok {
+			want := c.mean * l / c.lmean
+			if float64(got) >= c.mean && want <= c.mean {
+				return c.mean, fromPaper
+			}
+			return want, fromLayer
+		}
 	}
-	l, ok := c.layer(page)
-	if !ok {
-		return c.mean, false
+	if c.in >= MinLengthSample && c.imean > 0 {
+		if i, ok := c.ink(page); ok {
+			if want := c.mean * i / c.imean; want < c.mean {
+				return want, fromInk
+			}
+		}
 	}
-	want := c.mean * l / c.lmean
-	if float64(got) >= c.mean && want <= c.mean {
-		return c.mean, false
-	}
-	return want, true
+	return c.mean, fromPaper
 }
 
 func (c *Checker) faults(page int, text string) []Fault {
@@ -320,9 +378,9 @@ func (c *Checker) faults(page int, text string) []Fault {
 	// A5 is the only rule that can be wrong about a page that is perfectly
 	// fine, so it is worded as a doubt and the report says so.
 	if c.Model && c.n >= MinLengthSample {
-		want, fromLayer := c.expected(page, len(text))
+		want, from := c.expected(page, len(text))
 		if d := math.Abs(float64(len(text)) - want); d > Sigma*c.stddev() && d > Slack*want {
-			add(A5, c.tooShort(text, want, fromLayer), 0)
+			add(A5, c.tooShort(text, want, from), 0)
 		}
 	}
 

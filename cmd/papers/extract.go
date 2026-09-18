@@ -864,6 +864,48 @@ func (e *extraction) layer(ctx context.Context, file string) func(int) (string, 
 	return pageLayer(ctx, file)
 }
 
+// inked is how much of each page is covered in ink, for rule A5.
+//
+// Always at the base profile, whatever rung of the ladder a page was last
+// read at, because the rule compares one page against the average of the
+// others and a comparison between two resolutions is a comparison of two
+// different numbers of pixels. A page that has not been rendered yet is
+// rendered here, which costs a local process and no model at all, and a
+// page that will not render is reported as not measured rather than as
+// blank: blank is a claim and this has nothing to back it with.
+//
+// The answers are kept, because a paper's pages are measured once each as
+// they are read and then again every time a later page is checked.
+func inked(ctx context.Context, images render.Store, file string, colour map[int]bool) func(int) (float64, bool) {
+	seen := map[int]float64{}
+	missing := map[int]bool{}
+	return func(page int) (float64, bool) {
+		if v, ok := seen[page]; ok {
+			return v, true
+		}
+		if missing[page] {
+			return 0, false
+		}
+		p := render.Profile{DPI: render.Base, Gray: !colour[page]}
+		if _, err := images.Render(ctx, file, p, page); err != nil {
+			missing[page] = true
+			return 0, false
+		}
+		data, err := images.Read(p, page)
+		if err != nil {
+			missing[page] = true
+			return 0, false
+		}
+		v, err := render.Ink(data)
+		if err != nil {
+			missing[page] = true
+			return 0, false
+		}
+		seen[page] = v
+		return v, true
+	}
+}
+
 // pageRange fills in the ends of the range that were not given.
 func (e *extraction) pageRange(ctx context.Context, file string) error {
 	pages := e.source.Pages
@@ -1057,11 +1099,19 @@ func (e *extraction) vision(ctx context.Context, file string, store extract.Stor
 		fmt.Printf("    %s: the images could not be listed, so every page goes up in grey: %v\n", e.paper.ID, err)
 	}
 
+	images := render.Store{Dir: e.corpus.Images(e.paper.ID)}
+
 	// A5 is on because these pages came from a model and a model can stop
 	// halfway down a page. A6 is on once the paper has taught it where its
 	// numbering starts, which is what Folios is for. A9 is on for a paper
-	// whose own text layer is worth comparing an answer against.
-	checker := &extract.Checker{Math: e.math, Model: true, Layer: e.layer(ctx, file)}
+	// whose own text layer is worth comparing an answer against, and A5 gets
+	// the ink on the page for the papers where there is no layer to have.
+	checker := &extract.Checker{
+		Math:  e.math,
+		Model: true,
+		Layer: e.layer(ctx, file),
+		Ink:   inked(ctx, images, file, colour),
+	}
 	folios := &extract.Folios{}
 	want := map[int]bool{}
 	for _, page := range todo {
@@ -1075,7 +1125,7 @@ func (e *extraction) vision(ctx context.Context, file string, store extract.Stor
 			return extract.Reply{Response: answer.Response, Model: answer.Model}, err
 		},
 		Prompt: pinned,
-		Store:  render.Store{Dir: e.corpus.Images(e.paper.ID)},
+		Store:  images,
 		PDF:    file,
 		Paper:  e.paper.ID,
 		Colour: colour,
