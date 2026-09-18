@@ -161,3 +161,21 @@ func TestUnmathLeavesTheMathematicsInAMathSpanAlone(t *testing.T) {
 		t.Errorf("a span that kept its dollars was rewritten: %q", got)
 	}
 }
+
+func TestUnmathSpellsABraceThePagePrinted(t *testing.T) {
+	body := "```text\n$queue \\leftarrow queue - \\{r\\}$\n```"
+	got := Unmath(body)
+	if want := "queue ← queue - {r}"; !strings.Contains(got, want) {
+		t.Errorf("the escaped braces kept the span as mathematics: %q", got)
+	}
+	if strings.Contains(got, "$") {
+		t.Errorf("the span kept its dollars: %q", got)
+	}
+}
+
+func TestUnmathLeavesASpanThatGroupsWithBraces(t *testing.T) {
+	body := "```text\nthe bound is $O(n^{1+\\epsilon})$ here\n```"
+	if got := Unmath(body); !strings.Contains(got, "$O(n^{1+\\epsilon})$") {
+		t.Errorf("a span grouping with braces was flattened: %q", got)
+	}
+}

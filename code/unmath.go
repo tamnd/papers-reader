@@ -103,8 +103,20 @@ var texSymbol = strings.NewReplacer(
 	`\cdots`, "...", `\ldots`, "...", `\cdot`, "·",
 	`\alpha`, "α", `\beta`, "β", `\sigma`, "σ", `\lambda`, "λ",
 	`\Gamma`, "Γ", `\Sigma`, "Σ", `\Delta`, "Δ", `\Lambda`, "Λ",
-	`\{`, "{", `\}`, "}",
 )
+
+// texBrace is the escaped braces, which stand for the braces the page
+// printed rather than for the grouping TeX does with a bare pair. They are
+// apart from texSymbol because of where they are applied. Inside a math span
+// a brace left over after the tables have run is what says the span is real
+// mathematics and has to keep its dollars, so these come off after that test
+// and not before it, or `$queue \leftarrow queue - \{r\}$` reads as a set
+// comprehension and stays as it is.
+var texBrace = strings.NewReplacer(`\{`, "{", `\}`, "}")
+
+// escapedBrace takes the escaped braces out altogether, which is how the
+// plain text test looks past them.
+var escapedBrace = strings.NewReplacer(`\{`, "", `\}`, "")
 
 // texSpace is the TeX spacing commands, which stand for a space and are only
 // ever taken out inside a math span. Outside one they are left alone: a
@@ -150,7 +162,7 @@ func untexted(line string) string {
 }
 
 func outside(s string) string {
-	return looseScript.ReplaceAllStringFunc(texSymbol.Replace(s), func(m string) string {
+	return looseScript.ReplaceAllStringFunc(texBrace.Replace(texSymbol.Replace(s)), func(m string) string {
 		set := subscript
 		if m[1] == '^' {
 			set = superscript
@@ -248,9 +260,9 @@ func unmathLine(line string) string {
 			}
 			plain = next
 		}
-		if strings.ContainsAny(plain, `\^_{}`) {
+		if strings.ContainsAny(escapedBrace.Replace(plain), `\^_{}`) {
 			return span
 		}
-		return plain
+		return texBrace.Replace(plain)
 	})
 }
