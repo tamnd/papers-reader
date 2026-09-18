@@ -47,6 +47,9 @@ papers audit --hard
 
 [docs/adding-a-paper.md](docs/adding-a-paper.md) is the walk through for putting a new paper into the corpus, with what each step of it costs in time and in tokens.
 
+[scripts/papers-full.sh](scripts/papers-full.sh) is the unattended version of that walk through.
+It takes one paper all the way from the PDF to a merged pull request before it starts the next one, and it makes several passes over the list because most of what stops a paper is a model that would not answer this time.
+
 ## Design
 
 **The corpus is data and this is the only thing that writes it.**

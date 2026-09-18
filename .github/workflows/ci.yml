@@ -42,6 +42,11 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+      # The pipeline script runs unattended for days at a time, so a typo in
+      # it is a typo with nobody watching. shellcheck is on the runner image
+      # already and this costs about a second.
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
       - name: go mod tidy is a no-op
         run: |
           go mod tidy
