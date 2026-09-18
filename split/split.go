@@ -175,6 +175,9 @@ func Titled(d *assemble.Document, title string) *Result {
 	// stuck to the first entry is a bibliography that has its heading, and
 	// before the headings are read, because that is the point of it.
 	paragraphs, supplied := headReferences(paragraphs)
+	// After headReferences, so that the heading it supplies is the one the
+	// repeats are measured against rather than one of the repeats.
+	paragraphs, repeats := oneBibliography(paragraphs)
 	texts := make([]string, len(paragraphs))
 	for i, p := range paragraphs {
 		texts[i] = p.Text
@@ -267,6 +270,9 @@ func Titled(d *assemble.Document, title string) *Result {
 	}
 	if supplied {
 		r.Notes = append(r.Notes, "the bibliography has no heading of its own and one was supplied where the entries begin")
+	}
+	if repeats > 0 {
+		r.Notes = append(r.Notes, fmt.Sprintf("the bibliography printed its heading again on %d later pages and the repeats were taken out", repeats))
 	}
 	for _, h := range cuts {
 		if h.How == Typographic {

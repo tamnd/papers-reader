@@ -158,3 +158,48 @@ func TestSupplyingTheHeadingLeavesTheOtherHeadingsAlone(t *testing.T) {
 		t.Errorf("the sections changed: %v became %v", before, after)
 	}
 }
+
+// A journal prints the word again at the head of each page the reference
+// list runs over, and the congestion avoidance paper came out with three
+// references files holding entries 1 to 5, 6 to 22 and 23 to 25.
+func TestABibliographyThatRepeatsItsHeadingIsOneSection(t *testing.T) {
+	r := Split(doc(
+		"A Paper About Something",
+		"1 Introduction", prose,
+		"2 Method", prose,
+		"3 Conclusion", prose,
+		"References", entry1, entry2,
+		"References", entry3,
+	))
+	names := names(r)
+	want := []string{"00_front.md", "01_introduction.md", "02_method.md", "03_conclusion.md", "04_references.md"}
+	if !equal(names, want) {
+		t.Fatalf("the files are %v, want %v", names, want)
+	}
+	s := section(t, r, "04_references.md")
+	for _, e := range []string{entry1, entry2, entry3} {
+		if !strings.Contains(s.Body, e) {
+			t.Errorf("the entry is not in the section:\n%s", s.Body)
+		}
+	}
+	if strings.Contains(s.Body, "References") {
+		t.Errorf("the repeated heading was left in the body:\n%s", s.Body)
+	}
+}
+
+// A paper that really does print two reference lists has something between
+// them, and the second one keeps its heading.
+func TestTwoBibliographiesWithASectionBetweenThemAreTwoSections(t *testing.T) {
+	r := Split(doc(
+		"A Paper About Something",
+		"1 Introduction", prose,
+		"2 Method", prose,
+		"3 Conclusion", prose,
+		"References", entry1, entry2,
+		"Appendix A", prose,
+		"References", entry3,
+	))
+	if got, want := len(r.Sections), 7; got != want {
+		t.Fatalf("split into %d sections, want %d: %v", got, want, names(r))
+	}
+}

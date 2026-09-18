@@ -123,16 +123,59 @@ func entries(paragraphs []assemble.Paragraph, i int) int {
 // matched against the same name table the heading reader uses.
 func cited(paragraphs []assemble.Paragraph) bool {
 	for _, p := range paragraphs {
-		text := strings.TrimSpace(p.Text)
-		if _, rest, ok := atxParts(text); ok {
-			text = rest
-		}
-		if len([]rune(text)) > 60 {
-			continue
-		}
-		if title, ok := named(strings.TrimLeft(text, "0123456789. ")); ok && title == "References" {
+		if isReferences(p.Text) {
 			return true
 		}
 	}
 	return false
+}
+
+// isReferences says whether a paragraph is the heading over a bibliography.
+func isReferences(text string) bool {
+	text = strings.TrimSpace(text)
+	if _, rest, ok := atxParts(text); ok {
+		text = rest
+	}
+	if len([]rune(text)) > 60 {
+		return false
+	}
+	title, ok := named(strings.TrimLeft(text, "0123456789. "))
+	return ok && title == "References"
+}
+
+// oneBibliography takes out the References heading a bibliography printed
+// again at the top of its next page.
+//
+// A reference list is the one part of a paper that runs for pages with
+// nothing in it to say where it is, so a journal repeats the word at the
+// head of each of them and a reader transcribing the page writes what it
+// sees. The splitter then cuts at every one of them: the congestion
+// avoidance paper came out with 11_references.md, 12_references.md and
+// 13_references.md, holding entries 1 to 5, 6 to 22 and 23 to 25, and rule
+// T07 reported all three. Nothing downstream can put them back together,
+// and a reader following a citation to entry 23 has to guess which of the
+// three files it is in.
+//
+// What makes a repeat a repeat is that there is nothing but the list
+// between it and the heading above it. Every paragraph in between has to be
+// an entry, and an entry is a paragraph that opens with the label the paper
+// numbers it by. A paper that really does print two bibliographies has its
+// appendix or its notes between them, and that ends the run.
+func oneBibliography(paragraphs []assemble.Paragraph) ([]assemble.Paragraph, int) {
+	out := make([]assemble.Paragraph, 0, len(paragraphs))
+	inside, dropped := false, 0
+	for _, p := range paragraphs {
+		switch {
+		case isReferences(p.Text):
+			if inside {
+				dropped++
+				continue
+			}
+			inside = true
+		case !label.MatchString(strings.TrimSpace(p.Text)):
+			inside = false
+		}
+		out = append(out, p)
+	}
+	return out, dropped
 }
