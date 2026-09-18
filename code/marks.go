@@ -22,25 +22,38 @@ var statement = regexp.MustCompile(`^\s*(?:` +
 	// lines of comment and a brace, and nothing else in them says program.
 	`|//` +
 	// A declaration or a keyword at the head of a line, in the languages the
-	// papers in this corpus print. BEGIN and END are ALGOL, which is most of
-	// what the older papers print and reads as ordinary prose in lower case,
-	// so they are matched in capitals only.
-	`|(?:BEGIN|END)\b` +
+	// papers in this corpus print. These are ALGOL, which is most of what the
+	// older papers print and reads as ordinary prose in lower case, so they
+	// are matched in capitals only. A listing printed with one keyword to a
+	// line has very little else on it: the second half of McCabe's SEARCH is
+	// twelve lines, of which four are a bare THEN or ELSE, and without those
+	// four it was under the half the assembler wants before it will fence a
+	// paragraph. IF, FOR and WHILE are deliberately not here, because in
+	// capitals at the head of a line they are also how a paper heads a
+	// section about them.
+	`|(?:BEGIN|END|THEN|ELSE|DO|REPEAT|UNTIL|GOTO|PROCEDURE)\b` +
 	`|(?:int|double|float|char|void|struct|union|typedef|static|const|unsigned|long|short|bool)\s+\w+\s*[;(=]` +
 	`|(?:if|while|for|switch)\s*\(` +
 	`|(?:def|func|function|procedure|class)\s+\w+\s*\(` +
 	`)`)
 
-// assign matches an assignment written with a colon and an equals sign, which
-// is ALGOL, Pascal and the notation most of the older papers in this corpus
-// print their algorithms in. It is separate because the pattern above is
-// anchored at the head of a line and an assignment sits in the middle of one.
+// assign matches an assignment, which the papers in this corpus write two
+// ways: with a colon and an equals sign, which is ALGOL, Pascal and the
+// notation most of the older algorithms are printed in, and with a left
+// arrow, which is what the journals set when they had the sort available and
+// what Smalltalk wrote for its whole life. It is separate from the pattern
+// above because that one is anchored at the head of a line and an assignment
+// sits in the middle of one.
 //
-// English does not write it. Floyd's Algorithm 97 is ten lines of ALGOL 60,
-// and the only keyword in it the pattern above knows is a lower case begin,
-// which prose writes too. Without this the listing carried no evidence at all
-// and went out of the corpus unfenced.
-var assign = regexp.MustCompile(`\S\s*:=`)
+// English does not write either of them. Floyd's Algorithm 97 is ten lines of
+// ALGOL 60, and the only keyword in it the pattern above knows is a lower
+// case begin, which prose writes too, so without this the listing carried no
+// evidence at all and went out of the corpus unfenced. McCabe's SEARCH is the
+// arrow: the procedure is printed in two halves, the first half assigns with
+// a colon and was fenced, the second half assigns with an arrow and was not,
+// so thirteen lines of the same procedure went out as prose and rule C08
+// reported them.
+var assign = regexp.MustCompile(`\S\s*(?::=|←|⟵)`)
 
 // semicolon matches a line that ends in a semicolon, which in prose happens
 // where a sentence is joined to the next and in a program happens on almost
