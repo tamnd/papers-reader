@@ -32,8 +32,17 @@ import (
 // rule, which stops the corpus from publishing at all: a rule that refuses the
 // paper's own evidence refuses every release until somebody deletes the
 // evidence, and no amount of retranslation moves it.
-func data(block string) bool {
-	return markdown.IsTable(block) || blanked(block) || quotation(block) || !sentential(block)
+func data(block string) bool { return printed(block) || !sentential(block) }
+
+// printed is the first three of those shapes, the ones that are about what is
+// in the block rather than about whether there is a sentence in it.
+//
+// The glossary rule wants these three and not the fourth. A caption has no
+// finished sentence in it and is still a translator's to translate, so a rule
+// that asks whether a term was rendered has to go on reading captions. See
+// ruleL10.
+func printed(block string) bool {
+	return markdown.IsTable(block) || blanked(block) || quotation(block)
 }
 
 // blank is the run of underscores a paper prints where the reader, or the
@@ -140,7 +149,15 @@ func spared(block string) map[string]bool {
 //
 // Not greedy, so two quotations in a paragraph are two runs rather than one
 // run with the paragraph's own words in the middle of it.
-var quoted = regexp.MustCompile(`"[^"]+"|\x{201c}[^\x{201d}]+\x{201d}`)
+var quoted = regexp.MustCompile(`"[^"]+"|\x{201c}[^\x{201d}]+\x{201d}|\x{ab}[^\x{bb}]+\x{bb}`)
+
+// unquoted is the text with everything a paper quoted taken out of it.
+//
+// A newline in place of each quotation, and not a space, because the rules
+// that read the words either side of a word read across spaces. Taking a
+// quotation out from between two words would put those two words next to each
+// other and make a phrase nobody wrote.
+func unquoted(s string) string { return quoted.ReplaceAllString(s, "\n") }
 
 // namesOnly says the sentence has no word in it that starts in lower case, which
 // makes it a name, an address or a title rather than a sentence.

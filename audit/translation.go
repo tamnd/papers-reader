@@ -569,6 +569,14 @@ func cap5(list []string) []string {
 // standing is not this rule's business: L11 has it, and L07 has a whole
 // English paragraph.
 //
+// The pair is looked for both ways round, because Vietnamese puts the word
+// that qualifies after the word it qualifies and English puts it before. The
+// Gamma paper thanks Tandem Computers for the use of "their Wisconsin
+// benchmark relation generator", and the Vietnamese says "bộ sinh quan hệ
+// benchmark Wisconsin", which is the same name with the two English words in
+// Vietnamese order. Looked for one way round only, the rule saw the
+// glossary's "benchmark" standing on its own.
+//
 // An open bracket after it, third. "hash(key) mod R" is the partition
 // function in the MapReduce paper and it is set as running text rather than
 // as code, so the Vietnamese carries it through as printed and should. A
@@ -578,10 +586,31 @@ func cap5(list []string) []string {
 func alone(text, other, term string) bool {
 	rs := []rune(text)
 	for _, s := range spans(rs, term) {
-		if called(rs, s[1]) || copied(rs, other, s[0], s[1]) {
+		if called(rs, s[1]) || copied(rs, other, s[0], s[1]) || swapped(rs, other, s[0], s[1]) {
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+// swapped is copied with the two words the other way round: the term and its
+// neighbour are a name that other wrote in the opposite order.
+func swapped(rs []rune, other string, at, end int) bool {
+	other, term := unhyphenated(other), string(rs[at:end])
+	for _, w := range []string{
+		string(rs[back(rs, at):at]),
+		string(rs[end:forward(rs, end)]),
+	} {
+		w = strings.TrimSpace(w)
+		if w == "" {
+			continue
+		}
+		for _, p := range []string{term + " " + w, w + " " + term} {
+			if strings.Contains(other, unhyphenated(p)) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -1144,7 +1173,13 @@ func ruleL09(in *Input) ([]Finding, error) {
 // explained.
 //
 // Terms the glossary keeps in English are skipped, because keeping them is
-// the decision the glossary recorded.
+// the decision the glossary recorded, and so are terms whose rendering has
+// the English term inside it. See glossed.
+//
+// What is read is the translation's own prose. The tables and the quotations
+// on the page are the paper's own data and are the same in every language,
+// so a term standing in one of those is not a term anybody left standing.
+// See printed and unquoted.
 //
 // The ACM classification on a front page is skipped too. See classification.
 func ruleL10(in *Input) ([]Finding, error) {
@@ -1161,11 +1196,11 @@ func ruleL10(in *Input) ([]Finding, error) {
 		// is searched for in the whole of the translation and the English
 		// term only in the part of it that was there to be translated.
 		whole := strings.ToLower(translate.Prose(p.tr.Body))
-		tr := strings.ToLower(translate.Prose(translatable(p)))
+		tr := strings.ToLower(unquoted(translate.Prose(prosaic(translatable(p)))))
 		labels := listed(p.en.Body)
 		var left []string
 		for _, t := range renderings(in.Glossary, p.en.Front.Field, p.tr.Lang) {
-			if t.as == t.en || !alone(tr, en, t.en) || t.rendered(whole) || labels[t.en] {
+			if t.as == t.en || glossed(t) || !alone(tr, en, t.en) || t.rendered(whole) || labels[t.en] {
 				continue
 			}
 			left = append(left, fmt.Sprintf("%q, which is %q", t.en, t.as))
@@ -1178,6 +1213,38 @@ func ruleL10(in *Input) ([]Finding, error) {
 			Message: "these terms stand in English with their rendering nowhere in the file: " + strings.Join(cap5(left), ", "),
 		}}
 	})
+}
+
+// glossed says the glossary's rendering of a term has the English term
+// inside it, which makes writing the English term part of writing the
+// rendering rather than a refusal to use it.
+//
+// Vietnamese renders "attention" as "cơ chế attention", which is the English
+// word with the Vietnamese for "mechanism" in front of it, because that is
+// what a Vietnamese paper calls it. A translation that writes "số lượng đầu
+// attention" for "the number of attention heads" has used the term: putting
+// "cơ chế" in the middle of it would say "the number of attention mechanism
+// heads". Seven of the ten findings this rule had on the Vietnamese were
+// that one term, on five papers, and all seven pages were right.
+//
+// Asked of the rendering and not of the language, because whether the
+// English survives into the rendering is a decision the glossary made, term
+// by term, and it is written down there.
+func glossed(r rendering) bool {
+	return len(spans([]rune(strings.ToLower(r.as)), r.en)) > 0
+}
+
+// prosaic is the body with the blocks that are the paper's own data taken
+// out, for a rule that is about the words a translator chose.
+func prosaic(body string) string {
+	var keep []string
+	for _, b := range blocksOf(body) {
+		if printed(b) {
+			continue
+		}
+		keep = append(keep, b)
+	}
+	return strings.Join(keep, "\n\n")
 }
 
 // listed is every word set inside a listing or a table on the page, folded.
