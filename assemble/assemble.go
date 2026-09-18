@@ -119,7 +119,7 @@ func Join(pages []Page) *Document {
 			d.Paragraphs = append(d.Paragraphs, Paragraph{Text: text, Page: p.Number, Pages: 1})
 		}
 	}
-	d.Paragraphs = fenced(unprosed(d.Paragraphs))
+	d.Paragraphs = fenced(uncaptioned(unprosed(d.Paragraphs)))
 	return d
 }
 
@@ -197,6 +197,41 @@ func unprosed(ps []Paragraph) []Paragraph {
 		out = append(out,
 			Paragraph{Text: strings.Join(lines[:cut], "\n"), Page: p.Page, Pages: p.Pages},
 			Paragraph{Text: strings.TrimSpace(strings.Join(lines[cut:], "\n")), Page: p.Page, Pages: p.Pages},
+		)
+	}
+	return out
+}
+
+// uncaptioned cuts the caption off the front of a listing that has one stuck
+// to it.
+//
+// This is the other end of the same fault unprosed repairs, and the Aho and
+// Corasick paper is where it shows. Its four algorithms are each printed as
+// one block with the caption at the top of it, "Algorithm 4. Construction of
+// a deterministic finite automaton.", and no blank line under the caption,
+// so the caption and the program arrive as one paragraph. Fencing that
+// paragraph as it came would put the caption inside the fence, and a caption
+// inside a fence is a line of text: papers tags never writes an attribute
+// block over it, nothing in the corpus can link to Algorithm 4, and audit
+// rule C06 reports a listing with no anchor. Cutting it leaves the caption
+// where the tagger will find it and fences the program under it.
+//
+// Only the caption line comes off, not the Input, Output and Method lines
+// the older journals set under it. Those are part of the algorithm as the
+// page displayed it, and they are inside the block the paper drew. The
+// caption is different because it is the one line with a job outside the
+// listing to do.
+func uncaptioned(ps []Paragraph) []Paragraph {
+	out := make([]Paragraph, 0, len(ps))
+	for _, p := range ps {
+		lines := strings.Split(p.Text, "\n")
+		if len(lines) < 2 || !code.Caption(lines[0]) || !listing(strings.Join(lines[1:], "\n")) {
+			out = append(out, p)
+			continue
+		}
+		out = append(out,
+			Paragraph{Text: strings.TrimSpace(lines[0]), Page: p.Page, Pages: 1},
+			Paragraph{Text: strings.Join(lines[1:], "\n"), Page: p.Page, Pages: p.Pages},
 		)
 	}
 	return out

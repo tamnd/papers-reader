@@ -198,7 +198,10 @@ func TestStatementIsTheHalfOfAMarkThatIsNotPunctuation(t *testing.T) {
 		{"begin s := m[j, i] + m[i, k];", true, true},
 		{"if s < m[j, k] then m[j, k] := s", true, true},
 		{"for i := 1 step 1 until n do", true, true},
-		{"begin", false, false},
+		// A bare begin or end counts, because a line whose whole content is
+		// that one word is a line no paragraph of English sets. The same
+		// word with anything after it does not.
+		{"begin", true, true},
 		{"end shortest path", false, false},
 		// A colon at the end of a clause, with the next one opening on an
 		// equals sign, is not an assignment.

@@ -32,6 +32,15 @@ var statement = regexp.MustCompile(`^\s*(?:` +
 	// capitals at the head of a line they are also how a paper heads a
 	// section about them.
 	`|(?:BEGIN|END|THEN|ELSE|DO|REPEAT|UNTIL|GOTO|PROCEDURE)\b` +
+	// The same keywords in lower case, but only when the word is the whole
+	// line. In lower case and in a sentence these are English, so the rest
+	// of the line has to be empty before they count for anything: prose
+	// never sets a line that is the single word begin. Aho and Corasick
+	// print their four algorithms in a block structured notation that nests
+	// three deep, so a third of the lines of each listing are a bare begin
+	// or end, and with those lines counting for nothing none of the four
+	// reached the half the assembler wants and none of them was fenced.
+	`|(?:begin|end)\s*;?\s*$` +
 	`|(?:int|double|float|char|void|struct|union|typedef|static|const|unsigned|long|short|bool)\s+\w+\s*[;(=]` +
 	`|(?:if|while|for|switch)\s*\(` +
 	`|(?:def|func|function|procedure|class)\s+\w+\s*\(` +
@@ -91,6 +100,22 @@ func Mark(line string) bool {
 func Statement(line string) bool {
 	return statement.MatchString(line) || assign.MatchString(line)
 }
+
+// caption matches the caption a paper prints over a numbered listing, which
+// is the same shape as a figure caption and is read by the same pattern in
+// the tags package.
+var caption = regexp.MustCompile(`^\s*\*?\*?(?:Algorithm|Listing)\s+\d+(?:\.\d+)*\*?\*?\s*[.:]`)
+
+// Caption reports whether a line is the caption over a numbered listing.
+//
+// Two things read it and they have to agree, the same way they do about
+// Mark. Audit rule C06 wants the caption to carry an attribute block, and
+// the assembler has to cut the caption off the front of a listing before it
+// fences one, because a caption inside a fence is a caption the tagger never
+// sees and C06 then reports a listing that has no anchor. If the two had
+// different ideas of what a caption is, the assembler would fence one the
+// rule was still waiting for.
+func Caption(line string) bool { return caption.MatchString(line) }
 
 // Marks is how many lines of a stretch of text carry one.
 func Marks(text string) int {

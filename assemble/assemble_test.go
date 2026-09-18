@@ -580,3 +580,36 @@ func TestArithmeticIsNotReadAsEmphasis(t *testing.T) {
 		t.Errorf("a listing of multiplications lost its fence:\n%s", got)
 	}
 }
+
+func TestACaptionIsCutOffTheFrontOfAListing(t *testing.T) {
+	d := model(`Algorithm 4. Construction of the automaton.
+begin
+    queue ← empty
+    for each symbol a do
+        begin
+            next(0, a) ← goto(0, a)
+        end
+end`)
+	if len(d.Paragraphs) != 2 {
+		t.Fatalf("got %d paragraphs, want 2: %v", len(d.Paragraphs), d.Paragraphs)
+	}
+	if got := d.Paragraphs[0].Text; got != "Algorithm 4. Construction of the automaton." {
+		t.Errorf("first paragraph is %q, want the caption on its own", got)
+	}
+	body := d.Paragraphs[1].Text
+	if !strings.HasPrefix(body, "```") || !strings.HasSuffix(body, "```") {
+		t.Errorf("the listing is not fenced: %q", body)
+	}
+	if strings.Contains(body, "Algorithm 4") {
+		t.Errorf("the caption went inside the fence: %q", body)
+	}
+}
+
+func TestACaptionOverProseIsLeftWhereItIs(t *testing.T) {
+	d := model(`Algorithm 4. Construction of the automaton.
+The construction reads the goto function once and writes the next move
+function as it goes, so the whole of it is one pass over the states.`)
+	if len(d.Paragraphs) != 1 {
+		t.Fatalf("got %d paragraphs, want 1: %v", len(d.Paragraphs), d.Paragraphs)
+	}
+}

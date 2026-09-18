@@ -430,11 +430,6 @@ func protectedLines(body string, n int) []bool {
 	return out
 }
 
-// listingCaption matches the caption a paper prints over a numbered
-// listing, which is the same shape as a figure caption and is read by the
-// same pattern in the tags package.
-var listingCaption = regexp.MustCompile(`^\*?\*?(?:Algorithm|Listing)\s+\d+(?:\.\d+)*\*?\*?\s*[.:]`)
-
 // ruleC06 wants a numbered listing to carry its attribute block.
 //
 // A paper that numbers a listing refers to it: "the loop of Algorithm 2".
@@ -463,7 +458,7 @@ func ruleC06(in *Input) ([]Finding, error) {
 				continue
 			}
 			trimmed := strings.TrimSpace(line)
-			if !listingCaption.MatchString(trimmed) {
+			if !code.Caption(trimmed) {
 				continue
 			}
 			attrs := tags.ParseAttrs(line)

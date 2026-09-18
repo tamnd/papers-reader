@@ -33,3 +33,41 @@ func TestABareAlgolKeywordIsAMark(t *testing.T) {
 		}
 	}
 }
+
+func TestALowerCaseBeginAloneIsAMark(t *testing.T) {
+	for _, line := range []string{"begin", "    end", "        end;", "end;"} {
+		if !Statement(line) {
+			t.Errorf("Statement(%q) = false, want true", line)
+		}
+	}
+	for _, line := range []string{
+		"begin by reading the goto function",
+		"    end of the second pass",
+		"we begin;",
+	} {
+		if Statement(line) {
+			t.Errorf("Statement(%q) = true, want false", line)
+		}
+	}
+}
+
+func TestACaptionOverAListingIsRecognised(t *testing.T) {
+	for _, line := range []string{
+		"Algorithm 4. Construction of a deterministic finite automaton.",
+		"    Listing 2: the parser",
+		"**Algorithm 1.2.**",
+	} {
+		if !Caption(line) {
+			t.Errorf("Caption(%q) = false, want true", line)
+		}
+	}
+	for _, line := range []string{
+		"Figure 3. The goto function.",
+		"Algorithm 4 builds the automaton in one pass",
+		"begin",
+	} {
+		if Caption(line) {
+			t.Errorf("Caption(%q) = true, want false", line)
+		}
+	}
+}
