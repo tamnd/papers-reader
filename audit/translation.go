@@ -780,6 +780,11 @@ func letter(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r
 // corpus and is the same in every language.
 //
 // The masthead of a front file is skipped too. See masthead.
+//
+// A block that is the paper's own data is skipped as well, and what counts as
+// data is in data. The short version is that a table, a listing, a quotation
+// and a question with a blank in it are all things a translator is right to
+// leave, and this rule reported every one of them.
 func ruleL07(in *Input) ([]Finding, error) {
 	return eachTranslation(in, func(p pair) []Finding {
 		if p.tr.Front.Kind == "references" {
@@ -840,7 +845,7 @@ func untranslated(p pair) []int {
 	var out []int
 	for i := start(p); i < len(want); i++ {
 		a, b := plainProse(want[i]), plainProse(got[i])
-		if math[i] || a == "" || proseWords(a) < prosePerParagraph {
+		if math[i] || a == "" || proseWords(a) < prosePerParagraph || data(want[i]) {
 			continue
 		}
 		if a == b && !runningHead(p, a) {
@@ -1044,9 +1049,7 @@ func blocksOf(body string) []string { return markdown.Blocks(body) }
 // plainProse is the prose of a passage, lowercased, with the protected spans
 // and the runs of whitespace taken out, which is what two paragraphs have to
 // share before one can be called a copy of the other.
-func plainProse(s string) string {
-	return strings.ToLower(strings.Join(strings.Fields(translate.Prose(s)), " "))
-}
+func plainProse(s string) string { return strings.ToLower(cased(s)) }
 
 // ruleL08 and ruleL15 are the honesty rules. A section written by a
 // cut-down model or on somebody else's aggregator is flagged and kept, not
@@ -1286,6 +1289,11 @@ func classification(block string) bool {
 //
 // The masthead of a front page is skipped, the same way L07 skips it and
 // for the same reason. See masthead.
+//
+// A block of the paper's own data is skipped, the same way L07 skips it. So
+// is a sentence that stands on its own account inside a paragraph that was
+// otherwise translated, which is an address, a rights notice or a quotation.
+// See data and spared.
 func ruleL11(in *Input) ([]Finding, error) {
 	return eachTranslation(in, func(p pair) []Finding {
 		if p.tr.Front.Kind == "references" {
@@ -1302,12 +1310,12 @@ func ruleL11(in *Input) ([]Finding, error) {
 		math := mathBlocks(p.en.Body, want)
 		var out []Finding
 		for i := start(p); i < len(want); i++ {
-			if whole[i] || math[i] {
+			if whole[i] || math[i] || data(want[i]) {
 				continue
 			}
-			english := sentences(plainProse(want[i]))
+			english, stands := sentences(plainProse(want[i])), spared(want[i])
 			for s := range sentences(plainProse(got[i])) {
-				if proseWords(s) < prosePerSentence || !english[s] {
+				if proseWords(s) < prosePerSentence || !english[s] || stands[s] {
 					continue
 				}
 				out = append(out, Finding{
