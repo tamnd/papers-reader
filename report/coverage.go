@@ -108,6 +108,30 @@ type CoverageLang struct {
 	// the field the whole provenance block earns its keep with: a stale file
 	// is detectably stale rather than quietly wrong.
 	Stale int
+	// English is how many files the English has, copied onto every row so
+	// that Done can be read off a language without the corpus being at hand.
+	// It is the denominator of the whole table: a translation is of an
+	// English file and there is nothing else for it to be of.
+	English int
+}
+
+// Done is the share of the English this language has been translated into,
+// from zero to one, counting a stale file as done.
+//
+// Files rather than papers, because a paper the translator has reached and
+// not finished counts in the papers column from its first section and a
+// corpus two thirds translated would read as fully translated. Files is the
+// number that moves while a paper is being worked through.
+//
+// A stale file counts because it is a translation. What is wrong with it is
+// that the English moved underneath it, which the stale column is for, and
+// subtracting it here would make one file's worth of work show up twice and
+// make the two columns hard to read together.
+func (l CoverageLang) Done() float64 {
+	if l.English == 0 {
+		return 0
+	}
+	return float64(l.Files) / float64(l.English)
 }
 
 // BuildCoverage reads the corpus and counts it.
@@ -209,7 +233,9 @@ func BuildCoverage(c *corpus.Corpus) (*Coverage, error) {
 		return cov.Waiting[i].Why < cov.Waiting[j].Why
 	})
 	for _, lang := range corpus.Langs {
-		cov.Langs = append(cov.Langs, *langs[lang])
+		row := *langs[lang]
+		row.English = langs[corpus.EN].Files
+		cov.Langs = append(cov.Langs, row)
 	}
 	return cov, nil
 }
@@ -368,10 +394,10 @@ func (c *Coverage) Markdown() string {
 	}
 
 	b.WriteString("\n## Per language\n\n")
-	b.WriteString("English is extracted and the other three are translated from it. `stale` is a translated file whose English has changed since, which is the one number here that means somebody has work to do rather than work to start.\n\n")
-	b.WriteString("| language | papers | files | stale |\n| --- | --: | --: | --: |\n")
+	b.WriteString("English is extracted and the other three are translated from it. `done` is the share of the English files this language has, which is what a reader in that language gets. `stale` is a translated file whose English has changed since, which is the one number here that means somebody has work to do rather than work to start.\n\n")
+	b.WriteString("| language | papers | files | done | stale |\n| --- | --: | --: | --: | --: |\n")
 	for _, l := range c.Langs {
-		fmt.Fprintf(&b, "| %s | %d | %d | %d |\n", l.Lang, l.Papers, l.Files, l.Stale)
+		fmt.Fprintf(&b, "| %s | %d | %d | %s | %d |\n", l.Lang, l.Papers, l.Files, percent(l.Done()), l.Stale)
 	}
 
 	left := 0

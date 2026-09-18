@@ -166,8 +166,62 @@ func TestATranslationOfAnEnglishThatMovedOnIsStale(t *testing.T) {
 	if vi.Stale != 1 {
 		t.Errorf("%d stale, want the one whose English moved on", vi.Stale)
 	}
-	if !strings.Contains(cov.Markdown(), "| vi | 1 | 2 | 1 |") {
+	if !strings.Contains(cov.Markdown(), "| vi | 1 | 2 | 100% | 1 |") {
 		t.Errorf("the language table is:\n%s", cov.Markdown())
+	}
+}
+
+// The number the reader of the corpus actually wants: how much of what is
+// there they can read in their own language.
+func TestALanguageIsMeasuredAgainstTheEnglishItTranslates(t *testing.T) {
+	english := "---\npaper: vaswani-2017-attention\nkind: section\nlang: en\ncontent_sha256: aaaa\n---\n\nThe English.\n"
+	viet := "---\npaper: vaswani-2017-attention\nkind: section\nlang: vi\nsource_content_sha256: aaaa\n---\n\nBan dich.\n"
+	cov := coverage(t, map[string]string{
+		"manifests/sources.yaml":                        sourcesYAML,
+		"content/en/vaswani-2017-attention/01_intro.md": english,
+		"content/en/vaswani-2017-attention/02_next.md":  english,
+		"content/en/vaswani-2017-attention/03_more.md":  english,
+		"content/en/vaswani-2017-attention/04_last.md":  english,
+		"content/vi/vaswani-2017-attention/01_intro.md": viet,
+		"content/vi/vaswani-2017-attention/02_next.md":  viet,
+		"content/vi/vaswani-2017-attention/03_more.md":  viet,
+	})
+	if got := percent(lang(t, cov, corpus.VI).Done()); got != "75%" {
+		t.Errorf("three Vietnamese files of four English is %s", got)
+	}
+	if got := percent(lang(t, cov, corpus.EN).Done()); got != "100%" {
+		t.Errorf("the English is %s of itself", got)
+	}
+	if got := percent(lang(t, cov, corpus.JA).Done()); got != "0%" {
+		t.Errorf("a language nobody has started is %s", got)
+	}
+}
+
+// A paper counts in the papers column from its first section, so a corpus
+// two thirds translated would read as fully translated if this were papers.
+func TestALanguageIsMeasuredInFilesAndNotInPapers(t *testing.T) {
+	english := "---\npaper: vaswani-2017-attention\nkind: section\nlang: en\ncontent_sha256: aaaa\n---\n\nThe English.\n"
+	cov := coverage(t, map[string]string{
+		"manifests/sources.yaml":                        sourcesYAML,
+		"content/en/vaswani-2017-attention/01_intro.md": english,
+		"content/en/vaswani-2017-attention/02_next.md":  english,
+		"content/en/vaswani-2017-attention/03_more.md":  english,
+		"content/vi/vaswani-2017-attention/01_intro.md": "---\npaper: vaswani-2017-attention\nkind: section\nlang: vi\nsource_content_sha256: aaaa\n---\n\nBan dich.\n",
+	})
+	vi := lang(t, cov, corpus.VI)
+	if vi.Papers != 1 {
+		t.Fatalf("%+v, want the one paper it has started", vi)
+	}
+	if got := percent(vi.Done()); got != "33%" {
+		t.Errorf("one file of three is %s done", got)
+	}
+}
+
+// A corpus with no English is a denominator of zero, and the answer is that
+// nothing is translated rather than a crash or a not a number.
+func TestALanguageWithNoEnglishToTranslateIsZero(t *testing.T) {
+	if got := percent(lang(t, coverage(t, nil), corpus.VI).Done()); got != "0%" {
+		t.Errorf("a corpus with no English is %s translated", got)
 	}
 }
 
