@@ -159,3 +159,35 @@ func TestALongerPageDoesNotHideTheSameHole(t *testing.T) {
 		t.Errorf("the hole covers %v on the long page, want under %v", long, MinCoverage)
 	}
 }
+
+// The ACM bibliography. A surname set in small capitals comes out of the
+// text layer with its first letter as a token of its own, and a model that
+// read the page correctly wrote the name. Page 12 of the Chord paper was
+// refused three times over this and then lost, and it holds the entries
+// twenty five of that paper's citations point at.
+func TestASurnameInSmallCapitalsIsNotAMissingWord(t *testing.T) {
+	layer := "[12] K UBIATOWICZ , J., B INDEL , D., C ZERWINSKI , S., " +
+		"E ATON , P., G EELS , D., G UMMADI , R., R HEA , S., " +
+		"W EATHERSPOON , H., W EIMER , W., W ELLS , C., AND Z HAO , B. " +
+		"OceanStore: An architecture for global-scale persistent storage."
+	answer := "12. Kubiatowicz, J., Bindel, D., Czerwinski, S., Eaton, P., Geels, D., " +
+		"Gummadi, R., Rhea, S., Weatherspoon, H., Weimer, W., Wells, C., and Zhao, B. " +
+		"OceanStore: An architecture for global-scale persistent storage."
+	share, missing := Coverage(layer, answer)
+	if share < MinCoverage {
+		t.Errorf("a bibliography read correctly came out at %.0f%%, missing %v", share*100, missing)
+	}
+}
+
+// The other half. Taking a letter off the front is not allowed to excuse a
+// paragraph the reader really did drop.
+func TestADroppedParagraphIsStillDropped(t *testing.T) {
+	layer := "The network is reliable and the latency is zero. Bandwidth is infinite " +
+		"and the topology does not change. There is one administrator and the " +
+		"transport cost is nothing. The network is homogeneous throughout."
+	answer := "The network is reliable and the latency is zero."
+	share, _ := Coverage(layer, answer)
+	if share >= MinCoverage {
+		t.Errorf("a dropped paragraph came out at %.0f%%, want it refused", share*100)
+	}
+}

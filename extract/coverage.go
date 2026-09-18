@@ -53,6 +53,9 @@ func Coverage(layer, answer string) (float64, []string) {
 	got := map[string]bool{}
 	for _, w := range layerWords(answer) {
 		got[w] = true
+		if tail := beheaded(w); tail != "" {
+			got[tail] = true
+		}
 	}
 	// A page with less than a stretch on it is judged as the one stretch it is.
 	width := Window
@@ -125,6 +128,39 @@ var (
 	// every hyphenated word in the paper counts as missing.
 	hyphenBreak = regexp.MustCompile("[-\\x{00ad}\\x{2010}]\\s*\n\\s*")
 )
+
+// beheaded is a word with its first letter taken off, and an empty string
+// for a word too short to lose one.
+//
+// It is here for the small capitals an ACM bibliography sets an author's
+// surname in. The first letter is set larger than the rest and the text
+// layer gets it as a token of its own, so page 12 of the Chord paper reads
+// `K UBIATOWICZ , J., B INDEL , D., C ZERWINSKI , S.,` and the layer's
+// words are ubiatowicz, indel and zerwinski. A model reads the names the
+// way a person does and writes Kubiatowicz, so every surname on the page
+// counts as missing and the worst stretch comes out at 30%. That page was
+// refused three times and then lost, and it is the page with the
+// bibliography entries the audit then reported twenty five citations
+// pointing at.
+//
+// The other direction, gluing the layer back together, was tried first and
+// is worse. The same shape in the layer is also a formula and a broken
+// running head: `T FIG`, `I DF`, `G PROJECT`. Gluing those invents a word
+// no correct reading has, which makes the rule stricter in exactly the
+// places it is already least sure of itself. Accepting the tail of a word
+// the model did read can only make it milder, and milder is the safe
+// direction for a rule whose whole job is to raise a doubt.
+//
+// Measured before it went in: over the 824 pages of the born digital papers
+// on disk, the worst stretch moves at all on 39 of them and not one page
+// changes verdict.
+func beheaded(w string) string {
+	r := []rune(w)
+	if len(r) < 5 {
+		return ""
+	}
+	return string(r[1:])
+}
 
 // layerWords is the words of a page in the order they were read off it, which
 // the window needs and the set membership test does not.
