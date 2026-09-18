@@ -166,7 +166,7 @@ func (t *Translator) Body(ctx context.Context, p Paper, l corpus.Lang, terms []T
 		if err != nil {
 			return out, err
 		}
-		got, err := t.chunk(ctx, &out, fmt.Sprintf("%s %s chunk %d of %d", p.ID, l, i+1, len(chunks)), text, c.Text, ask, held)
+		got, err := t.chunk(ctx, &out, fmt.Sprintf("%s %s chunk %d of %d", p.ID, l, i+1, len(chunks)), text, c.Text, ask, held, l)
 		if err != nil {
 			return out, err
 		}
@@ -183,7 +183,7 @@ func (t *Translator) Body(ctx context.Context, p Paper, l corpus.Lang, terms []T
 // answer is put back together before it is checked, so what Verify compares
 // is two whole passages and what the corpus is written is the listings the
 // English had rather than a model's copy of them.
-func (t *Translator) chunk(ctx context.Context, out *Result, target, instructions, source, ask string, held []string) (string, error) {
+func (t *Translator) chunk(ctx context.Context, out *Result, target, instructions, source, ask string, held []string, l corpus.Lang) (string, error) {
 	var worst string
 	var spare fallback
 	for attempt := 1; attempt <= t.tries(); attempt++ {
@@ -198,7 +198,7 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 		out.Usage = add(out.Usage, reply.Usage)
 
 		answer := Unhold(Repair(ask, Clean(ask, reply.Text)), held)
-		bad := Verify(source, answer)
+		bad := Verify(source, answer, l)
 		if len(bad) == 0 {
 			out.Models = keep(out.Models, reply.Model)
 			out.Routes = keep(out.Routes, reply.Route)
@@ -254,9 +254,10 @@ func (t *Translator) logf(format string, args ...any) {
 	}
 }
 
-// Verify says every way an answer is not the source in another language.
+// Verify says every way an answer is not the source in the language asked
+// for.
 //
-// Four checks, and each one is a thing that happened. The spans are the
+// Five checks, and each one is a thing that happened. The spans are the
 // spec's rule and the reason this package exists. The added link is the
 // model that reads a web address printed as prose and writes it back as
 // markup, which a span comparison passes because the address itself is
@@ -269,10 +270,18 @@ func (t *Translator) logf(format string, args ...any) {
 // unchanged, which a span comparison passes with nothing to say because the
 // spans are, of course, identical.
 //
+// The fifth is the alphabet. A model asked for Vietnamese writes a word of
+// Russian in the middle of a Vietnamese sentence: "либо A hoặc B" for
+// "either A or B", which is Russian for "either" with the Vietnamese for
+// "or" after it. It reads as a typo and it is a word in another language.
+// Seven pages across six papers went into the corpus with it before anybody
+// noticed, which is what a check at writing time is for: the answer is still
+// there to ask about, and an hour later it is a file nobody will reread.
+//
 // Nothing comes back for an answer that is right, and the first difference is
 // enough to throw it away: the caller asks again rather than trying to repair
 // it.
-func Verify(source, answer string) []Difference {
+func Verify(source, answer string, l corpus.Lang) []Difference {
 	if strings.TrimSpace(answer) == "" {
 		return []Difference{{At: 1, Why: "the answer is empty"}}
 	}
@@ -296,6 +305,14 @@ func Verify(source, answer string) []Difference {
 	if h := echoed(source, answer); h != "" {
 		return []Difference{{At: 1, Soft: true, Why: fmt.Sprintf(
 			"the heading %q came back as the English while the prose under it was translated", h)}}
+	}
+	// The prose, so that a Cyrillic letter standing for a variable in a
+	// formula is a formula. A name the source itself writes in another
+	// alphabet is not the model's doing and is copied rather than refused:
+	// a Russian journal name in a citation is the name of the journal.
+	if r, script := corpus.Foreign(Prose(answer), l); r != 0 && !strings.ContainsRune(Prose(source), r) {
+		return []Difference{{At: 1, Why: fmt.Sprintf(
+			"%q is written in %s, which %s does not use", string(r), script, l.Name())}}
 	}
 	return nil
 }

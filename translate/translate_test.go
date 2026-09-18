@@ -454,6 +454,51 @@ func TestThereIsNoTranslationIntoEnglish(t *testing.T) {
 	}
 }
 
+// A word of Russian in a Vietnamese sentence is asked about again while
+// there is still something to ask. Seven pages went into the corpus with
+// "либо A hoặc B" in them, which is the Russian for "either" with the
+// Vietnamese for "or" after it.
+func TestAWordInTheWrongAlphabetIsAskedAboutAgain(t *testing.T) {
+	const source = "This is reached either by using a fast clock or by issuing more than one instruction."
+	tr, _ := answering(t, func(_ string, attempt int) string {
+		if attempt == 1 {
+			return "Điều này đạt được либо bằng cách dùng clock nhanh hoặc bằng cách phát nhiều lệnh."
+		}
+		return "Điều này đạt được hoặc bằng cách dùng clock nhanh hoặc bằng cách phát nhiều lệnh."
+	})
+
+	got, err := tr.Body(context.Background(), paper, corpus.VI, nil, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got.Text, "либо") {
+		t.Errorf("the body came back as %q", got.Text)
+	}
+	if got.Asks != 2 {
+		t.Errorf("%d asks, want the first answer refused and the second taken", got.Asks)
+	}
+}
+
+// A name the English itself writes in another alphabet is the name of the
+// thing and is copied rather than refused. Razborov cites a paper in Izvestiya
+// and the journal is called Изв. АН СССР in every language.
+func TestANameTheEnglishWroteInAnotherAlphabetIsCopied(t *testing.T) {
+	const source = "The bound is due to Razborov and appeared in Изв. АН СССР in nineteen ninety five."
+	const answer = "Chặn này thuộc về Razborov và đã xuất hiện trên Изв. АН СССР vào năm một chín chín lăm."
+	tr, _ := answering(t, func(string, int) string { return answer })
+
+	got, err := tr.Body(context.Background(), paper, corpus.VI, nil, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Asks != 1 {
+		t.Errorf("%d asks, want the answer taken first time", got.Asks)
+	}
+	if !strings.Contains(got.Text, "Изв") {
+		t.Errorf("the journal name did not come through: %q", got.Text)
+	}
+}
+
 func TestAHeadingHandedBackInEnglishIsAskedAboutAgain(t *testing.T) {
 	// The prose comes back translated and the two words over it do not.
 	// Every other check passes: the spans match because a heading has none,

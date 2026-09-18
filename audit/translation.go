@@ -1547,55 +1547,26 @@ func brace(s string, open int) int {
 	return -1
 }
 
-// scripts is the writing systems each language of the corpus uses.
+// The table of which language is written in which script is in package
+// corpus, because the translator checks the same thing before it writes a
+// chunk and the two have to agree. See corpus.Script.
 //
-// This is the rule that needed most care and it is the one that is a table
-// rather than a constant, because the four languages disagree about every
-// entry. Han characters in a Vietnamese page are wrong and in a Japanese one
-// are right. Kana in a Chinese page are wrong. Latin letters are right
-// everywhere, because every one of these languages writes a model's name,
-// an author's name and an acronym in Latin.
-//
-// What is checked is the prose, with the mathematics and the listings taken
-// out. A Greek letter in a formula is a formula and is group M's business.
-var scripts = map[corpus.Lang]map[string]bool{
-	corpus.EN: {"Latin": true},
-	corpus.VI: {"Latin": true},
-	corpus.ZH: {"Latin": true, "Han": true},
-	corpus.JA: {"Latin": true, "Han": true, "Hiragana": true, "Katakana": true},
-}
-
-// named is the scripts this rule can name. A rune in none of them, a
-// mathematical symbol or an arrow, is not a word in another alphabet and is
-// not this rule's business.
-var named = map[string]*unicode.RangeTable{
-	"Latin":      unicode.Latin,
-	"Han":        unicode.Han,
-	"Hiragana":   unicode.Hiragana,
-	"Katakana":   unicode.Katakana,
-	"Hangul":     unicode.Hangul,
-	"Cyrillic":   unicode.Cyrillic,
-	"Arabic":     unicode.Arabic,
-	"Hebrew":     unicode.Hebrew,
-	"Thai":       unicode.Thai,
-	"Devanagari": unicode.Devanagari,
-}
-
+// What is checked here is the prose, with the mathematics and the listings
+// taken out. A Greek letter in a formula is a formula and is group M's
+// business.
 func ruleL13(in *Input) ([]Finding, error) {
 	return eachTranslationFile(in, func(p pair) []Finding {
-		allowed := scripts[p.tr.Lang]
-		if allowed == nil {
+		if p.tr.Lang.Scripts() == nil {
 			return nil
 		}
 		seen := map[string]rune{}
 		for _, r := range translate.Prose(p.tr.Body) {
-			for name, table := range named {
-				if allowed[name] || !unicode.Is(table, r) {
-					continue
-				}
-				if _, ok := seen[name]; !ok {
-					seen[name] = r
-				}
+			name := corpus.Script(r)
+			if name == "" || p.tr.Lang.Writes(name) {
+				continue
+			}
+			if _, ok := seen[name]; !ok {
+				seen[name] = r
 			}
 		}
 		if len(seen) == 0 {

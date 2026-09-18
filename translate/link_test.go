@@ -1,6 +1,10 @@
 package translate
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/tamnd/papers-reader/corpus"
+)
 
 func TestAnAddressLinkedToItselfIsPutBack(t *testing.T) {
 	// What all three translations of the GAN footnote did.
@@ -40,7 +44,7 @@ func TestALinkThatSaysSomethingElseIsNotQuietlyRewritten(t *testing.T) {
 	if got := Unlink(source, answer); got != answer {
 		t.Errorf("Unlink gave %q and should have left the decision to Verify", got)
 	}
-	if Verify(source, answer) == nil {
+	if Verify(source, answer, corpus.VI) == nil {
 		t.Error("Verify accepted a link the passage did not have")
 	}
 }
@@ -67,7 +71,7 @@ func TestASecondLinkIsFoundInAPassageThatAlreadyHadOne(t *testing.T) {
 func TestAWrappedAddressIsAcceptedOnceItIsPutBack(t *testing.T) {
 	source := "Code at http://x.test/a is provided.\n"
 	answer := "Mã tại [http://x.test/a](http://x.test/a) được cung cấp.\n"
-	if bad := Verify(source, Unlink(source, answer)); bad != nil {
+	if bad := Verify(source, Unlink(source, answer), corpus.VI); bad != nil {
 		t.Errorf("a repaired answer was still refused: %s", bad[0])
 	}
 }
@@ -97,7 +101,7 @@ func TestAnEscapedAddressIsPutBack(t *testing.T) {
 func TestARepairedAddressIsAccepted(t *testing.T) {
 	source := "See https://doi.org/10.1016/0022-0000(78)90014-4 for the proof.\n"
 	answer := "Xem https://doi.org/10.1016/0022-0000\\(78\\)90014-4 để biết chứng minh.\n"
-	if bad := Verify(source, Unescape(source, answer)); bad != nil {
+	if bad := Verify(source, Unescape(source, answer), corpus.VI); bad != nil {
 		t.Errorf("a repaired answer was still refused: %s", bad[0])
 	}
 }
@@ -123,7 +127,7 @@ func TestADoublyEscapedAddressIsPutBack(t *testing.T) {
 		if got := Unescape(c.source, c.answer); got != c.want {
 			t.Errorf("Unescape gave %q\nand the address is written %q", got, c.want)
 		}
-		if bad := Verify(c.source, Unescape(c.source, c.answer)); bad != nil {
+		if bad := Verify(c.source, Unescape(c.source, c.answer), corpus.VI); bad != nil {
 			t.Errorf("a repaired answer was still refused: %s", bad[0])
 		}
 	}
@@ -147,7 +151,7 @@ func TestAnInventedAddressIsNotRepairedIntoAGoodOne(t *testing.T) {
 	if got := Unescape(source, answer); got != answer {
 		t.Errorf("Unescape gave %q and invented the repair", got)
 	}
-	if Verify(source, answer) == nil {
+	if Verify(source, answer, corpus.VI) == nil {
 		t.Error("Verify accepted an address the passage did not have")
 	}
 }
@@ -175,7 +179,7 @@ func TestAnEscapedFormulaIsPutBack(t *testing.T) {
 	if got := UnescapeMath(source, answer); got != want {
 		t.Errorf("UnescapeMath gave %q\nand the formula is written %q", got, want)
 	}
-	if bad := Verify(source, UnescapeMath(source, answer)); bad != nil {
+	if bad := Verify(source, UnescapeMath(source, answer), corpus.VI); bad != nil {
 		t.Errorf("a repaired answer was still refused: %s", bad[0])
 	}
 }
@@ -191,7 +195,7 @@ func TestADoubledBackslashIsPutBack(t *testing.T) {
 	if got := UnescapeMath(source, answer); got != want {
 		t.Errorf("UnescapeMath gave %q\nand the formula is written %q", got, want)
 	}
-	if bad := Verify(source, UnescapeMath(source, answer)); bad != nil {
+	if bad := Verify(source, UnescapeMath(source, answer), corpus.VI); bad != nil {
 		t.Errorf("a repaired answer was still refused: %s", bad[0])
 	}
 }
@@ -223,7 +227,7 @@ func TestAnInventedFormulaIsNotRepairedIntoAGoodOne(t *testing.T) {
 	if got := UnescapeMath(source, answer); got != answer {
 		t.Errorf("UnescapeMath gave %q and invented the repair", got)
 	}
-	if Verify(source, answer) == nil {
+	if Verify(source, answer, corpus.VI) == nil {
 		t.Error("Verify accepted a formula the passage did not have")
 	}
 }
@@ -248,7 +252,7 @@ func TestAnEscapedSelfLinkAndAnEscapedEmailArePutBack(t *testing.T) {
 	if got := Repair(source, answer); got != want {
 		t.Errorf("Repair gave\n%q\nand the passage is written\n%q", got, want)
 	}
-	if bad := Verify(source, Repair(source, answer)); bad != nil {
+	if bad := Verify(source, Repair(source, answer), corpus.VI); bad != nil {
 		t.Errorf("a repaired answer was still refused: %s", bad[0])
 	}
 }
@@ -264,7 +268,7 @@ func TestASelfLinkWhoseTargetIsEscapedIsPutBack(t *testing.T) {
 	if got := Repair(source, answer); got != want {
 		t.Errorf("Repair gave\n%q\nand the address is written\n%q", got, want)
 	}
-	if bad := Verify(source, Repair(source, answer)); bad != nil {
+	if bad := Verify(source, Repair(source, answer), corpus.VI); bad != nil {
 		t.Errorf("a repaired answer was still refused: %s", bad[0])
 	}
 }
@@ -277,7 +281,7 @@ func TestALinkThatSaysSomethingElseIsLeftForVerify(t *testing.T) {
 	if got := Unlink(source, answer); got != answer {
 		t.Errorf("Unlink gave %q and should have left the link alone", got)
 	}
-	if bad := Verify(source, answer); bad == nil {
+	if bad := Verify(source, answer, corpus.VI); bad == nil {
 		t.Error("an answer with an invented link in it was accepted")
 	}
 }
@@ -287,7 +291,7 @@ func TestALinkThatSaysSomethingElseIsLeftForVerify(t *testing.T) {
 func TestAnEmailThatCameBackChangedIsRefused(t *testing.T) {
 	source := "Write to jain@cse.wustl.edu for the note.\n"
 	answer := "Gửi thư tới jain@cse.wustl.edu.vn để biết thêm.\n"
-	if bad := Verify(source, answer); bad == nil {
+	if bad := Verify(source, answer, corpus.VI); bad == nil {
 		t.Error("an answer that changed an email address was accepted")
 	}
 }
