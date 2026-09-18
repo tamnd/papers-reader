@@ -133,19 +133,28 @@ func TestAShortPaperIsStillAPaper(t *testing.T) {
 // departmental server from 2003 serving a large scan slowly is working and a
 // whole-request deadline cannot tell the two apart.
 func TestASlowDownloadIsNotAStalledOne(t *testing.T) {
-	body := pdf(Floor * 2)
+	body := pdf(Floor * 16)
 	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/pdf")
 		for i := 0; i < len(body); i += 512 {
 			w.Write(body[i:min(i+512, len(body))])
 			w.(http.Flusher).Flush()
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
 		}
 	})
 	f := fetcher(t)
 	// Every chunk arrives well inside the stall window, and the whole
 	// download takes many times longer than it.
-	f.Stall = 40 * time.Millisecond
+	//
+	// A hundred times inside it, which is a wider margin than this test
+	// needs to make its point and is the margin it needs to keep making it.
+	// It used to send a chunk every five milliseconds against a forty
+	// millisecond window, and a sleep that the scheduler let run long on a
+	// loaded machine was a red build twice: a two hundred and fifty six
+	// chunk download abandoned on one slow gap in the middle of it. The
+	// download still takes twice the window end to end, which is the half of
+	// the point that the number of chunks carries.
+	f.Stall = 200 * time.Millisecond
 	dest := filepath.Join(t.TempDir(), "slow.pdf")
 	got, err := f.Get(context.Background(), srv.URL, dest)
 	if err != nil {
