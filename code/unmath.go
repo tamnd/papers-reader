@@ -46,7 +46,7 @@ func Unmath(body string) string {
 			continue
 		}
 		for i := b.Line; i < b.End-1; i++ {
-			if plain := unmathLine(lines[i]); plain != lines[i] {
+			if plain := untexted(unmathLine(lines[i])); plain != lines[i] {
 				lines[i], touched = plain, true
 			}
 		}
@@ -85,21 +85,92 @@ var sigilLang = map[string]bool{
 	"tex": true,
 }
 
-// texWord is a TeX control sequence with the plain text that stands for it in
-// a listing. Everything on it is a character the page printed and the reader
-// spelled in TeX, and nothing on it is an operator that only exists set as
-// mathematics.
-var texWord = strings.NewReplacer(
-	`\leq`, "≤", `\geq`, "≥", `\neq`, "≠",
+// texSymbol is a TeX control sequence with the character that stands for it
+// in a listing. Everything on it is a character the page printed and the
+// reader spelled in TeX, and nothing on it is an operator that only exists
+// set as mathematics.
+//
+// The order matters. A Replacer takes the first pattern that matches at a
+// position rather than the longest, so `\leftarrow` has to come before `\le`
+// or the arrow comes out as `≤ftarrow`.
+var texSymbol = strings.NewReplacer(
+	`\leftarrow`, "←", `\rightarrow`, "→", `\Rightarrow`, "⇒", `\gets`, "←",
+	`\leq`, "≤", `\geq`, "≥", `\neq`, "≠", `\le`, "≤", `\ge`, "≥", `\ne`, "≠",
 	`\times`, "×", `\div`, "÷", `\pm`, "±",
-	`\rightarrow`, "→", `\leftarrow`, "←", `\Rightarrow`, "⇒",
 	`\land`, "∧", `\lor`, "∨", `\neg`, "¬",
 	`\in`, "∈", `\subset`, "⊂", `\supset`, "⊃",
+	`\cup`, "∪", `\cap`, "∩", `\emptyset`, "∅",
 	`\cdots`, "...", `\ldots`, "...", `\cdot`, "·",
 	`\alpha`, "α", `\beta`, "β", `\sigma`, "σ", `\lambda`, "λ",
 	`\Gamma`, "Γ", `\Sigma`, "Σ", `\Delta`, "Δ", `\Lambda`, "Λ",
+	`\{`, "{", `\}`, "}",
+)
+
+// texSpace is the TeX spacing commands, which stand for a space and are only
+// ever taken out inside a math span. Outside one they are left alone: a
+// backslash and a comma is a spacing command in TeX and could be almost
+// anything in a program, and there is no need to guess.
+var texSpace = strings.NewReplacer(
 	`\ `, " ", `\,`, " ", `\;`, " ", `\quad`, "  ", `\qquad`, "    ",
 )
+
+// untexted spells the TeX a listing wrote outside its math spans.
+//
+// Unmath takes the dollars off a span that turns out to be plain text, and
+// that only reaches what somebody put dollars round. The Aho and Corasick
+// algorithms are written half and half: `for $i \leftarrow 1$ until $k$ do`
+// has the arrow inside a span and `state \leftarrow 0` on the next line has
+// it bare, both on the same page and both meaning the same thing. Spelling
+// one and not the other leaves a listing with two arrows in it, and the same
+// listing had `g(state, a_j)` bare on one line under `g(state, $a_j$)` on
+// another.
+//
+// What is inside a span is left for unmathLine, which has already run by the
+// time this does. A span that kept its dollars is mathematics, and `\leq`
+// inside mathematics is how it is written and not something to replace. A
+// line with an odd number of dollars on it has a span running off the end,
+// so there is no telling which text is inside one and the line is left as it
+// came.
+func untexted(line string) string {
+	if !strings.ContainsAny(line, `\_^`) {
+		return line
+	}
+	if strings.Count(line, "$")%2 != 0 {
+		return line
+	}
+	var b strings.Builder
+	last := 0
+	for _, m := range dollarSpan.FindAllStringIndex(line, -1) {
+		b.WriteString(outside(line[last:m[0]]))
+		b.WriteString(line[m[0]:m[1]])
+		last = m[1]
+	}
+	b.WriteString(outside(line[last:]))
+	return b.String()
+}
+
+func outside(s string) string {
+	return looseScript.ReplaceAllStringFunc(texSymbol.Replace(s), func(m string) string {
+		set := subscript
+		if m[1] == '^' {
+			set = superscript
+		}
+		r := m[2:]
+		if spelled := set.Replace(r); spelled != r {
+			return m[:1] + spelled
+		}
+		return m
+	})
+}
+
+// looseScript is a one character script outside a math span, and is much
+// narrower than script is inside one. Outside a span an underscore is as
+// likely to be part of a name as a subscript, and `max_value` spelled as a
+// subscript would come out `maxᵥalue`, so the whole of the name, the
+// underscore and the one character after it, has to stand alone as a word.
+// That is true of Aho and Corasick's `a_j)` and `a_1 ` and false of every
+// snake case identifier in the corpus.
+var looseScript = regexp.MustCompile(`\b([A-Za-z])([_^])([0-9A-Za-z])\b`)
 
 // script is a subscript or a superscript of one character, which is how a
 // paper prints an indexed name in a listing that has no way of typing one.
@@ -169,7 +240,7 @@ func unmathLine(line string) string {
 		return line
 	}
 	return dollarSpan.ReplaceAllStringFunc(line, func(span string) string {
-		plain := unscript(texWord.Replace(span[1 : len(span)-1]))
+		plain := unscript(texSpace.Replace(texSymbol.Replace(span[1 : len(span)-1])))
 		for {
 			next := texWrap.ReplaceAllString(plain, "$1")
 			if next == plain {

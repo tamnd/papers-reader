@@ -46,13 +46,19 @@ var statement = regexp.MustCompile(`^\s*(?:` +
 	`|(?:def|func|function|procedure|class)\s+\w+\s*\(` +
 	`)`)
 
-// assign matches an assignment, which the papers in this corpus write two
+// assign matches an assignment, which the papers in this corpus write three
 // ways: with a colon and an equals sign, which is ALGOL, Pascal and the
-// notation most of the older algorithms are printed in, and with a left
-// arrow, which is what the journals set when they had the sort available and
-// what Smalltalk wrote for its whole life. It is separate from the pattern
-// above because that one is anchored at the head of a line and an assignment
-// sits in the middle of one.
+// notation most of the older algorithms are printed in, with a left arrow,
+// which is what the journals set when they had the sort available and what
+// Smalltalk wrote for its whole life, and with the arrow spelled out in TeX,
+// which is what a reader writes when it meets one and has no arrow to hand.
+// It is separate from the pattern above because that one is anchored at the
+// head of a line and an assignment sits in the middle of one.
+//
+// The spelled out arrow is the whole of the Aho and Corasick paper: every
+// assignment in all four of its algorithms came back as `\leftarrow`, some
+// inside a math span and some bare, so the listings carried no arrow for
+// this to find and none of them was fenced.
 //
 // English does not write either of them. Floyd's Algorithm 97 is ten lines of
 // ALGOL 60, and the only keyword in it the pattern above knows is a lower
@@ -62,7 +68,7 @@ var statement = regexp.MustCompile(`^\s*(?:` +
 // a colon and was fenced, the second half assigns with an arrow and was not,
 // so thirteen lines of the same procedure went out as prose and rule C08
 // reported them.
-var assign = regexp.MustCompile(`\S\s*(?::=|←|⟵)`)
+var assign = regexp.MustCompile(`\S\s*(?::=|←|⟵|\\(?:leftarrow|gets)\b)`)
 
 // semicolon matches a line that ends in a semicolon, which in prose happens
 // where a sentence is joined to the next and in a program happens on almost

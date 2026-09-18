@@ -1,6 +1,9 @@
 package code
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Every fixture here is typeset in the test. None of it is copied from a
 // paper, because a test file is committed to a public repository and a page
@@ -122,5 +125,39 @@ func TestSigilNamesTheLanguagesThatWriteADollar(t *testing.T) {
 		if Sigil(lang) {
 			t.Errorf("Sigil(%q) = true, want false", lang)
 		}
+	}
+}
+
+func TestUnmathSpellsTheArrowOutsideAMathSpan(t *testing.T) {
+	body := "```text\nstate \\leftarrow 0\nfor $i \\leftarrow 1$ until $k$ do\n```"
+	got := Unmath(body)
+	if want := "state ← 0"; !strings.Contains(got, want) {
+		t.Errorf("the bare arrow is not spelled: %q", got)
+	}
+	if want := "for i ← 1 until k do"; !strings.Contains(got, want) {
+		t.Errorf("the arrow in the span is not spelled: %q", got)
+	}
+	if strings.Contains(got, `\leftarrow`) {
+		t.Errorf("a TeX arrow is left in the listing: %q", got)
+	}
+}
+
+func TestUnmathSpellsALooseScriptButLeavesAnIdentifierAlone(t *testing.T) {
+	body := "```text\nstate ← g(state, a_j)\nmax_value ← 0\nfirst_name_of ← x\n```"
+	got := Unmath(body)
+	if want := "g(state, aⱼ)"; !strings.Contains(got, want) {
+		t.Errorf("the loose script is not spelled: %q", got)
+	}
+	for _, name := range []string{"max_value", "first_name_of"} {
+		if !strings.Contains(got, name) {
+			t.Errorf("the identifier %s was read as a subscript: %q", name, got)
+		}
+	}
+}
+
+func TestUnmathLeavesTheMathematicsInAMathSpanAlone(t *testing.T) {
+	body := "```text\nconverges when $\\sum_{i=1}^{n} w_i \\leq 1$\n```"
+	if got := Unmath(body); !strings.Contains(got, `\leq`) {
+		t.Errorf("a span that kept its dollars was rewritten: %q", got)
 	}
 }
