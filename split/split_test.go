@@ -514,3 +514,81 @@ func TestARowOfATableIsNotAPageNumber(t *testing.T) {
 		t.Errorf("the table lost a row:\n%s", body)
 	}
 }
+
+// A journal prints its own name over the paper and a reader transcribes it
+// the way it transcribes everything else set large, so the AlphaGo paper
+// opens with the word Article and only then gives the title. The masthead
+// is not section one, and the title under it is still the title.
+func TestAMastheadOverTheTitleIsStillFrontMatter(t *testing.T) {
+	d := doc(
+		"# ARTICLE",
+		"doi:10.1000/nature00000",
+		"# Mastering the game of Go",
+		"David Silver, Aja Huang",
+		"# 1 Introduction",
+		"The game of Go has long been viewed as the hardest classic game.",
+		"# 2 Supervised learning of policy networks",
+		"The first stage of the training pipeline.",
+		"# 3 Reinforcement learning of value networks",
+		"The final stage of the training pipeline.",
+	)
+	r := Titled(d, "Mastering the game of Go")
+	if len(r.Sections) != 4 {
+		t.Fatalf("got %d sections, want the front matter and three sections", len(r.Sections))
+	}
+	if r.Sections[0].Kind != KindFront {
+		t.Errorf("the first section is %s, want the front matter", r.Sections[0].Kind)
+	}
+	for _, want := range []string{"ARTICLE", "Mastering the game of Go", "David Silver"} {
+		if !strings.Contains(r.Sections[0].Body, want) {
+			t.Errorf("the front matter does not carry %q:\n%s", want, r.Sections[0].Body)
+		}
+	}
+	if r.Sections[1].Title != "Introduction" {
+		t.Errorf("the first real section is %q, want the introduction", r.Sections[1].Title)
+	}
+}
+
+// A paper whose own section one is named after the paper keeps it. The
+// search over the mastheads stops at the first heading with a number,
+// because a masthead does not have one.
+func TestANumberedSectionIsNotSwallowedByTheTitleSearch(t *testing.T) {
+	d := doc(
+		"The Part Time Parliament",
+		"Leslie Lamport",
+		"# 1 The Part Time Parliament",
+		"Recent archaeological discoveries on the island of Paxos.",
+		"# 2 The Single Decree Synod",
+		"The Paxons first devised a protocol for choosing one decree.",
+		"# 3 The Multi Decree Parliament",
+		"The parliamentary protocol chooses a sequence of decrees.",
+	)
+	r := Titled(d, "The Part Time Parliament")
+	if len(r.Sections) != 4 {
+		t.Fatalf("got %d sections, want the front matter and three sections", len(r.Sections))
+	}
+	if r.Sections[1].Number != "1" {
+		t.Errorf("section one came out as %q, want it kept", r.Sections[1].Number)
+	}
+}
+
+// A paper the reader gave no headings at all has no appendices in it. With
+// no last heading of the body to start after, the lettered appendix scan
+// used to begin at the first paragraph and read the RSA paper's own title,
+// "A Method for Obtaining Digital Signatures", as appendix A.
+func TestAPaperWithNoHeadingsHasNoAppendices(t *testing.T) {
+	d := doc(
+		"A Method for Obtaining Digital Signatures and Public-Key Cryptosystems",
+		"R.L. Rivest, A. Shamir, and L. Adleman",
+		"An encryption method is presented with a novel property.",
+		"B is another paragraph that opens with a capital and a space.",
+		"C is a third one, which is what made a chain of three.",
+	)
+	r := Titled(d, "A Method for Obtaining Digital Signatures and Public-Key Cryptosystems")
+	if len(r.Sections) != 1 {
+		t.Fatalf("got %d sections, want the front matter on its own", len(r.Sections))
+	}
+	if r.Sections[0].Kind != KindFront {
+		t.Errorf("the only section is %s, want the front matter", r.Sections[0].Kind)
+	}
+}

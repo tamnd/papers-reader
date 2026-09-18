@@ -445,10 +445,20 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 // can call them appendices. They are appendices by construction: they are
 // after the body and they are lettered.
 func appendix(paragraphs []string, body []Heading) []Heading {
-	from := 0
-	if len(body) > 0 {
-		from = body[len(body)-1].Index + 1
+	// An appendix comes after the body, so a paper with no body headings at
+	// all has nowhere for one to be and this has nothing to look for. The
+	// case has to be said out loud because the alternative is the whole
+	// paper: with no last heading to start after, the scan began at
+	// paragraph one and read the RSA paper's own title, "A Method for
+	// Obtaining Digital Signatures", as appendix A. The title then stopped
+	// being the title, the paper lost its 00_front.md, and rules T04 and T06
+	// both reported it. Every safeguard the paragraphs above describe is
+	// about where this is allowed to look, and looking at everything is not
+	// a weaker version of that, it is the opposite of it.
+	if len(body) == 0 {
+		return nil
 	}
+	from := body[len(body)-1].Index + 1
 	if from >= len(paragraphs) {
 		return nil
 	}

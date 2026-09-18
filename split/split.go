@@ -158,6 +158,15 @@ func Split(d *assemble.Document) *Result { return Titled(d, "") }
 // is the paper's title, and anything else is a section however it is set. Only
 // the first heading is offered the comparison, because a paper that prints its
 // title again is printing a running head.
+// mastheads is how many headings the title is looked for among.
+//
+// Three. What can stand over a title is the journal's name, the section of
+// the journal, and a doi or a copyright line, and no paper in the corpus
+// prints more than two of them as headings. Searching further would start
+// to reach real sections in a paper whose title never came back as a
+// heading at all.
+const mastheads = 3
+
 func Titled(d *assemble.Document, title string) *Result {
 	// Unrun first, because everything below counts paragraphs and a heading
 	// that is still inside one is a heading nothing here can find.
@@ -193,9 +202,32 @@ func Titled(d *assemble.Document, title string) *Result {
 	bare := map[int]bool{}
 	// The title goes before the abstract on the page, so it comes off the
 	// front of the cuts before the abstract does.
-	if len(cuts) > 0 && sameText(cuts[0].Title, title) {
-		bare[cuts[0].Index] = true
-		cuts = cuts[1:]
+	//
+	// It is not always the first of them. A journal prints its own name over
+	// the paper and a reader transcribes that the same way it transcribes
+	// everything else it sees set large, so the AlphaGo paper opens
+	// "# ARTICLE" and only then gives the title. Comparing the title against
+	// the first cut alone left the masthead standing as section one, which
+	// took the title, the authors and the abstract into it and left the
+	// paper with no 00_front.md at all.
+	//
+	// So the title is looked for over the first few cuts rather than the
+	// first, and everything up to and including it becomes front matter. A
+	// cut with a number of its own ends the search whatever it says, because
+	// a masthead is not numbered and section 1 is, and a paper whose own
+	// section 1 is named after the paper should keep it.
+	for i, h := range cuts {
+		if i >= mastheads || h.Number != "" {
+			break
+		}
+		if !sameText(h.Title, title) {
+			continue
+		}
+		for _, above := range cuts[:i+1] {
+			bare[above.Index] = true
+		}
+		cuts = cuts[i+1:]
+		break
 	}
 	// The abstract is not a section. It is what 00_front.md is for, along
 	// with the title and the authors, because the abstract is the one part of
