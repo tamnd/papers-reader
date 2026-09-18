@@ -45,11 +45,83 @@ func TestADisplayInTeXDelimitersBecomesTwoDollars(t *testing.T) {
 	}
 }
 
+// The formula comes out tight against its dollars, the way the inline
+// rewrite has always written one and the way the rest of the corpus is
+// written. Rule M12 reports the loose spelling.
 func TestADisplayWrittenOnOneLineBecomesTwoDollars(t *testing.T) {
 	in := `\[ E = mc^2 \]`
-	want := `$$ E = mc^2 $$`
+	want := `$$E = mc^2$$`
 	if got := Dollars(in); got != want {
 		t.Errorf("Dollars(%q) = %q, want %q", in, got, want)
+	}
+}
+
+// olmOCR leaves the equation number where the page prints it, after the
+// closing delimiter. It goes inside the display as a tag, which is how the
+// rest of the corpus writes a numbered equation and the only way KaTeX sets
+// the number beside it.
+func TestAnEquationNumberAfterTheCloserBecomesATag(t *testing.T) {
+	in := "\\[\nW = \\sum_i w_i\n\\] (1)"
+	want := "$$\nW = \\sum_i w_i\n\\tag{1}\n$$"
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars() = %q, want %q", got, want)
+	}
+}
+
+func TestAnEquationNumberAfterAOneLineDisplayBecomesATag(t *testing.T) {
+	in := `\[ W = \sum_i w_i \] (3a)`
+	want := `$$W = \sum_i w_i \tag{3a}$$`
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars(%q) = %q, want %q", in, got, want)
+	}
+}
+
+// A page already read in dollars gets the same treatment, because the number
+// lands after the closer whichever dialect the reader answered in.
+func TestANumberAfterADollarCloserBecomesATag(t *testing.T) {
+	in := "$$\nW = \\sum_i w_i\n$$ (12)"
+	want := "$$\nW = \\sum_i w_i\n\\tag{12}\n$$"
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars() = %q, want %q", got, want)
+	}
+}
+
+// Hoare's Table I sets the name of each axiom beside the axiom, and olmOCR
+// transcribes it that way. A display in the middle of a line is not a
+// display, so it comes out in one dollar rather than two.
+func TestALabelledFormulaKeepsItsLabelAndTakesOneDollar(t *testing.T) {
+	in := `A5 \[(r - y) + y \times (1 + q)\]`
+	want := `A5 $(r - y) + y \times (1 + q)$`
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars(%q) = %q, want %q", in, got, want)
+	}
+}
+
+func TestAFormulaWithProseOnBothSidesOfItTakesOneDollar(t *testing.T) {
+	in := `A10 \[\forall x \quad (x \leq \max)\] where max is the largest integer.`
+	want := `A10 $\forall x \quad (x \leq \max)$ where max is the largest integer.`
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars(%q) = %q, want %q", in, got, want)
+	}
+}
+
+// A label ahead of an opener gets a line of its own. `A9 $$` on one line
+// reads as a paragraph of text to the assembler, which joins it to the
+// display under it and then breaks the display in half with a blank line.
+func TestALabelAheadOfAnOpenerGetsALineOfItsOwn(t *testing.T) {
+	in := "A9 \\[\n(x \\leq y) \\land (y \\leq x) \\supset (x = y)\n\\]"
+	want := "A9\n$$\n(x \\leq y) \\land (y \\leq x) \\supset (x = y)\n$$"
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars() = %q, want %q", got, want)
+	}
+}
+
+// A range of references is escaped the same way a single one is, and it is
+// still not mathematics.
+func TestAnEscapedRangeOfCitationsIsNotADisplay(t *testing.T) {
+	in := `The idea is older than the paper \[2, 11-14\] and was never analysed.`
+	if got := Dollars(in); got != in {
+		t.Errorf("Dollars(%q) = %q, want it left alone", in, got)
 	}
 }
 

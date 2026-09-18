@@ -79,6 +79,17 @@ func TestC04PassesAFenceBesideMathematics(t *testing.T) {
 	}
 }
 
+// The FORTRAN in McCabe's paper. `$` is a format descriptor in the first
+// line and an alternate return label in the second, both of them inside a
+// fence, and the span the audit's own parser opened on the first one ran
+// past the end of the listing. That is M13's finding and not this rule's.
+func TestC04PassesADollarThatIsPartOfTheListing(t *testing.T) {
+	body := "The tool prints\n\n```fortran\nFORMAT(DOMOLKI STRUCTURE FILE NAME? $)\nCALL READB(ICHAN,INHEAD,132,NREAD,$990,$990)\n```\n\nand the run ends." + pad
+	if res := result(t, onePaper(t, body), "C04"); res.Failed() {
+		t.Errorf("C04 reported a dollar that belongs to the FORTRAN: %v", res.Findings)
+	}
+}
+
 // A fence that swallowed the prose looks like a very long listing from the
 // outside, and there is nothing else it can be checked against.
 func TestC05FindsAListingThatSwallowedThePage(t *testing.T) {

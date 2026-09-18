@@ -521,6 +521,12 @@ var folio = split.Folio
 // Only a bare folio is reported, and not a line of prose that happens to be
 // short. The rule has to be one a person can act on: a finding that says
 // "line 40 might be furniture" is a finding nobody checks twice.
+//
+// A row of a table is never a folio, however much it looks like one. The
+// folio pattern allows a rule above and below the number, because a good many
+// papers print the page number that way, and a one column table of bits is
+// written `| 0 |` and matches the pattern exactly. Table IV of Hamming's
+// paper is fifteen such rows and this rule reported all fifteen.
 func ruleT10(in *Input) ([]Finding, error) {
 	if !anyContent(in) {
 		return nil, ErrNotRun
@@ -530,8 +536,10 @@ func ruleT10(in *Input) ([]Finding, error) {
 		if f.Broken() {
 			continue
 		}
-		for n, line := range prose(f.Body) {
-			if strings.TrimSpace(line) == "" {
+		lines := prose(f.Body)
+		table := tableRows(lines)
+		for n, line := range lines {
+			if strings.TrimSpace(line) == "" || table[n] {
 				continue
 			}
 			if folio.MatchString(line) {
@@ -543,6 +551,38 @@ func ruleT10(in *Input) ([]Finding, error) {
 		}
 	}
 	return out, nil
+}
+
+// tableDivider is the line under the heading of a Markdown table, which is
+// what tells a table from a run of lines that merely start with a pipe.
+var tableDivider = regexp.MustCompile(`^\s*\|(?:\s*:?-+:?\s*\|)+\s*$`)
+
+// tableRows marks the lines that belong to a Markdown table.
+//
+// A table is a run of consecutive lines that all start with a pipe and that
+// has a divider somewhere in it. Both halves of that are needed. Without the
+// run, the divider would only cover the rows next to it; without the divider,
+// any line beginning with a pipe would be excused, and the corpus has pages
+// where a stray pipe is the left hand rule of a figure that the reader
+// transcribed as text.
+func tableRows(lines []string) []bool {
+	out := make([]bool, len(lines))
+	for i := 0; i < len(lines); i++ {
+		if !strings.HasPrefix(strings.TrimSpace(lines[i]), "|") {
+			continue
+		}
+		j, divider := i, false
+		for ; j < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[j]), "|"); j++ {
+			divider = divider || tableDivider.MatchString(lines[j])
+		}
+		if divider {
+			for k := i; k < j; k++ {
+				out[k] = true
+			}
+		}
+		i = j
+	}
+	return out
 }
 
 var (

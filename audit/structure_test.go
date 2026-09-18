@@ -379,6 +379,9 @@ func TestT10FindsPageFurniture(t *testing.T) {
 		{"a year on its own is not a folio", long + "\n\n1998\n\n" + long + "\n", true},
 		{"a numbered list item is not a folio", long + "\n\n1. the first point\n\n" + long + "\n", false},
 		{"a display equation number is not a folio", long + "\n\n$$x = 1$$\n\n" + long + "\n", false},
+		{"a one column table of bits is not fifteen folios", long + "\n\n| Table IV |\n| --- |\n| 0 |\n| 1 |\n| 1 |\n\n" + long + "\n", false},
+		{"a folio under a table is still a folio", long + "\n\n| Table IV |\n| --- |\n| 0 |\n\n12\n\n" + long + "\n", true},
+		{"a run of pipes with no divider is not a table", long + "\n\n| 12 |\n\n" + long + "\n", true},
 	}
 	for _, tc := range cases {
 		files := map[string]string{

@@ -139,14 +139,26 @@ func opensFence(line string) bool { return fenceLine.MatchString(line) }
 // first. Both rules fire on the same file and they are kept apart because the
 // repair is different: M01 is a missing dollar and this is a fence in the
 // wrong place.
+//
+// A span that opens inside a fence is not this rule's finding. It is M13's,
+// and the two say different things about the same file: this one says the
+// mathematics of the page ran into a listing, and M13 says a dollar in a
+// listing was read as mathematics when the listing meant the character. The
+// FORTRAN in McCabe's paper is the second kind twice over, in `FORMAT(...$)`
+// and in `CALL READB(...,$990,$990)`, and reporting it here as well sent
+// whoever read the audit to the prose, where there is nothing wrong.
 func ruleC04(in *Input) ([]Finding, error) {
 	return eachCodeFile(in, "C04", func(f *File) []Finding {
 		var out []Finding
+		fenced := codeRanges(f.Body)
 		spans, unclosed := mathtex.Split(f.Body)
 		if unclosed != nil {
 			spans = append(spans, *unclosed)
 		}
 		for _, s := range spans {
+			if inRanges(fenced, s.Line) {
+				continue
+			}
 			if !fenceLine.MatchString(strings.TrimLeft(s.Text, "\n")) && !strings.Contains(s.Text, "\n```") && !strings.Contains(s.Text, "\n~~~") {
 				continue
 			}

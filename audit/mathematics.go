@@ -462,7 +462,16 @@ func ruleM07(in *Input) ([]Finding, error) {
 		if f.Broken() {
 			continue
 		}
+		fenced := codeRanges(f.Body)
 		for _, s := range mathtex.Straddles(f.Body) {
+			// A span that opens inside a listing is M13's finding and not
+			// this one. The dollar in McCabe's `FORMAT(DOMOLKI STRUCTURE
+			// FILE NAME? $)` is a FORTRAN format descriptor, the span it
+			// opened ran to the next dollar six lines down, and the bracket
+			// it was reported for closing is part of the FORTRAN.
+			if inRanges(fenced, s.Line) {
+				continue
+			}
 			out = append(out, Finding{
 				Rule: "M07", File: f.Path, Line: s.Line,
 				Message: fmt.Sprintf("the mathematics closes a bracket the prose opened: %s", oneLine(mathtex.Strip(s.Text))),

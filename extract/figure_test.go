@@ -78,6 +78,25 @@ func TestAnImageInTheMiddleOfALineIsLeftAlone(t *testing.T) {
 	}
 }
 
+// The three flow graphs on page 6 of McCabe's paper. The picture is not on
+// disk and never will be, and the name and the number beside it are on the
+// page and have to stay.
+func TestAnImageBesideALabelAndAFormulaIsTakenOut(t *testing.T) {
+	in := "G1: ![Graph G1](../images/graph_G1.png) $v = 6$\nG2: ![Graph G2](../images/graph_G2.png) $v = 6$"
+	want := "G1: $v = 6$\nG2: $v = 6$"
+	if got := Unlink(in); got != want {
+		t.Errorf("Unlink() = %q, want %q", got, want)
+	}
+}
+
+func TestAnImageAtTheEndOfACaptionIsTakenOut(t *testing.T) {
+	in := "Fig. 3. The lattice of subgroups. ![Figure 3](f03.png)"
+	want := "Fig. 3. The lattice of subgroups."
+	if got := Unlink(in); got != want {
+		t.Errorf("Unlink(%q) = %q, want %q", in, got, want)
+	}
+}
+
 // Program text is transcribed verbatim, so a listing that shows how to write
 // an image link shows how to write one.
 func TestProgramTextKeepsItsLinks(t *testing.T) {

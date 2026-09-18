@@ -217,6 +217,17 @@ func TestM07FindsABracketOnTheWrongSideOfADollar(t *testing.T) {
 	}
 }
 
+// A dollar inside a listing is a character of the listing. McCabe's FORTRAN
+// writes `FORMAT(... $)` and the span the parser opened there ran on to the
+// next dollar six lines down, taking the closing bracket of the FORMAT with
+// it. M13 reports the dollar and this rule has nothing to say about it.
+func TestM07PassesABracketInsideAListing(t *testing.T) {
+	body := "The tool prints\n\n```fortran\nFORMAT(DOMOLKI STRUCTURE FILE NAME? $)\nCALL READB(ICHAN,INHEAD,132,NREAD,$990,$990)\n```\n\nand the run ends." + pad
+	if res := result(t, onePaper(t, body), "M07"); res.Failed() {
+		t.Errorf("M07 reported a bracket that belongs to the FORTRAN: %v", res.Findings)
+	}
+}
+
 // A matrix that came out of the text layer as a pair of scripts renders as a
 // superscript over a subscript: the rows are there, the brackets are not,
 // and it looks enough like mathematics that a reader skimming will not stop.
