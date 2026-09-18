@@ -1186,6 +1186,53 @@ func TestL21LeavesAWordingDifferenceAlone(t *testing.T) {
 	}
 }
 
+// The Vietnamese of the Gamma paper said "các quan hệ lớn hơn 1 million
+// bộ". The sentence is Vietnamese, the number is a number, and the word in
+// the middle is English where triệu was meant. Nothing caught it: L13 reads
+// the script and Vietnamese is written in Latin, L06 reads the glossary and
+// million is not a term of art anybody would put in one, and the back
+// translation put it into English and got the same number out.
+func TestL22FindsAnEnglishScaleWordAfterANumber(t *testing.T) {
+	cases := []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{"the English word", "Không có cách nào để tạo ra các quan hệ lớn hơn 1 million bộ.\n", true},
+		{"with a separator in the numeral", "Chúng tôi đã đo trên 1,000 thousand bản ghi.\n", true},
+		{"the Vietnamese word", "Không có cách nào để tạo ra các quan hệ lớn hơn 1 triệu bộ.\n", false},
+		{"a numeral on its own", "Không có cách nào để tạo ra các quan hệ lớn hơn 1000000 bộ.\n", false},
+		{"the word with no number in front of it", "Một phần triệu, one in a million, là cách nói quen thuộc.\n", false},
+	}
+	for _, tc := range cases {
+		rep := Run(build(t, map[string]string{
+			"manifests/sources.yaml":                          openSources,
+			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), englishBody),
+			"content/vi/vaswani-2017-attention/01_section.md": file(answer(corpus.VI, "section", englishBody), tc.body),
+		}), false)
+		if res := result(t, rep, "L22"); res.Failed() != tc.fails {
+			t.Errorf("%s: L22 failed=%v, want %v (%v)", tc.name, res.Failed(), tc.fails, res.Findings)
+		}
+	}
+}
+
+// The titles of cited works stay in the language they were published in, so
+// a paper called something about a billion rows is cited that way in all
+// four languages.
+func TestL22LeavesTheReferencesAlone(t *testing.T) {
+	rep := Run(build(t, map[string]string{
+		"manifests/sources.yaml":                             openSources,
+		"content/en/vaswani-2017-attention/00_front.md":      file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/09_references.md": file(section("references"), "[1] Sorting 1 billion records.\n"),
+		"content/vi/vaswani-2017-attention/09_references.md": file(
+			answer(corpus.VI, "references", "[1] Sorting 1 billion records.\n"), "[1] Sorting 1 billion records.\n"),
+	}), false)
+	if res := result(t, rep, "L22"); res.Failed() {
+		t.Errorf("L22 reported a cited title: %v", res.Findings)
+	}
+}
+
 // The Paxos front page grew from an abstract to six pages and the Japanese
 // of the old abstract was reported as having dropped two citations, both
 // headings and half the paper. One finding about a stale file, not a

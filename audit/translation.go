@@ -274,6 +274,11 @@ func translationRules() []Rule {
 			What:  "no translation is left carrying a materially different verdict.",
 			Check: ruleL21,
 		},
+		{
+			ID: "L22", Hard: true,
+			What:  "no English scale word is left standing after a number.",
+			Check: ruleL22,
+		},
 	}
 }
 
@@ -1789,5 +1794,55 @@ func ruleL21(in *Input) ([]Finding, error) {
 			Rule: "L21", File: p.tr.Path,
 			Message: "the back translation of this came away believing something the English does not say, so it needs translating again",
 		}}
+	})
+}
+
+// scaleWord is the English words for the powers of ten that a number is
+// written with, as they appear directly after a numeral.
+//
+// A closed class, and that is the whole point of the rule. Most English in
+// a translation is a term of art that the field keeps in English, and a
+// rule about English words in a translation would spend its life reporting
+// "cache" and "buffer" and "TCP". These four are different: every one of
+// the three languages has its own word, none of them borrows the English
+// one, and no field writes "1 million" and means it.
+var scaleWord = regexp.MustCompile(`(?i)\b[0-9][0-9.,]*\s+(thousand|million|billion|trillion)\b`)
+
+// ruleL22 is the English word for a power of ten left standing after the
+// numeral in a translation.
+//
+// The Vietnamese of the Gamma paper says "các quan hệ lớn hơn 1 million
+// bộ". The sentence around it is Vietnamese, the number is a number, and
+// the word in the middle of it is English where triệu was meant. Nothing
+// caught it. L13 reads the script and Vietnamese is written in Latin, L06
+// reads the glossary and million is not a term of art anybody would put in
+// one, and the back translation put the page back into English and got the
+// same number out, which is the one thing about the sentence that was
+// right.
+//
+// Hard, unlike the rest of the soft rules in this group, because there is
+// no judgement in it. A translation that says a thousand of something in
+// English in the middle of a Vietnamese sentence is wrong, and it is wrong
+// in a way a reader of the translation notices immediately.
+//
+// The references file is left alone, as in L06. The titles of cited works
+// stay in the language they were published in, and a paper called something
+// about a billion rows is cited that way in all four languages.
+//
+// Prose only, so a formula that reads 1 million on purpose is group M's
+// business and a listing that prints it is left byte for byte as L18 wants.
+func ruleL22(in *Input) ([]Finding, error) {
+	return eachTranslationFile(in, func(p pair) []Finding {
+		if p.tr.Front.Kind == "references" {
+			return nil
+		}
+		var out []Finding
+		for _, m := range scaleWord.FindAllString(translate.Prose(p.tr.Body), -1) {
+			out = append(out, Finding{
+				Rule: "L22", File: p.tr.Path,
+				Message: fmt.Sprintf("%q leaves the English word for the number, which %s has its own word for", m, p.tr.Lang.Name()),
+			})
+		}
+		return out
 	})
 }
