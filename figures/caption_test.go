@@ -1,6 +1,7 @@
 package figures
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/tamnd/papers-reader/extract"
@@ -108,6 +109,76 @@ func TestTheBareWordWithNoNumberAndNothingAfterItIsNotACaption(t *testing.T) {
 		if got := Captions(extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(400, 424, text)}}, nil); len(got) != 0 {
 			t.Errorf("%q was read as a caption", text)
 		}
+	}
+}
+
+// troff draws the line above a footnote by repeating one character across the
+// measure, and pdftotext reads that line as a word and puts it in whatever
+// paragraph it lands next to. The Gamma paper's pages 13 and 15 set it beside
+// a caption.
+func TestARuleDrawnWithTypeIsNotTheWordAfterTheNumber(t *testing.T) {
+	for _, c := range []struct {
+		text   string
+		number string
+	}{
+		{"Figure 5 " + strings.Repeat("h", 38), "5"},
+		{"Figure 7 " + strings.Repeat("h", 38) + " Figure 8", "7"},
+		{"Figure 2 ———— the one after the rule", "2"},
+	} {
+		got := onlyCaption(t, c.text)
+		if got.Number != c.number {
+			t.Errorf("%q is numbered %q, want %q", c.text, got.Number, c.number)
+		}
+	}
+}
+
+// Four of the same letter is a rule and three is a word. The corpus holds
+// English, Vietnamese, Chinese and Japanese, and none of them spells one.
+func TestAShortRunOfOneLetterIsStillAWord(t *testing.T) {
+	for _, text := range []string{"Figure 3 www references follow", "Figure 4 aaa the sequence"} {
+		got := Captions(extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(400, 424, text)}}, nil)
+		if len(got) != 0 {
+			t.Errorf("%q was read as a caption", text)
+		}
+	}
+}
+
+// A caption of nothing but a number is a short line, and a short line with no
+// blank one under it comes back from pdftotext joined to whatever was set
+// next. The Gamma paper's page 15 has the heading of section 3.5 under the
+// plate.
+func TestACaptionOnALineOfItsOwnIsStillACaption(t *testing.T) {
+	head := textLine(colLeft, 400, colLeft+48, "Figure 7")
+	rest := textLine(colLeft, 416, colRight, "3.5. Operating and Storage System")
+	got := Captions(
+		extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(396, 428, "Figure 7 3.5. Operating and Storage System")}},
+		[]poppler.TextLine{head, rest},
+	)
+	if len(got) != 1 {
+		t.Fatalf("got %d captions, want the one: %+v", len(got), got)
+	}
+	if got[0].Number != "7" {
+		t.Fatalf("the caption is numbered %q, want 7", got[0].Number)
+	}
+	// The box is the line and not the paragraph, or the caption reaches down
+	// over the heading and the pairing measures from the wrong place.
+	if got[0].Box.YMax > rest.YMin {
+		t.Fatalf("the caption box is %v, which covers the heading under it", got[0].Box)
+	}
+}
+
+// The line has to be a caption and nothing else. A line of a set paragraph
+// runs the measure, so this is not something a typesetter produces, but the
+// pattern has to say so.
+func TestALineThatOnlyStartsWithACaptionIsNotOneOnItsOwn(t *testing.T) {
+	head := textLine(colLeft, 400, colRight, "Figure 7 gives the same result for")
+	rest := textLine(colLeft, 416, colRight, "the smaller model.")
+	got := Captions(
+		extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(396, 428, "Figure 7 gives the same result for the smaller model.")}},
+		[]poppler.TextLine{head, rest},
+	)
+	if len(got) != 0 {
+		t.Fatalf("a cross reference was read as a caption: %+v", got)
 	}
 }
 

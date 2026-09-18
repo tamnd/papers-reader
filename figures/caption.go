@@ -50,10 +50,11 @@ var caption = regexp.MustCompile(`^(Fig(?:ure)?|FIG(?:URE)?|Table|TABLE|Algorith
 // Figure. The paragraph is what the assembler would have written and it is
 // what gets translated.
 //
-// The lines are the page's own geometry and are only used for the one case
-// a paragraph cannot answer, which is a caption the figure over it was glued
-// to. See buried. A caller with no geometry to hand may pass nil, and then a
-// caption has to start at the head of a paragraph to be found.
+// The lines are the page's own geometry and are used for the cases a
+// paragraph on its own cannot answer, which are all of them a caption glued
+// to something it is not part of. See twoUp, solo and buried. A caller with
+// no geometry to hand may pass nil, and then a caption has to be the whole
+// head of a paragraph to be found.
 func Captions(page extract.Page, lines []poppler.TextLine) []Caption {
 	var out []Caption
 	for _, par := range page.Paragraphs {
@@ -62,6 +63,10 @@ func Captions(page extract.Page, lines []poppler.TextLine) []Caption {
 			continue
 		}
 		if c, ok := opens(par.Text, par.Box, page.Number); ok {
+			out = append(out, c)
+			continue
+		}
+		if c, ok := solo(par, page.Number, lines); ok {
 			out = append(out, c)
 			continue
 		}
@@ -233,6 +238,35 @@ func line(words []poppler.Word) poppler.TextLine {
 	return poppler.TextLine{Box: b, Words: words}
 }
 
+// solo reads a caption that is a line to itself, which the assembler put in
+// the same paragraph as whatever was set under it.
+//
+// This is the other half of what a caption of nothing but a number costs. The
+// Gamma paper's page 15 sets "Figure 7" under the plate and the heading of
+// section 3.5 below that, and there is no blank line between them that
+// pdftotext can see, so the paragraph reads "Figure 7 3.5. Operating and
+// Storage System". The word after the number is then a section number, which
+// is not the opening of a caption and is not a sentence carrying on either,
+// and the paper lost the figure with rule F09 naming it.
+//
+// The test is that the first line is a caption and is nothing else. A line of
+// a set paragraph runs the measure, so a line that is two words long and
+// happens to be a cross reference is not something a typesetter produces. The
+// box is the line rather than the paragraph, which is also what the pairing
+// wants: the caption is where the caption is, not where the heading under it
+// ends.
+func solo(par extract.Paragraph, page int, lines []poppler.TextLine) (Caption, bool) {
+	inside := within(par.Box, lines)
+	if len(inside) < 2 {
+		return Caption{}, false
+	}
+	head := strings.TrimSpace(from(inside[0].Words))
+	if strings.TrimSpace(caption.FindString(head)) != head {
+		return Caption{}, false
+	}
+	return opens(head, inside[0].Box, page)
+}
+
 // buried reads a caption that starts part way down a paragraph, because the
 // lettering of the figure above it was read as the first line of the same
 // paragraph.
@@ -372,20 +406,69 @@ func cover(lines []poppler.TextLine) poppler.Box {
 // optional in the pattern, so text that is the bare word Figure and nothing
 // else would otherwise arrive here and be taken as a caption of no figure in
 // particular.
+//
+// What follows the number is read after any rule drawn with type is taken off
+// it. See undrawn.
 func separated(text, head, number string) bool {
 	if strings.ContainsAny(last(head), ".:)") {
 		return true
 	}
 	rest := strings.TrimSpace(text[len(head):])
-	if rest == "" {
-		return number != ""
-	}
 	if strings.HasPrefix(rest, "-") || strings.HasPrefix(rest, "—") {
 		return true
+	}
+	rest = undrawn(rest)
+	if rest == "" {
+		return number != ""
 	}
 	word, _, _ := strings.Cut(rest, " ")
 	return word != strings.ToLower(word)
 }
+
+// undrawn is the text with any rule the typesetter drew with type taken off
+// the front of it.
+//
+// The Gamma paper is set in troff, and troff draws the line that separates a
+// footnote from the text above it by repeating one character across the
+// measure. pdftotext reads that line the way it reads a word, and where the
+// rule falls beside a caption the two land in one paragraph: page 13 comes
+// out as "Figure 5" and then the letter h thirty-eight times, and page 15 the
+// same under figure 7. Read as the word after the number that is lowercase,
+// so both captions were refused as cross references and the paper lost both
+// figures with rule F09 naming them.
+//
+// Taken off the front and not out of the middle, because the only thing being
+// decided here is what the first word after the number is.
+func undrawn(text string) string {
+	for {
+		word, rest, _ := strings.Cut(text, " ")
+		if !repeated(word) {
+			return text
+		}
+		text = strings.TrimSpace(rest)
+	}
+}
+
+// repeated says a word is one character over and over, which is how a rule is
+// drawn with type and is not how a word is spelled.
+func repeated(word string) bool {
+	r := []rune(word)
+	if len(r) < repeats {
+		return false
+	}
+	for _, c := range r[1:] {
+		if c != r[0] {
+			return false
+		}
+	}
+	return true
+}
+
+// repeats is how many times the character has to come round before the word
+// is a rule. Four, because no word of any of the four languages the corpus
+// holds spells the same letter four times over, and the shortest rule a paper
+// draws runs the width of a column.
+const repeats = 4
 
 func last(s string) string {
 	s = strings.TrimRight(s, " \t")
