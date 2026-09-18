@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tamnd/papers-reader/code"
 	"github.com/tamnd/papers-reader/extract"
 	"github.com/tamnd/papers-reader/katex"
 	"github.com/tamnd/papers-reader/mathtex"
@@ -613,9 +614,31 @@ func ruleM12(in *Input) ([]Finding, error) {
 // every other line, and by the end of the file every rule in this group is
 // reading a listing as mathematics. The Eléments had no code in them, so this
 // rule is new and the corpus it is for is this one.
+//
+// A listing in a language that writes a dollar of its own is not asked
+// about, and code.Sigil is the same answer the repair uses. McCabe's FORTRAN
+// was three findings nobody could act on: `FORMAT(DOMOLKI STRUCTURE FILE
+// NAME? $)` is a format descriptor and `CALL READB(...,$990,$990)` is a pair
+// of alternate return labels, and both are what the page printed. A shell
+// listing is the case the rule was written for and it is the same case, so
+// the rule can no longer see the thing it was written to find. That is the
+// right trade: the dollars in a shell listing are not a defect either, they
+// are the program, and what the rule is really for is the page where a
+// reader marked up a listing as mathematics.
 func ruleM13(in *Input) ([]Finding, error) {
 	return eachMathFile(in, "M13", func(f *File) []Finding {
-		fenced := codeRanges(f.Body)
+		var fenced [][2]int
+		blocks, _ := code.Blocks(f.Body)
+		for _, b := range blocks {
+			if code.Sigil(b.Lang) {
+				continue
+			}
+			end := b.End
+			if b.End == 0 {
+				end = strings.Count(f.Body, "\n") + 1
+			}
+			fenced = append(fenced, [2]int{b.Line, end})
+		}
 		if len(fenced) == 0 {
 			return nil
 		}

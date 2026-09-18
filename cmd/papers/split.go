@@ -484,8 +484,11 @@ func document(c *corpus.Corpus, id string) (*assemble.Document, error) {
 	// After the join, because a listing can carry over a page break and the
 	// tag belongs to the whole of it. Before the split, because the split is
 	// what writes the file and a fence with no tag on it is rule C02.
+	// Unmath after Label and not before, because the tag is what says
+	// whether a dollar in the listing is a delimiter or a character the
+	// page printed, and an untagged fence has not said yet.
 	for i := range doc.Paragraphs {
-		doc.Paragraphs[i].Text = code.Label(doc.Paragraphs[i].Text)
+		doc.Paragraphs[i].Text = code.Unmath(code.Label(doc.Paragraphs[i].Text))
 	}
 	return doc, nil
 }

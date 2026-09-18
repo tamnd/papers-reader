@@ -310,17 +310,27 @@ func TestM12WantsTheFormulaTightAgainstItsDollars(t *testing.T) {
 // line, and by the end of the file every rule in this group is reading a
 // listing as mathematics.
 func TestM13FindsADollarInAFencedCodeBlock(t *testing.T) {
-	body := "the script reads\n\n```sh\nexport PATH=$HOME/bin:$PATH\n```\n\nand then runs." + pad
+	body := "the algorithm reads\n\n```text\ntotal := $\\sum_{i=1}^{n} w_i$\n```\n\nand then stops." + pad
 	res := result(t, onePaper(t, body), "M13")
 	if !res.Failed() {
-		t.Fatal("M13 let a shell variable open a math span")
+		t.Fatal("M13 let a span inside a listing through")
 	}
 	if res.Findings[0].Line < 3 || res.Findings[0].Line > 5 {
 		t.Errorf("M13 points at line %d, want the line inside the fence", res.Findings[0].Line)
 	}
-	clean := "the script reads\n\n```sh\nexport PATH=/usr/bin\n```\n\nand the value $x$ is fixed." + pad
+	clean := "the algorithm reads\n\n```text\ntotal := sum of w\n```\n\nand the value $x$ is fixed." + pad
 	if res := result(t, onePaper(t, clean), "M13"); res.Failed() {
 		t.Errorf("M13 objected to mathematics outside the fence: %v", res.Findings)
+	}
+}
+
+// A dollar in a language that writes one of its own is the program, not a
+// delimiter. McCabe's FORTRAN was three findings nobody could act on, so the
+// rule and the repair agree on code.Sigil and neither of them asks.
+func TestM13LeavesALanguageThatWritesItsOwnDollar(t *testing.T) {
+	body := "the script reads\n\n```sh\nexport PATH=$HOME/bin:$PATH\n```\n\nand then runs." + pad
+	if res := result(t, onePaper(t, body), "M13"); res.Failed() {
+		t.Errorf("M13 objected to a shell variable: %v", res.Findings)
 	}
 }
 

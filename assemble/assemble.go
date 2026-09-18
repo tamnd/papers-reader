@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/tamnd/papers-reader/code"
+	"github.com/tamnd/papers-reader/markdown"
 )
 
 // A Page is one extracted page as it sits in work/<id>/pages/NNNN.txt:
@@ -192,8 +193,31 @@ func fenced(ps []Paragraph) []Paragraph {
 
 // listing says whether a paragraph is program text that is not already in a
 // fence.
+//
+// Fencing is a stronger claim than refusing to join, so it wants stronger
+// evidence, and program on its own is satisfied by a run of lines that end
+// in a semicolon. The clauses of a definition are written that way. Rabin
+// and Scott number theirs (i) to (iv), end three of the four with a
+// semicolon and never write a keyword or an assignment, and both of the
+// paragraphs that shape went into the corpus inside a ```text fence, which
+// is a page of mathematics rendered as a wall of monospace. So a paragraph
+// wants one of the marks that has no reading in English at all before it is
+// fenced, which is what code.Statement is for.
+//
+// A pipe table is not program text either, however much a run of rules
+// looks like one line by line. Table 1 of Hoare's paper is fourteen rows of
+// a formal proof, every row has an assignment in it, and the whole of it was
+// fenced on the strength of those assignments.
 func listing(s string) bool {
-	return opens(strings.TrimSpace(s)) == "" && program(s)
+	if opens(strings.TrimSpace(s)) != "" || markdown.IsTable(s) {
+		return false
+	}
+	for _, line := range strings.Split(s, "\n") {
+		if code.Statement(line) {
+			return program(s)
+		}
+	}
+	return false
 }
 
 // open is how many braces the text has left unclosed, which says whether a
