@@ -167,6 +167,53 @@ func TestACaptionOnALineOfItsOwnIsStillACaption(t *testing.T) {
 	}
 }
 
+// The same paragraph the other way round: the caption opens it and the body
+// follows, and the body begins with a capital, so the caption is read and
+// then runs on for six lines about the DIRECT prototype. That is Gamma's page
+// 14. The caption the corpus files is the line, and the box stays the
+// paragraph's because that is what the region above it is grown from.
+func TestACaptionFinishedOnItsFirstLineIsOnlyThatLine(t *testing.T) {
+	body := "One of the main problems with the DIRECT prototype was that every " +
+		"data page processed required at least one message."
+	area := par(396, 460, "Figure 6 "+body)
+	got := Captions(
+		extract.Page{Number: 1, Paragraphs: []extract.Paragraph{area}},
+		[]poppler.TextLine{
+			textLine(colLeft, 400, colLeft+48, "Figure 6"),
+			textLine(colLeft, 416, colRight, body),
+		},
+	)
+	if len(got) != 1 {
+		t.Fatalf("got %d captions, want the one: %+v", len(got), got)
+	}
+	if got[0].Text != "Figure 6" {
+		t.Errorf("the caption reads %q, want the line on its own", got[0].Text)
+	}
+	if got[0].Box != area.Box {
+		t.Errorf("the box is %v, want the paragraph's %v", got[0].Box, area.Box)
+	}
+}
+
+// A caption the typesetter promised more of keeps the rest. The colon after
+// the number is the promise, and it is the only thing telling this paragraph
+// from the one above.
+func TestACaptionThatRunsOnToASecondLineKeepsIt(t *testing.T) {
+	text := "Figure 1: the system diagram, which runs on to a second line."
+	got := Captions(
+		extract.Page{Number: 1, Paragraphs: []extract.Paragraph{par(396, 428, text)}},
+		[]poppler.TextLine{
+			textLine(colLeft, 400, colLeft+56, "Figure 1:"),
+			textLine(colLeft, 416, colRight, "the system diagram, which runs on to a second line."),
+		},
+	)
+	if len(got) != 1 {
+		t.Fatalf("got %d captions, want the one: %+v", len(got), got)
+	}
+	if got[0].Text != text {
+		t.Errorf("the caption reads %q, want the whole of it", got[0].Text)
+	}
+}
+
 // The line has to be a caption and nothing else. A line of a set paragraph
 // runs the measure, so this is not something a typesetter produces, but the
 // pattern has to say so.

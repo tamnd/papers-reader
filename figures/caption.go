@@ -63,6 +63,14 @@ func Captions(page extract.Page, lines []poppler.TextLine) []Caption {
 			continue
 		}
 		if c, ok := opens(par.Text, par.Box, page.Number); ok {
+			// The paragraph may be the caption and then something the page
+			// gave it that is not part of it. The box stays the paragraph's,
+			// because that is what the region above it is grown from and the
+			// measurements say it is the better seed, but the caption the
+			// corpus files and shows is the caption.
+			if l, ok := stops(par, lines); ok {
+				c.Text = strings.TrimSpace(from(l.Words))
+			}
 			out = append(out, c)
 			continue
 		}
@@ -249,22 +257,42 @@ func line(words []poppler.Word) poppler.TextLine {
 // is not the opening of a caption and is not a sentence carrying on either,
 // and the paper lost the figure with rule F09 naming it.
 //
-// The test is that the first line is a caption and is nothing else. A line of
-// a set paragraph runs the measure, so a line that is two words long and
-// happens to be a cross reference is not something a typesetter produces. The
-// box is the line rather than the paragraph, which is also what the pairing
-// wants: the caption is where the caption is, not where the heading under it
-// ends.
+// The box here is the line and not the paragraph, because the paragraph is
+// mostly the thing the caption is not part of. That is the other way round
+// from the paragraph the caption does open, where the box stays the
+// paragraph's. Both are what the crops came out best as.
 func solo(par extract.Paragraph, page int, lines []poppler.TextLine) (Caption, bool) {
+	l, ok := stops(par, lines)
+	if !ok {
+		return Caption{}, false
+	}
+	return opens(strings.TrimSpace(from(l.Words)), l.Box, page)
+}
+
+// stops is the first line of a paragraph when that line is a caption and the
+// caption is finished on it, and there is more in the paragraph under it.
+//
+// Finished means the line is the caption's own opening and nothing else, and
+// that it ends at the number. A paper that sets "Figure 1:" on a line and the
+// description under it has a caption of two lines and the colon is the
+// typesetter promising the second one, so taking the first line for the whole
+// of it would throw the description away. A caption that ends at its number
+// promises nothing.
+//
+// A line of a set paragraph runs the measure, so a line that is two words
+// long and happens to be a cross reference is not something a typesetter
+// produces.
+func stops(par extract.Paragraph, lines []poppler.TextLine) (poppler.TextLine, bool) {
 	inside := within(par.Box, lines)
 	if len(inside) < 2 {
-		return Caption{}, false
+		return poppler.TextLine{}, false
 	}
 	head := strings.TrimSpace(from(inside[0].Words))
-	if strings.TrimSpace(caption.FindString(head)) != head {
-		return Caption{}, false
+	m := caption.FindStringSubmatch(head)
+	if m == nil || strings.TrimSpace(m[0]) != head || m[2] == "" || !strings.HasSuffix(head, m[2]) {
+		return poppler.TextLine{}, false
 	}
-	return opens(head, inside[0].Box, page)
+	return inside[0], true
 }
 
 // buried reads a caption that starts part way down a paragraph, because the
