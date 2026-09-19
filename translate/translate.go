@@ -225,7 +225,28 @@ func (t *Translator) chunk(ctx context.Context, out *Result, target, instruction
 	if spare.text != "" {
 		return spare.take(out), nil
 	}
-	return "", fmt.Errorf("%s: %d answers were refused, the last because %s", target, t.tries(), worst)
+	return "", &Refusal{Target: target, Tries: t.tries(), Worst: worst}
+}
+
+// A Refusal is what a chunk comes back with when every answer for it was
+// refused by the checks.
+//
+// It is the one page the model will not write correctly, and it is a
+// different thing from the fleet being down, which is the other reason a
+// file fails. A caller that stops a run after a few failures in a row has
+// to tell them apart: five theory papers asked at once can each lose a
+// chunk to the mathematics without anything being wrong with the fleet, and
+// the Vietnamese run of the corpus stopped 760 files early that way.
+type Refusal struct {
+	// Target names the chunk, as "paper lang chunk i of n".
+	Target string
+	Tries  int
+	// Worst is the complaint the last answer was refused for.
+	Worst string
+}
+
+func (r *Refusal) Error() string {
+	return fmt.Sprintf("%s: %d answers were refused, the last because %s", r.Target, r.Tries, r.Worst)
 }
 
 // fallback is an answer that was not accepted at the time and may be

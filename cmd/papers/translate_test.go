@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -682,5 +683,30 @@ func TestWhichRulesRedoActsOn(t *testing.T) {
 	}
 	if soft == 0 {
 		t.Error("every soft rule is asked again, and that is not the bargain")
+	}
+}
+
+// A run stops when the fleet is down and carries on when a page is refused,
+// and the two look the same from the outside: a file that was not written.
+// The Vietnamese pass over the corpus stopped after 86 files of 862 because
+// three theory papers in a row lost a chunk to their mathematics while the
+// fleet was up the whole time.
+func TestARefusedPageIsNotEvidenceTheFleetIsDown(t *testing.T) {
+	refused := &translate.Refusal{Target: "razborov-1997-naturalproofs vi chunk 1 of 3", Tries: 5, Worst: "span 1"}
+	for _, c := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"a page every answer was refused for", refused, false},
+		{"the same, reported by the file it failed", fmt.Errorf("04_inherent_limitations.md: %w", refused), false},
+		{"no host would answer", errors.New("3 hosts were asked and none of them answered"), true},
+		{"the corpus could not be written to", errors.New("open content/vi: permission denied"), true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := downed(c.err); got != c.want {
+				t.Errorf("downed(%v) = %v, want %v", c.err, got, c.want)
+			}
+		})
 	}
 }

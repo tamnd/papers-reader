@@ -2,6 +2,7 @@ package translate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -125,6 +126,26 @@ func TestAChunkThatIsNeverRightFailsTheWholeFile(t *testing.T) {
 
 	if _, err := tr.Body(context.Background(), paper, corpus.VI, nil, source); err == nil {
 		t.Fatal("a body whose only chunk was never right came back as a translation")
+	}
+}
+
+func TestAChunkThatIsNeverRightComesBackAsARefusal(t *testing.T) {
+	// The caller has to tell a page the model will not write from a fleet
+	// that is not answering, because it stops a run after a few failures in
+	// a row and only the second kind is a reason to stop.
+	const source = "Let $x$ be the input."
+	tr, _ := answering(t, func(string, int) string { return "Gọi $y$ là đầu vào." })
+
+	_, err := tr.Body(context.Background(), paper, corpus.VI, nil, source)
+	var refused *Refusal
+	if !errors.As(err, &refused) {
+		t.Fatalf("a chunk that was refused every time came back as %T: %v", err, err)
+	}
+	if refused.Tries == 0 {
+		t.Error("the refusal does not say how many answers were refused")
+	}
+	if refused.Worst == "" {
+		t.Error("the refusal does not say what the last answer was refused for")
 	}
 }
 

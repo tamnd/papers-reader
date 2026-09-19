@@ -218,6 +218,12 @@ the pages it came away from believing something the paper does not say.
 			}
 			failed = append(failed, fmt.Sprintf("%s %s %s: %v", o.job.lang, o.job.front.Paper, o.job.name, o.err))
 			fmt.Printf("%s %s %s: given up on, %v\n", o.job.lang, o.job.front.Paper, o.job.name, o.err)
+			// A page the model will not write correctly says nothing
+			// about the fleet, so it neither counts towards the stop nor
+			// clears what has counted so far.
+			if !downed(o.err) {
+				continue
+			}
 			inARow++
 			if inARow >= giveUp {
 				fmt.Printf("%d files in a row could not be written, so the rest of the run is skipped\n", inARow)
@@ -364,9 +370,24 @@ func spread(ctx context.Context, lanes int, jobs []job, write func(job) (transla
 //
 // The count is here because the other thing that makes a file fail is the
 // fleet being down, and then every file fails, slowly, and a run left alone
-// overnight spends a subscription on nothing. Three in a row is a fleet and
-// not a page.
+// overnight spends a subscription on nothing.
+//
+// Three in a row was read as a fleet and not a page, and that was wrong. A
+// refused page is now left out of the count altogether, because five files
+// are asked for at once and the theory papers come in a run: the Vietnamese
+// pass over the corpus stopped after 86 of 862 files, having hit the
+// mathematics of Razborov, Goldwasser and Shamir three times in a row with
+// the fleet up the whole time. What is counted now is a file that failed
+// for any other reason, which is what a fleet that is down looks like from
+// here.
 const giveUp = 3
+
+// downed reports whether a file that failed is evidence about the fleet
+// rather than evidence about the page.
+func downed(err error) bool {
+	var refused *translate.Refusal
+	return !errors.As(err, &refused)
+}
 
 // A job is one English file to be written in one language.
 type job struct {
