@@ -241,6 +241,10 @@ func Titled(d *assemble.Document, title string) *Result {
 		cuts = cuts[1:]
 	}
 
+	// Read before the sections are cut, because a note is at the back of the
+	// paper and the marker that refers to it is anywhere at all.
+	marked := Markers(paragraphs)
+
 	front := len(cuts) == 0 || cuts[0].Index > 0
 	starts := make([]int, 0, len(cuts)+1)
 	if front {
@@ -263,6 +267,12 @@ func Titled(d *assemble.Document, title string) *Result {
 		}
 		s.Ordinal = ordinal
 		s.Body, s.First, s.Last = body(paragraphs, start, end, sub, bare)
+		if s.Title == "Notes" {
+			if b, n := Endnotes(s.Body, marked); n > 0 {
+				s.Body = b
+				r.Notes = append(r.Notes, fmt.Sprintf("the notes section prints %d numbered notes and the prose marks at least one of them, so they are written as footnote definitions", n))
+			}
+		}
 		r.Sections = append(r.Sections, s)
 	}
 	if len(r.Sections) == 1 {
