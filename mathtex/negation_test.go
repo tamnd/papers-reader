@@ -74,3 +74,16 @@ func TestNegationKeepsItsPlaceInASentenceThatIsNotASCII(t *testing.T) {
 		t.Errorf("Negation(%q) = %q, %d, want %q, 1", body, got, n, want)
 	}
 }
+
+// FP writes reduce as a solidus in front of the operation, so a solidus
+// after a relation sign is not always a stroke that fell off it.
+func TestNegationLeavesTheInsertFunctionalAlone(t *testing.T) {
+	for _, body := range []string{
+		`$\times^o[a_n, b_n] \equiv / \times \circ [s^n \circ 1, 1, 2]$`,
+		`$&\equiv /h \circ [i, g \circ j]$`,
+	} {
+		if got, n := Negation(body); got != body || n != 0 {
+			t.Errorf("Negation(%q) = %q, %d, want it untouched", body, got, n)
+		}
+	}
+}
