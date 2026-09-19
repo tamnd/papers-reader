@@ -456,10 +456,25 @@ const (
 )
 
 func ruleT08(in *Input) ([]Finding, error) {
+	terse := terseSets(in.Content)
 	return eachFile(in, "T08", func(f *File) string {
 		// The front file is a title, some authors and an abstract, and is
 		// short in every paper that has one. T06 is the rule that reads it.
 		if f.Ordinal == 0 {
+			return ""
+		}
+		// Thanks are short. Ten of the twenty four files this rule found
+		// over the English corpus were the acknowledgements of a paper,
+		// from Volcano's 107 characters to PBFT's 193, and every one of
+		// them was the whole of what the paper says there.
+		if thanks(f.Name) {
+			return ""
+		}
+		// So are the sections of a paper written in short sections. Karp's
+		// paper is a list of twenty one problems, each set out in two
+		// lines under a heading of its own, and thirteen of them come in
+		// under the bound. Nothing is wrong with any of them.
+		if terse[f.Paper+" "+string(f.Lang)] {
 			return ""
 		}
 		if n := len(strings.TrimSpace(f.Body)); n < minBody {
@@ -467,6 +482,49 @@ func ruleT08(in *Input) ([]Finding, error) {
 		}
 		return ""
 	})
+}
+
+// thanks reports whether a file name is the acknowledgements. The name and
+// not the section title, because the title is in the language of the file
+// and the name is the English one in every language the corpus holds.
+func thanks(name string) bool {
+	_, rest, ok := strings.Cut(name, "_")
+	return ok && strings.HasPrefix(rest, "acknowledg")
+}
+
+// terseSets is the papers whose sections are short because that is how the
+// paper is written. A short section is evidence of a bad split only when the
+// paper around it is set in long ones.
+//
+// More than half, because the corpus divides cleanly there. Karp's paper has
+// thirteen of its twenty three sections under the bound and every other
+// paper in the corpus has exactly one, which is a third of the sections of
+// the shortest paper and a tenth of the sections of the longest.
+func terseSets(files []*File) map[string]bool {
+	type count struct{ all, short int }
+	seen := make(map[string]*count)
+	for _, f := range files {
+		if f.Broken() || f.Ordinal == 0 {
+			continue
+		}
+		key := f.Paper + " " + string(f.Lang)
+		c := seen[key]
+		if c == nil {
+			c = &count{}
+			seen[key] = c
+		}
+		c.all++
+		if len(strings.TrimSpace(f.Body)) < minBody {
+			c.short++
+		}
+	}
+	out := make(map[string]bool)
+	for key, c := range seen {
+		if c.short*2 > c.all {
+			out[key] = true
+		}
+	}
+	return out
 }
 
 // ruleT14 is a section file with nothing in it, which T08 also reports and

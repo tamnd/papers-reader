@@ -325,11 +325,49 @@ func TestT08AndT09OnLength(t *testing.T) {
 			"manifests/sources.yaml":                          openSources,
 			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
 			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), tc.body),
+			// The rest of the paper, because T08 reads a short section
+			// against the sections around it.
+			"content/en/vaswani-2017-attention/02_section.md": file(section("section"), strings.Repeat("x", minBody+1)),
+			"content/en/vaswani-2017-attention/03_section.md": file(section("section"), strings.Repeat("x", minBody+1)),
 		}
 		res := result(t, Run(in(t, files), false), tc.rule)
 		if !res.Failed() {
 			t.Errorf("%s: %s accepted it", tc.name, tc.rule)
 		}
+	}
+}
+
+// Thanks are two sentences in most papers and the whole of what the paper
+// says there. Ten of the twenty four files this rule reported over the
+// English corpus were the acknowledgements of a paper.
+func TestT08LeavesTheAcknowledgementsAlone(t *testing.T) {
+	for _, name := range []string{"02_acknowledgments.md", "02_acknowledgements.md"} {
+		files := map[string]string{
+			"manifests/sources.yaml":                          openSources,
+			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), strings.Repeat("x", minBody+1)),
+			"content/en/vaswani-2017-attention/" + name:       file(section("section"), "The authors thank the reviewers.\n"),
+		}
+		if res := result(t, Run(in(t, files), false), "T08"); res.Failed() {
+			t.Errorf("T08 reported %s: %v", name, res.Findings)
+		}
+	}
+}
+
+// A paper written in short sections is not a paper that was split badly.
+// Karp's is a list of twenty one problems set out in two lines each, and
+// thirteen of its twenty three sections come in under the bound.
+func TestT08LeavesAPaperOfShortSectionsAlone(t *testing.T) {
+	files := map[string]string{
+		"manifests/sources.yaml":                        openSources,
+		"content/en/vaswani-2017-attention/00_front.md": file(section("front"), abstract),
+	}
+	for _, name := range []string{"01_section.md", "02_section.md", "03_section.md"} {
+		files["content/en/vaswani-2017-attention/"+name] = file(section("section"), "A problem, and what it takes as input.\n")
+	}
+	files["content/en/vaswani-2017-attention/04_section.md"] = file(section("section"), strings.Repeat("x", minBody+1))
+	if res := result(t, Run(in(t, files), false), "T08"); res.Failed() {
+		t.Errorf("T08 reported the sections of a paper written in short ones: %v", res.Findings)
 	}
 }
 
