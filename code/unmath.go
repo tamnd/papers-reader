@@ -94,6 +94,18 @@ var sigilLang = map[string]bool{
 // position rather than the longest, so `\leftarrow` has to come before `\le`
 // or the arrow comes out as `≤ftarrow`.
 var texSymbol = strings.NewReplacer(
+	// The operators TeX sets in roman because they are words on the page.
+	// A listing prints the word, so spelling `\min` as min is not a
+	// translation of anything: it is what Knuth's Algol has in it, and the
+	// precomputation for Boyer-Moore came back with four of its nine lines
+	// in dollars for no other reason. This is the one part of the table
+	// that is a command rather than a character, and it is safe for the
+	// same reason the rest is: `\sum` is not here and never will be,
+	// because a page that prints Σ does not print the word sum.
+	`\min`, "min", `\max`, "max", `\mod`, "mod", `\bmod`, "mod",
+	`\gcd`, "gcd", `\log`, "log", `\ln`, "ln", `\exp`, "exp",
+	`\lim`, "lim", `\det`, "det", `\deg`, "deg", `\dim`, "dim",
+	`\sin`, "sin", `\cos`, "cos", `\tan`, "tan", `\arg`, "arg",
 	`\leftarrow`, "←", `\rightarrow`, "→", `\Rightarrow`, "⇒", `\gets`, "←",
 	`\leq`, "≤", `\geq`, "≥", `\neq`, "≠", `\le`, "≤", `\ge`, "≥", `\ne`, "≠",
 	`\times`, "×", `\div`, "÷", `\pm`, "±",
@@ -101,8 +113,13 @@ var texSymbol = strings.NewReplacer(
 	`\in`, "∈", `\subset`, "⊂", `\supset`, "⊃",
 	`\cup`, "∪", `\cap`, "∩", `\emptyset`, "∅",
 	`\cdots`, "...", `\ldots`, "...", `\cdot`, "·",
+	`\langle`, "⟨", `\rangle`, "⟩",
 	`\alpha`, "α", `\beta`, "β", `\sigma`, "σ", `\lambda`, "λ",
+	`\gamma`, "γ", `\delta`, "δ", `\epsilon`, "ε", `\theta`, "θ",
+	`\mu`, "μ", `\pi`, "π", `\rho`, "ρ", `\tau`, "τ",
+	`\phi`, "φ", `\varphi`, "φ", `\omega`, "ω",
 	`\Gamma`, "Γ", `\Sigma`, "Σ", `\Delta`, "Δ", `\Lambda`, "Λ",
+	`\Theta`, "Θ", `\Pi`, "Π", `\Phi`, "Φ", `\Omega`, "Ω",
 )
 
 // texBrace is the escaped braces, which stand for the braces the page
@@ -184,11 +201,18 @@ func outside(s string) string {
 // snake case identifier in the corpus.
 var looseScript = regexp.MustCompile(`\b([A-Za-z])([_^])([0-9A-Za-z])\b`)
 
-// script is a subscript or a superscript of one character, which is how a
-// paper prints an indexed name in a listing that has no way of typing one.
+// script is a subscript or a superscript in a listing, which is how a paper
+// prints an indexed name in a listing that has no way of typing one.
 // Tarjan's stack holds the edge `(u_1, u_2)` and Floyd's convergence test is
 // over a subinterval of length `(b-a)/2^n`.
-var script = regexp.MustCompile(`([_^])([0-9A-Za-z+=()-])`)
+//
+// The braced form is here because a script of more than one character is
+// just as printable and just as common: the zero knowledge paper's
+// experiment is ten lines of pseudocode about `w_{i+1}` and `u_{i+1}`, and
+// every line of it kept its dollars and was published with them showing.
+// Either form is spelled only if every character of it can be, so nothing
+// half spelled gets out.
+var script = regexp.MustCompile(`([_^])(\{[0-9A-Za-z+=()*-]+\}|[0-9A-Za-z+=()*-])`)
 
 // subscript and superscript are the Unicode characters that set a script
 // without mathematics. They are gappy, and deliberately not filled in with
@@ -224,15 +248,27 @@ var (
 // keep its dollars.
 func unscript(s string) string {
 	return script.ReplaceAllStringFunc(s, func(m string) string {
-		r := m[1:]
+		r := strings.Trim(m[1:], "{}")
 		set := subscript
 		if m[0] == '^' {
 			set = superscript
 		}
-		if spelled := set.Replace(r); spelled != r {
-			return spelled
+		spelled := set.Replace(r)
+		// Every character or none. A Replacer leaves what it has no entry
+		// for exactly as it came, and everything the two tables write is
+		// outside ASCII, so one ASCII character left in the answer is one
+		// character of the script that has no spelling.
+		//
+		// The star is the exception, and only raised. Unicode has no
+		// superscript asterisk, but a star is already written raised
+		// everywhere it is written at all, so `Zₓ*` for the multiplicative
+		// group is what the page prints and not a guess about it. That is
+		// not true sunk: `x*` for `x_*` would read as a dereference.
+		star := m[0] == '^'
+		if strings.IndexFunc(spelled, func(r rune) bool { return r < 128 && !(star && r == '*') }) >= 0 {
+			return m
 		}
-		return m
+		return spelled
 	})
 }
 

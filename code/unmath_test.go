@@ -173,6 +173,55 @@ func TestUnmathSpellsABraceThePagePrinted(t *testing.T) {
 	}
 }
 
+// The Boyer-Moore precomputation is the case. Four of the nine lines of it
+// came back in dollars for no reason other than the word min, which the page
+// prints as a word and the reader wrote as a command.
+func TestUnmathSpellsTheOperatorAPageSetsInRoman(t *testing.T) {
+	in := "```text\n$dd[t] := \\min (dd[t], m - j)$;\nif $j \\bmod 2 = 0$ then\n```"
+	want := "```text\ndd[t] := min (dd[t], m - j);\nif j mod 2 = 0 then\n```"
+	if got := Unmath(in); got != want {
+		t.Errorf("Unmath() = %q, want %q", got, want)
+	}
+}
+
+// A sum is not on the table and never will be. The page prints Σ and the word
+// sum would be a lie about it, so the span keeps its dollars and M13 goes on
+// reporting it.
+func TestUnmathLeavesTheOperatorsThatAreNotWords(t *testing.T) {
+	in := "```text\ntotal := $\\sum_{i} w_i$;\n```"
+	if got := Unmath(in); got != in {
+		t.Errorf("Unmath(%q) = %q, want it left alone", in, got)
+	}
+}
+
+func TestUnmathSpellsABracedScript(t *testing.T) {
+	in := "```text\n$w_{i+1} := u_{i+1}$;\nsend $u_{i+1}, bit_{i+1}$ to B;\n```"
+	want := "```text\nwᵢ₊₁ := uᵢ₊₁;\nsend uᵢ₊₁, bitᵢ₊₁ to B;\n```"
+	if got := Unmath(in); got != want {
+		t.Errorf("Unmath() = %q, want %q", got, want)
+	}
+}
+
+// Every character of the script or none of it. Unicode has no subscript b, so
+// `b+1` would come out `b₊₁` with the letter still in roman and the rest sunk,
+// which is worse than leaving the span as it came.
+func TestUnmathLeavesABracedScriptItCannotSpellInFull(t *testing.T) {
+	in := "```text\n$v_{b+1} := 0$;\n```"
+	if got := Unmath(in); got != in {
+		t.Errorf("Unmath(%q) = %q, want it left alone", in, got)
+	}
+}
+
+// A star is written raised wherever it is written at all, so it spells
+// itself. A sunk one does not: `x*` for `x_*` would read as a dereference.
+func TestUnmathSpellsARaisedStarAndNotASunkOne(t *testing.T) {
+	in := "```text\nw := a random member of $Z_x^*$;\ni := $p_*$;\n```"
+	want := "```text\nw := a random member of Zₓ*;\ni := $p_*$;\n```"
+	if got := Unmath(in); got != want {
+		t.Errorf("Unmath() = %q, want %q", got, want)
+	}
+}
+
 func TestUnmathLeavesASpanThatGroupsWithBraces(t *testing.T) {
 	body := "```text\nthe bound is $O(n^{1+\\epsilon})$ here\n```"
 	if got := Unmath(body); !strings.Contains(got, "$O(n^{1+\\epsilon})$") {
