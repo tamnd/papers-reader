@@ -283,8 +283,7 @@ func (p *Page) holdCites(s string) string {
 	if len(p.Book.Bibliography) == 0 {
 		return s
 	}
-	return markdown.NumCite.ReplaceAllStringFunc(s, func(m string) string {
-		inner := m[1 : len(m)-1]
+	return markdown.ReplaceCites(s, func(inner string) string {
 		var b strings.Builder
 		b.WriteString("[")
 		at := 0
