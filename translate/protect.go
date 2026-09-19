@@ -240,10 +240,10 @@ func (d Difference) String() string {
 
 // Compare says how the protected spans of an answer differ from the source's.
 //
-// Paragraph by paragraph, and inside a paragraph as a bag rather than as a
+// Paragraph by paragraph, and inside a paragraph as a set rather than as a
 // list. A paragraph of the answer has to hold the same spans as the same
-// paragraph of the source, each one the same number of times, and it may
-// hold them in any order.
+// paragraph of the source, and it may hold them in any order and any number
+// of times.
 //
 // The order used to matter and it cost the corpus its first Chinese and its
 // first Japanese. Both runs stopped dead on their third attempt at the third
@@ -256,13 +256,25 @@ func (d Difference) String() string {
 // not swap them would be the broken one. A rule that refuses correct work
 // three times and then gives up is not a strict rule, it is a wrong one.
 //
+// The count used to matter too, and it held back Karp. "Theorem 3. Either
+// all complete languages are in $P$, or none of them are." came back as
+// "Định lý 3. Hoặc tất cả các ngôn ngữ đầy đủ đều thuộc $P$, hoặc không có
+// ngôn ngữ nào trong số chúng thuộc $P$." Vietnamese has no way of leaving
+// the predicate out of the second clause, so the answer carries $P$ twice
+// where the English carries it once, and counting made that an added
+// formula. It is not one, and the section was refused on every attempt of
+// the run until the count went. The same thing happens the other way round
+// in Chinese and Japanese, which drop a repetition English writes out.
+//
 // What is left is still the check worth having. A dropped formula, an added
 // one, a renamed variable, a renumbered citation and a footnote marker that
 // moved to another paragraph are all still caught, and those are what a
 // model that has misread a passage actually does. What is no longer caught
 // is two spans of one paragraph swapped with each other, and there is no way
 // to catch that and keep Chinese: a citation moves with the clause it is
-// attached to exactly as a formula does.
+// attached to exactly as a formula does. Nor is a span the paragraph already
+// has somewhere else written one more time or one fewer, which is the price
+// of the grammar above.
 //
 // Nothing comes back for an answer that is right, and one difference is
 // enough to throw the answer away: the caller asks again rather than trying
@@ -320,6 +332,10 @@ func compare(want, got []Span, base int) []Difference {
 			extra = append(extra, j)
 		}
 	}
+	// A leftover that the other side of the comparison has somewhere is a
+	// repetition and not a change, so only the ones that are nowhere in it
+	// at all are reported. See the note on Compare about Karp.
+	missing, extra = elsewhere(missing, want, got), elsewhere(extra, got, want)
 
 	var out []Difference
 	// A span that went missing and one that turned up in its place are one
@@ -344,6 +360,29 @@ func compare(want, got []Span, base int) []Difference {
 				got[j].Kind, short(got[j].Text))})
 	}
 	return out
+}
+
+// elsewhere is the leftovers of one side that the other side does not have
+// anywhere in the paragraph. left indexes into from, and other is the whole
+// of the other side including the spans that were already matched.
+func elsewhere(left []int, from, other []Span) []int {
+	var out []int
+	for _, i := range left {
+		if !holds(other, from[i]) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// holds says whether a paragraph has this span in it.
+func holds(spans []Span, s Span) bool {
+	for _, o := range spans {
+		if o.Kind == s.Kind && same(s, o) {
+			return true
+		}
+	}
+	return false
 }
 
 // same compares two spans of the same kind.

@@ -76,7 +76,7 @@ func TestAnAnswerThatDroppedAFormulaIsRefused(t *testing.T) {
 	const source = "The generator is $G$ and the discriminator is $D$."
 	tr, _ := answering(t, func(_ string, attempt int) string {
 		if attempt == 1 {
-			return "Bộ sinh là $G$ và bộ phân biệt là D."
+			return "Bộ sinh là $G$ và bộ phân biệt là thành phần còn lại."
 		}
 		return "Bộ sinh là $G$ và bộ phân biệt là $D$."
 	})

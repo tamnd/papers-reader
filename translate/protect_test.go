@@ -375,13 +375,52 @@ func TestARewrittenFenceIsRefused(t *testing.T) {
 	}
 }
 
-func TestAPositionIsReportedSoTheSameFormulaTwiceCanBeToldApart(t *testing.T) {
+// One of two copies of the same formula renamed. The rename is caught as an
+// addition rather than as a rename, because the answer still has $n$ in the
+// paragraph and so nothing went missing from it. What is left over is an $m$
+// the source never wrote, and that is enough to throw the answer away.
+func TestOneOfTwoCopiesOfAFormulaRenamedIsStillCaught(t *testing.T) {
 	source := "We use $n$ layers and then $n$ heads.\n"
 	answer := "Chúng tôi dùng $n$ lớp rồi $m$ đầu.\n"
 
 	d := Compare(source, answer)
+	if len(d) != 1 || !strings.Contains(d[0].String(), "$m$") {
+		t.Fatalf("Compare found %v and the second $n$ came back as an $m$", d)
+	}
+}
+
+// The position is what tells two changes in one passage apart, so it counts
+// through the whole of it and not from the top of the paragraph.
+func TestAPositionIsReportedSoTwoParagraphsCanBeToldApart(t *testing.T) {
+	source := "We use $n$ layers.\n\nEach one has $h$ heads.\n"
+	answer := "Chúng tôi dùng $n$ lớp.\n\nMỗi lớp có $k$ đầu.\n"
+
+	d := Compare(source, answer)
 	if len(d) != 1 || d[0].At != 2 {
-		t.Fatalf("Compare found %v and it is the second $n$ that changed", d)
+		t.Fatalf("Compare found %v and it is the second paragraph's formula that changed", d)
+	}
+}
+
+// Vietnamese has no way of leaving the predicate out of the second clause of
+// Karp's theorem 3, so the answer writes $P$ twice where the English writes
+// it once. The corpus went without that section until the count went.
+func TestAFormulaTheAnswerRepeatsIsNotAnAddition(t *testing.T) {
+	source := "Theorem 3. Either all complete languages are in $P$, or none of them are.\n"
+	answer := "Định lý 3. Hoặc tất cả các ngôn ngữ đầy đủ đều thuộc $P$, hoặc không có ngôn ngữ nào trong số chúng thuộc $P$.\n"
+
+	if d := Compare(source, answer); len(d) != 0 {
+		t.Fatalf("Compare found %v and the answer only says $P$ again", d)
+	}
+}
+
+// The other way round, which is what Chinese and Japanese do to a repetition
+// English writes out.
+func TestAFormulaTheAnswerSaysOnceInsteadOfTwiceIsNotALoss(t *testing.T) {
+	source := "The loss is $L$ for the first and $L$ for the second.\n"
+	answer := "两者的损失都是 $L$。\n"
+
+	if d := Compare(source, answer); len(d) != 0 {
+		t.Fatalf("Compare found %v and the answer still has $L$", d)
 	}
 }
 

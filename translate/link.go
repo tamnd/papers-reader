@@ -263,13 +263,129 @@ func unescaped(whole string) []string {
 	return out
 }
 
+// letterMath is an inline formula that is one letter and nothing else.
+// Those are the ones a translator drops the dollars from, because a single
+// letter in the middle of a sentence reads as a word and not as mathematics.
+// Anything longer comes back with its dollars on.
+var letterMath = regexp.MustCompile(`^\$([A-Za-z])\$$`)
+
+// Redollar puts the dollar signs back around a one letter formula the answer
+// wrote bare.
+//
+// Shannon's appendix 6 has "and similarly when $q$ is varied. Hence the
+// conditions for a minimum are" and the Vietnamese came back as "và tương tự
+// khi q được biến thiên. Do đó, các điều kiện cho một cực tiểu là". The
+// sentence is right and the letter is the letter the paper printed. What is
+// missing is the two characters around it. Asking again does not cure it:
+// the section came back the same way on every try of the run, and the paper
+// is held back whole over them.
+//
+// The arithmetic has to come out exactly. A letter is only wrapped when the
+// answer is short of that formula by the same number of bare copies of the
+// letter as it has standing on their own outside every protected span. So a
+// paragraph whose prose really does use the letter as a word is left alone,
+// because then there is one copy too many and nothing fires, and a paragraph
+// that dropped the formula altogether is still refused.
+//
+// Standing on its own means with no letter, digit, dash, backslash, brace,
+// underscore, caret, backtick, apostrophe or dollar sign either side of it.
+// The dash is in that list for "$q$-ary", which is a compound word: wrapping
+// its letter would be right and the guard is cheaper than being sure.
+func Redollar(source, answer string) string {
+	if !strings.Contains(source, "$") {
+		return answer
+	}
+	letters, want := singles(Protect(source))
+	if len(letters) == 0 {
+		return answer
+	}
+	_, have := singles(Protect(answer))
+	for _, l := range letters {
+		if n := want[l] - have[l]; n > 0 {
+			answer = redollar(answer, l, n)
+		}
+	}
+	return answer
+}
+
+// singles counts the one letter formulas of a body by their letter, and
+// lists the letters in the order the body first writes them so that the
+// repair does not depend on the order a map is walked in.
+func singles(spans []Span) ([]rune, map[rune]int) {
+	var letters []rune
+	count := map[rune]int{}
+	for _, s := range spans {
+		if s.Kind != Math {
+			continue
+		}
+		m := letterMath.FindStringSubmatch(s.Text)
+		if m == nil {
+			continue
+		}
+		l := rune(m[1][0])
+		if count[l] == 0 {
+			letters = append(letters, l)
+		}
+		count[l]++
+	}
+	return letters, count
+}
+
+// redollar wraps the bare copies of one letter, if there are exactly as many
+// of them as the answer is short of.
+func redollar(answer string, l rune, short int) string {
+	at := loose(answer, l)
+	if len(at) != short {
+		return answer
+	}
+	rs := []rune(answer)
+	var b strings.Builder
+	last := 0
+	for _, i := range at {
+		b.WriteString(string(rs[last:i]))
+		b.WriteString("$" + string(l) + "$")
+		last = i + 1
+	}
+	b.WriteString(string(rs[last:]))
+	return b.String()
+}
+
+// loose lists where a body has the letter standing on its own, outside every
+// protected span.
+func loose(body string, l rune) []int {
+	spans := Protect(body)
+	rs := []rune(body)
+	var out []int
+	for i, r := range rs {
+		if r != l {
+			continue
+		}
+		if i > 0 && joined(rs[i-1]) || i+1 < len(rs) && joined(rs[i+1]) {
+			continue
+		}
+		if inside(spans, i) {
+			continue
+		}
+		out = append(out, i)
+	}
+	return out
+}
+
+// joined is a character that makes the letter next to it part of something
+// larger: a word, a number, a formula, a listing, a TeX command, a subscript
+// or a compound.
+func joined(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("$`\\_^{}-'", r)
+}
+
 // Repair is the answer with the tics taken out of it that asking again does
 // not cure: a web address turned into a link to itself, an address written
-// back with Markdown escapes in it, and a formula written back the same
-// way. Every one of them leaves the reader the text the paper printed,
-// which is why each is a repair and not a relaxation of the check.
+// back with Markdown escapes in it, a formula written back the same way, and
+// a one letter formula written back without its dollar signs. Every one of
+// them leaves the reader the text the paper printed, which is why each is a
+// repair and not a relaxation of the check.
 func Repair(source, answer string) string {
-	return UnescapeMath(source, Unescape(source, Unlink(source, answer)))
+	return Redollar(source, UnescapeMath(source, Unescape(source, Unlink(source, answer))))
 }
 
 // escape is a backslash in front of a piece of ASCII punctuation, which is

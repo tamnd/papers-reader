@@ -232,7 +232,62 @@ func TestAnInventedFormulaIsNotRepairedIntoAGoodOne(t *testing.T) {
 	}
 }
 
-// Repair is the three of them in one call, which is what the run makes.
+// The tic that held Shannon's appendix 6 back: a single letter formula
+// reads as a word, so the answer gives the letter and drops the dollars.
+func TestAOneLetterFormulaWrittenBareIsPutBack(t *testing.T) {
+	source := "and similarly when $q$ is varied. Hence the conditions for a minimum are\n"
+	answer := "và tương tự khi q được biến thiên. Do đó, các điều kiện cho một cực tiểu là\n"
+	want := "và tương tự khi $q$ được biến thiên. Do đó, các điều kiện cho một cực tiểu là\n"
+	if got := Redollar(source, answer); got != want {
+		t.Errorf("Redollar gave %q\nand the formula is written %q", got, want)
+	}
+	if bad := Verify(source, Redollar(source, answer), corpus.VI); bad != nil {
+		t.Errorf("a repaired answer was still refused: %s", bad[0])
+	}
+}
+
+// The arithmetic has to come out exactly. Two bare copies and only one
+// formula short means one of the two is a word, and there is no telling
+// which, so neither is touched.
+func TestALetterTheAnswerAlsoUsesAsAWordIsLeftAlone(t *testing.T) {
+	source := "The value $a$ is fixed.\n"
+	answer := "Gia tri a la co dinh, a la mot chu.\n"
+	if got := Redollar(source, answer); got != answer {
+		t.Errorf("Redollar gave %q and there is no telling which a is the formula", got)
+	}
+}
+
+func TestALetterInsideAWordIsNotWrapped(t *testing.T) {
+	source := "The rate $q$ is fixed.\n"
+	answer := "Tốc độ quy định là cố định.\n"
+	if got := Redollar(source, answer); got != answer {
+		t.Errorf("Redollar gave %q and the q is part of a word", got)
+	}
+}
+
+func TestALetterInsideAListingIsNotWrapped(t *testing.T) {
+	source := "The rate $q$ is fixed.\n\n```c\nint q;\n```\n"
+	answer := "Tốc độ q là cố định.\n\n```c\nint q;\n```\n"
+	want := "Tốc độ $q$ là cố định.\n\n```c\nint q;\n```\n"
+	if got := Redollar(source, answer); got != want {
+		t.Errorf("Redollar gave %q\nand the listing's q is not a formula", got)
+	}
+}
+
+// A formula the answer dropped altogether is still refused. There is
+// nothing to put the dollars around.
+func TestAFormulaTheAnswerDroppedIsNotInvented(t *testing.T) {
+	source := "The value $a$ is fixed.\n"
+	answer := "Giá trị đó là cố định.\n"
+	if got := Redollar(source, answer); got != answer {
+		t.Errorf("Redollar gave %q and invented the formula", got)
+	}
+	if Verify(source, answer, corpus.VI) == nil {
+		t.Error("Verify accepted an answer that dropped a formula")
+	}
+}
+
+// Repair is all four of them in one call, which is what the run makes.
 func TestRepairPutsBackAnAddressAndAFormulaAtOnce(t *testing.T) {
 	source := "See http://x.test/~a for $x_1$ and the rest.\n"
 	answer := "Xem http://x.test/\\~a để biết $x\\_1$ và phần còn lại.\n"
