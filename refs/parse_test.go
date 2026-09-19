@@ -335,3 +335,43 @@ func TestALabelSurvivesARejectedOneInFrontOfIt(t *testing.T) {
 		}
 	}
 }
+
+// The page sets some of its labels tight against the entry and the reader
+// transcribes what it sees, so an entry can begin "[7]J. Martin" with no
+// space in it. Losing one of those costs the entry after it as well, since
+// that one then fails the test that a label carries on the count.
+func TestALabelWithNoSpaceAfterItIsStillALabel(t *testing.T) {
+	r := parse(
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970), 1-10.",
+		"[2]Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971), 11-20.",
+		"[3] Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972), 21-30.",
+		"[4]\"On the fourth of the invented papers\", by S. Danforth. Journal of Nothing 2, 2 (1973), 31-40.",
+	)
+	if len(r.Entries) != 4 {
+		t.Fatalf("the parse found %d entries, want 4: %v", len(r.Entries), keys(r))
+	}
+	for i, want := range []string{"1", "2", "3", "4"} {
+		if r.Entries[i].Key != want {
+			t.Errorf("entry %d is keyed %q, want %q", i, r.Entries[i].Key, want)
+		}
+	}
+	if got := r.Entries[1].Raw; !strings.HasPrefix(got, "Beacham") {
+		t.Errorf("entry 2 reads %q, want it to start at the author", got)
+	}
+}
+
+// Without the separator there has to be something else saying the label is
+// one, and that is the author after it. A number in brackets with a digit
+// or a piece of punctuation against it is part of what it is written in.
+func TestABracketRunningIntoSomethingElseIsNotALabel(t *testing.T) {
+	r := parse(
+		"[1] Aarons, P. On the first of the invented papers. Distributed over [2]-[3] of the series.",
+		"[2] Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971), 11-20.",
+	)
+	if len(r.Entries) != 2 {
+		t.Fatalf("the parse found %d entries, want 2: %v", len(r.Entries), keys(r))
+	}
+	if got := r.Entries[0].Raw; !strings.HasSuffix(got, "of the series.") {
+		t.Errorf("entry 1 reads %q, want the whole of it", got)
+	}
+}
