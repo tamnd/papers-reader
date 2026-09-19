@@ -843,6 +843,7 @@ func TestT13FindsAWordSplitAtALineBreakHyphen(t *testing.T) {
 		{"a word the page broke", long + "\n\nthe round-trip time was under a mil- lisecond.\n", true},
 		{"a word with its own hyphen", long + "\n\nthe round-trip time was short.\n", false},
 		{"a hanging hyphen", long + "\n\nthe map- and reduce-side costs are equal.\n", false},
+		{"a hanging hyphen in a German title", long + "\n\nthe title is Forschungs- und Entwicklungsberichte.\n", false},
 		{"a dash between two clauses", long + "\n\nthe cost is small - the gain is not.\n", false},
 		{"a new sentence after a dash", long + "\n\nthe cost is small- The gain is not.\n", false},
 		{"a single letter either side", long + "\n\nsend it by e- mail.\n", false},

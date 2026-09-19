@@ -964,7 +964,15 @@ var splitWord = regexp.MustCompile(`(\p{Ll}{2,})[-\x{2010}\x{2011}] (\p{Ll}{2,})
 // suspended is the word that follows a hyphen the writer left hanging on
 // purpose: "map- and reduce-style", "input- or output-bound". The hyphen is
 // real, the space is real, and there is nothing to report.
+//
+// German is on the list because a bibliography prints the titles it cites in
+// the language they were published in. Dennard cites Siemens Forschungs- und
+// Entwicklungsberichte twice, and those were the only two findings T13 had
+// left in the English corpus. German compounds this way far more readily
+// than English does, so the two conjunctions that carry it are here rather
+// than the two lines of the one paper.
 var suspended = map[string]bool{
 	"and": true, "or": true, "nor": true, "to": true, "but": true,
+	"und": true, "oder": true,
 	"và": true, "hoặc": true,
 }

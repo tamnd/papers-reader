@@ -102,6 +102,16 @@ func mathematicsRules() []Rule {
 // eachSpan runs a check over every math span of every file that parsed. The
 // group stands down on a corpus with no mathematics in it at all, which is
 // the state of a corpus before extraction has run and not a pass.
+//
+// A span that mathtex found inside a fence is not mathematics and is not
+// asked about here. M13 owns that case and says what it decided about it.
+// McCabe's FORTRAN is the measurement: `CALL READB(ICHAN,MEMORY,LTOT,NREAD,
+// $990,$990)` is a pair of alternate return labels, the listing is fenced,
+// and M12 was reading the text between the two dollars as a formula that
+// closes with a space. Every finding this drops is of that shape, because
+// nothing in a listing is written to the rules about how prose sets a
+// formula. An ALGOL comment clause is the exception commentClause exists
+// for, and it stays in, because the page really did print a formula there.
 func eachSpan(in *Input, rule string, check func(mathtex.Span) string) ([]Finding, error) {
 	if !anyMath(in) {
 		return nil, ErrNotRun
@@ -111,8 +121,12 @@ func eachSpan(in *Input, rule string, check func(mathtex.Span) string) ([]Findin
 		if f.Broken() {
 			continue
 		}
+		fenced, prose := code.Inside(f.Body), commentClause(f.Body)
 		spans, _ := mathtex.Split(f.Body)
 		for _, s := range spans {
+			if s.Line < len(fenced) && fenced[s.Line] && !prose[s.Line] {
+				continue
+			}
 			if msg := check(s); msg != "" {
 				out = append(out, Finding{Rule: rule, File: f.Path, Line: s.Line, Message: msg})
 			}

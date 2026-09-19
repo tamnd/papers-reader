@@ -309,6 +309,26 @@ func TestM12WantsTheFormulaTightAgainstItsDollars(t *testing.T) {
 	}
 }
 
+// A listing is not prose and the rules about how prose sets a formula do
+// not apply to it. McCabe's FORTRAN writes a dollar in a format descriptor
+// and another pair as alternate return labels, and M12 was reading the
+// program text between two of them as a formula set loosely.
+func TestTheSpanRulesLookAwayFromAFencedListing(t *testing.T) {
+	body := "the driver reads\n\n```text\nCALL FETCH(IUNIT,IBUF,NWORD,$820,$820)\nWRITE(6,10)\nFORMAT(' NAME? $',A4,' $')\n```\n\nand the bound $n$ is fixed." + pad
+	if res := result(t, onePaper(t, body), "M12"); res.Failed() {
+		t.Errorf("M12 read a fenced listing as mathematics: %v", res.Findings)
+	}
+}
+
+// The comment clause keeps its exception. The page really did print a
+// formula there, so it is prose inside the fence and the span rules read it.
+func TestTheSpanRulesStillReadAnAlgolCommentClause(t *testing.T) {
+	body := "the procedure reads\n\n```text\nprocedure SUMUP(A, N);\ncomment SUMUP forms the partial sum $ \\sum_{i=1}^{n} a_i$ over the array;\nbegin\n    total := 0\nend\n```\n\nand then stops." + pad
+	if res := result(t, onePaper(t, body), "M12"); !res.Failed() {
+		t.Error("M12 looked away from a formula in a comment clause")
+	}
+}
+
 // A shell listing full of $PATH and $HOME opens a math span on every other
 // line, and by the end of the file every rule in this group is reading a
 // listing as mathematics.
