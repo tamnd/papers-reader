@@ -10,7 +10,12 @@ import (
 // span like [4-7]. Only numbers, because a bracket holding anything else is
 // as likely to be a footnote marker, an editorial insertion or a piece of
 // notation, and rewriting one of those would corrupt the sentence.
-var citation = regexp.MustCompile(`\[(\d{1,3}(?:\s*[-–,]\s*\d{1,3})*)\]`)
+//
+// The character in front of the bracket is part of the match and is put
+// back untouched. A bracket with a name against it is an array index and
+// not a reference, and the X100 paper has a page of them: F(A[0]),G(A[0]),
+// F(A[1]),G(A[1]) is a loop body. Go has no lookbehind, hence the capture.
+var citation = regexp.MustCompile(`(^|[^\pL\pN\]\)])\[(\d{1,3}(?:\s*[-–,]\s*\d{1,3})*)\]`)
 
 // Rewrite turns the in-text citations of a body into links to the corpus.
 //
@@ -31,7 +36,8 @@ func Rewrite(body string, links map[string]string) string {
 	}
 	return outsideCode(body, func(prose string) string {
 		return citation.ReplaceAllStringFunc(prose, func(m string) string {
-			return rewriteGroup(m, links)
+			i := strings.Index(m, "[")
+			return m[:i] + rewriteGroup(m[i:], links)
 		})
 	})
 }
@@ -48,7 +54,7 @@ func Citations(body string) []string {
 	var out []string
 	outsideCode(body, func(prose string) string {
 		for _, m := range citation.FindAllStringSubmatch(prose, -1) {
-			out = append(out, expand(m[1])...)
+			out = append(out, expand(m[2])...)
 		}
 		return prose
 	})
@@ -92,17 +98,28 @@ func rewriteGroup(match string, links map[string]string) string {
 // expand reads the numbers out of a citation group, opening a span like 4-7
 // into the entries it stands for. A span running the wrong way or longer
 // than the bibliography plausibly is, is not a span.
+//
+// A group with a zero at the head of it is not a citation at all. No
+// bibliography numbers an entry zero, and what is written that way instead
+// is the unit interval: LSTM draws its inputs from "the interval [0, 1]" in
+// the prose of two of its sections rather than inside a math span, and
+// reading that as references 0 and 1 is how R02 came to report an entry no
+// paper has. The whole group goes and not just the zero, because the other
+// half of [0, 1] is the other end of the interval.
 func expand(s string) []string {
 	var out []string
 	for _, part := range strings.Split(s, ",") {
 		part = strings.TrimSpace(part)
 		lo, hi, span := cutSpan(part)
 		if !span {
-			if part == "" {
+			if part == "" || zero(part) {
 				return nil
 			}
 			out = append(out, part)
 			continue
+		}
+		if lo == 0 {
+			return nil
 		}
 		if hi <= lo || hi-lo > 40 {
 			return nil
@@ -112,6 +129,12 @@ func expand(s string) []string {
 		}
 	}
 	return out
+}
+
+// zero says whether a label is the number zero, however it is written.
+func zero(part string) bool {
+	n, err := strconv.Atoi(part)
+	return err == nil && n == 0
 }
 
 func cutSpan(part string) (lo, hi int, ok bool) {

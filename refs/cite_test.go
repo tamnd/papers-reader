@@ -105,3 +105,46 @@ func TestAManifestRewritesFromItsOwnEntries(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// An array index is written the way a citation is, and a page of unfenced
+// listing text is full of them. What tells them apart is the name against
+// the bracket, so a bracket with one is left where it is.
+func TestAnArrayIndexIsNotACitation(t *testing.T) {
+	for _, body := range []string{
+		"The loop body is F(A[2]),G(A[2]) for each row.",
+		"It reads v[3] and writes w[5] on every pass.",
+		"The second element is x)[2] after the call.",
+	} {
+		if got := Rewrite(body, links()); got != body {
+			t.Errorf("Rewrite(%q) = %q, want it left alone", body, got)
+		}
+		if got := Citations(body); len(got) != 0 {
+			t.Errorf("Citations(%q) = %v, want none", body, got)
+		}
+	}
+}
+
+// The character in front of a citation is part of the match and has to come
+// back out of the rewrite unharmed, whatever it is.
+func TestTheCharacterInFrontOfACitationIsKept(t *testing.T) {
+	got := Rewrite("Two of them, [2] and [3], say so. (See [5].)", links())
+	want := "Two of them, [[nkemelu-1991-slowindexes]] and [[ravensworth-1996-lastword]], say so. (See [[sandoval-1999-reconsidered]].)"
+	if got != want {
+		t.Errorf("got %q", got)
+	}
+}
+
+// No bibliography numbers an entry zero. What is written that way is the
+// unit interval, and both ends of it go, because 1 on its own is the other
+// end of an interval and not a reference either.
+func TestAGroupWithAZeroInItIsNotACitation(t *testing.T) {
+	for _, body := range []string{
+		"a value chosen from the interval [0, 1] at random",
+		"the range [0-9] of the digits",
+		"the empty index [0]",
+	} {
+		if got := Citations(body); len(got) != 0 {
+			t.Errorf("Citations(%q) = %v, want none", body, got)
+		}
+	}
+}
