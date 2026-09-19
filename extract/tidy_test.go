@@ -263,3 +263,26 @@ func TestALineThatIsOnlyPartlyChromeStays(t *testing.T) {
 		t.Errorf("a sentence of the paper came off:\n%s", got)
 	}
 }
+
+// The repair existed and nothing in the pipeline called it, so a glyph the
+// text layer handed over as a letter went into the corpus as one. It has to
+// run after Untable, because a table cell is not a math span until Untable
+// has made one of it.
+func TestTidyWritesAStrandedGlyphAsItsTeX(t *testing.T) {
+	got := Tidy("the rate $α$ is chosen so that $x$ converges.")
+	if want := `the rate $\alpha$ is`; !strings.Contains(got, want) {
+		t.Errorf("Tidy() = %q, want the glyph written out", got)
+	}
+	if strings.Contains(got, "α") {
+		t.Errorf("Tidy() left the glyph in: %q", got)
+	}
+}
+
+// The glyph is only mathematics inside a span. In prose it is the letter the
+// page printed and writing it as a command would put TeX into a sentence.
+func TestTidyLeavesAGlyphInTheProseAlone(t *testing.T) {
+	in := "the α particle was named by Rutherford."
+	if got := Tidy(in); got != in {
+		t.Errorf("Tidy(%q) = %q, want it left alone", in, got)
+	}
+}

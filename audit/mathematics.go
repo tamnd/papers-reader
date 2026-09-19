@@ -175,11 +175,37 @@ func ruleM01(in *Input) ([]Finding, error) {
 	})
 }
 
-// numberSet matches a number set set in any font but the one the corpus uses,
-// and the bare Unicode letter as well. The five letters are the five sets and
-// nothing else: \mathbf{A} is a vector in half the corpus and a matrix in the
-// other half, and neither is a number set.
-var numberSet = regexp.MustCompile(`\\(mathbf|mathrm|bf|boldsymbol)\{([NZQRC])\}|[ℕℤℚℝℂ]`)
+// numberSet matches a number set set in a font the corpus does not use. The
+// five letters are the five sets and nothing else: \mathbf{A} is a vector in
+// half the corpus and a matrix in the other half, and neither is a number
+// set.
+//
+// The letter on its own is not enough, and used to be. A one letter name set
+// in roman or in bold is the commonest thing in mathematics that is not a
+// number set. Backus names a matrix multiplication program \mathrm{R} and
+// proves MM' equivalent to it, and Cortes writes the vector of Lagrange
+// multipliers as \mathbf{R}^T = (r_1, ..., r_l). This rule asked for both of
+// them in blackboard bold, which would have made the corpus say something
+// neither paper says.
+//
+// So the letter has to stand where a set stands. Every use of a number set
+// in this corpus is a membership, an inclusion, a mapping or a product, and
+// all of those put one of these operators in front of it. A set named in
+// prose inside a span, "over the field \mathbf{R}", is missed, and that is
+// the right way round: a rule that says nothing costs nothing, and a rule
+// that renames somebody's function costs the audit the reader's trust.
+//
+// The alternatives are longest first, because the match is leftmost first
+// and \subset would otherwise take the front of \subseteq and then fail on
+// what is left.
+var numberSet = regexp.MustCompile(
+	`(?:\\(?:notin|in|subseteq|subset|supseteq|supset|longrightarrow|rightarrow|mapsto|to|times|cup|cap|setminus)|:)` +
+		`\s*(\\(?:mathbf|mathrm|bf|boldsymbol)\{[NZQRC]\})`)
+
+// bareSet is a number set the text layer handed over as a letter rather than
+// as a command. No operator is asked for here, because the glyph is the
+// blackboard letter itself and there is nothing else it can be.
+var bareSet = regexp.MustCompile(`[ℕℤℚℝℂ]`)
 
 // ruleM02 asks for one spelling, not for the right one.
 //
@@ -190,7 +216,12 @@ var numberSet = regexp.MustCompile(`\\(mathbf|mathrm|bf|boldsymbol)\{([NZQRC])\}
 // work out that one paper's bold R is another paper's blackboard R.
 func ruleM02(in *Input) ([]Finding, error) {
 	return eachSpan(in, "M02", func(s mathtex.Span) string {
-		m := numberSet.FindString(s.Text)
+		m := bareSet.FindString(s.Text)
+		if m == "" {
+			if g := numberSet.FindStringSubmatch(s.Text); g != nil {
+				m = g[1]
+			}
+		}
 		if m == "" {
 			return ""
 		}

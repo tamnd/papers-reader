@@ -71,6 +71,9 @@ func TestM02WantsOneSpellingOfTheNumberSets(t *testing.T) {
 		{"the bare Unicode letter", "a point $x \\in ℝ^d$ of the space." + pad, true},
 		{"a bold letter that is not a number set", `the matrix $\mathbf{A}$ is square.` + pad, false},
 		{"the letter in the prose", "the real numbers R are not mathematics here." + pad, false},
+		{"a roman R that names a function", `the theorem is $\mathrm{MM}' \equiv \mathrm{R}$ here.` + pad, false},
+		{"a bold R that names a vector", `the multipliers $\mathbf{R}^T = (r_1, r_2)$ enforce it.` + pad, false},
+		{"a set the function arrow points at", `the map $f: \mathbf{N} \to \mathbf{R}$ is total.` + pad, true},
 	}
 	for _, tc := range cases {
 		res := result(t, onePaper(t, tc.body), "M02")

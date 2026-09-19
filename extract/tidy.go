@@ -3,6 +3,8 @@ package extract
 import (
 	"regexp"
 	"strings"
+
+	"github.com/tamnd/papers-reader/mathtex"
 )
 
 // Tidy takes the wrapping off an answer.
@@ -58,6 +60,15 @@ import (
 // Untable puts dollars round a cell that is bare TeX, and a cell it had
 // already put dollars round is a cell it must leave alone, so the two have to
 // happen in this order and not the other one.
+//
+// mathtex.Repair runs last, for the same reason Unhash runs late and one more.
+// It writes a stranded character as the TeX it stands for, an α the layer
+// handed over as a letter becoming \alpha, and it can only do that inside a
+// math span, so everything that decides what a span is has to have run first.
+// Shannon's table of filters is the case that showed it: the omegas in it are
+// inside cells that Untable made spans of, and nothing before Untable can see
+// them. The package doc has said all along that extract calls this, and until
+// now nothing did, so the repair existed and only the audit ever ran it.
 func Tidy(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.TrimSpace(s)
@@ -71,6 +82,7 @@ func Tidy(s string) string {
 	s = Unhash(s)
 	s = Unlink(s)
 	s = Delink(s)
+	s, _, _ = mathtex.Repair(s)
 	return strings.TrimSpace(s)
 }
 
