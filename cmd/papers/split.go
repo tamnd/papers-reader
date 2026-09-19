@@ -529,6 +529,15 @@ func document(c *corpus.Corpus, id string) (*assemble.Document, error) {
 		})
 	}
 	doc := assemble.Join(pages)
+	// A heading a reader ran into the paragraph under it is separated here
+	// rather than in the splitter, because the index has the same trouble
+	// with it and had no answer for it. Fourteen papers ran References into
+	// their first entry, and three of those are papers whose whole
+	// bibliography the index then failed to find: it looks for the heading
+	// and the heading was inside a paragraph. Rule R08 reported all three,
+	// because what was in the manifest was an older extraction of the same
+	// pages and no longer the text on the page.
+	doc.Paragraphs = split.Unrun(doc.Paragraphs)
 	// Both readers of a document go through here, so the reference list is
 	// put back in order once rather than in each of them. The splitter cuts
 	// the section file from this document and the index is built from the
