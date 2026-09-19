@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/tamnd/papers-reader/code"
 	"github.com/tamnd/papers-reader/corpus"
 	"github.com/tamnd/papers-reader/extract"
 	"github.com/tamnd/papers-reader/split"
@@ -89,6 +90,11 @@ func structureRules() []Rule {
 			ID: "T14", Hard: true,
 			What:  "no section file has an empty body.",
 			Check: ruleT14,
+		},
+		{
+			ID:    "T15",
+			What:  "no paragraph ends on half a word, with the rest of it further down.",
+			Check: ruleT15,
 		},
 	}
 }
@@ -551,6 +557,93 @@ func ruleT14(in *Input) ([]Finding, error) {
 		}
 		return "the body is empty, so the file publishes a title and a blank page"
 	})
+}
+
+// ruleT15 is the paragraph a page break or a float cut in two, with the
+// word it was cut in the middle of left hanging on the hyphen.
+//
+// Where T13 finds the two halves of a word side by side with a space
+// between them, this one finds them in different paragraphs with something
+// else in between. Rabin's introduction has "whether it ac-", then the
+// three affiliation footnotes the page prints at its foot, then "cepts an
+// infinite number of different tapes". The footnotes were set below the
+// column and the reader wrote them out where it met them, in the middle of
+// a sentence. Bigtable's evaluation is cut the same way by a table and
+// BERT's section 3 by a bolded heading.
+//
+// It is worth its own rule because of what it costs downstream. The reader
+// shows the sentence twice broken, the book sets it that way, and the
+// translation of a paragraph that starts in the middle of a word is a
+// guess. It is also the one paragraph fault that makes a model disobey the
+// shape of the page: asked for Rabin's introduction the fleet joined the
+// two halves back up, which is the right thing to do to the text and leaves
+// the answer one paragraph short of the English, so the file is refused
+// every time it is asked for and the paper is held back whole.
+//
+// Two letters at least before the hyphen, and no digit in them. A single
+// letter is an index entry, "(I-A2, I-" in Saltzer's bibliography, and a
+// digit is a name: the GPT-3 appendix captions a table "Formatted dataset
+// example for Arithmetic 2D-", where the minus is the subtraction task and
+// the caption is whole.
+//
+// Not hard. The repair is to move what was printed between the halves out
+// of the way and join them, and where that goes is a judgement about the
+// page rather than something a rule can say.
+func ruleT15(in *Input) ([]Finding, error) {
+	if !anyContent(in) {
+		return nil, ErrNotRun
+	}
+	var out []Finding
+	for _, f := range in.Content {
+		if f.Broken() {
+			continue
+		}
+		lines := strings.Split(f.Body, "\n")
+		// The listings and nothing else. A paragraph with a formula in it
+		// is still a paragraph, and protectedLines, which is written for a
+		// rule that reads the words of a line, would drop every one of
+		// them: Bigtable's cut paragraph says "row keys with names 0 to
+		// $R - 1$" and the hyphen it was cut at is eight words later.
+		fenced := code.Inside(f.Body)
+		for i, line := range lines {
+			if i+1 < len(fenced) && fenced[i+1] {
+				continue
+			}
+			if strings.TrimSpace(line) == "" || !ends(lines, i) || !more(lines, i+1) {
+				continue
+			}
+			m := cutWord.FindStringSubmatch(inlineCode.ReplaceAllString(line, " "))
+			if m == nil {
+				continue
+			}
+			out = append(out, Finding{
+				Rule: "T15", File: f.Path, Line: i + 1,
+				Message: fmt.Sprintf("%q is half a word and the rest of the paragraph is further down the file", m[0]),
+			})
+		}
+	}
+	return out, nil
+}
+
+// cutWord is the end of a word left on the hyphen the page broke it with,
+// at the end of a line that is also the end of its paragraph.
+var cutWord = regexp.MustCompile(`(\p{L}{2,})[-\x{2010}\x{2011}]\s*$`)
+
+// ends says whether the line at i is the last one of its paragraph.
+func ends(lines []string, i int) bool {
+	return i+1 >= len(lines) || strings.TrimSpace(lines[i+1]) == ""
+}
+
+// more says whether anything is written below the line at i. A word left
+// hanging at the foot of a file has nowhere to be joined to and is a fault
+// of another kind.
+func more(lines []string, i int) bool {
+	for ; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // ruleT09 is the file that came out of the splitter with a whole paper in

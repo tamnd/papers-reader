@@ -861,3 +861,37 @@ func TestT13FindsAWordSplitAtALineBreakHyphen(t *testing.T) {
 		}
 	}
 }
+
+// A page prints its footnotes below the column and a float in the middle of
+// it, and a reader that writes them out where it meets them cuts the
+// paragraph in two. Rabin's introduction is cut in the middle of the word
+// "accepts".
+func TestT15FindsAParagraphCutInTheMiddleOfAWord(t *testing.T) {
+	long := strings.Repeat("a sentence of the paper. ", 12)
+	for _, tc := range []struct {
+		name  string
+		body  string
+		fails bool
+	}{
+		{"clean", long + "\n", false},
+		{"cut by a footnote", long + "\n\nwhether it ac-\n\n*Now at the University.\n\ncepts an infinite number of tapes.\n", true},
+		{"cut by a table", long + "\n\na scheduler that as-\n\n| a | b |\n| --- | --- |\n\nsigned the next range.\n", true},
+		{"the hyphen is the word's own", long + "\n\nthe cost is non-\n\n| a | b |\n| --- | --- |\n\nclustered throughout.\n", true},
+		{"a whole paragraph", long + "\n\nthe cost is small.\n\n| a | b |\n| --- | --- |\n\nthe gain is not.\n", false},
+		{"nothing below it", long + "\n\nthe word is cut in-\n", false},
+		{"a name with a digit in it", long + "\n\nan example for Arithmetic 2D-\n\n| a | b |\n| --- | --- |\n\nand one for 2D+.\n", false},
+		{"an index entry", long + "\n\nJ., vol. 9, pp. 199-218, 1970. (I-A2, I-\n\nsee also the note.\n", false},
+		{"a formula in the same paragraph", long + "\n\nrow keys 0 to $R - 1$, by a scheduler that as-\n\nsigned the next range.\n", true},
+		{"a flag at the end of a fence", long + "\n\n```text\ncc --keep-\n```\n\nthe rest of the page.\n", false},
+	} {
+		files := map[string]string{
+			"manifests/sources.yaml":                          openSources,
+			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), tc.body),
+		}
+		res := result(t, Run(in(t, files), false), "T15")
+		if res.Failed() != tc.fails {
+			t.Errorf("%s: T15 failed=%v, want %v (%v)", tc.name, res.Failed(), tc.fails, res.Findings)
+		}
+	}
+}
