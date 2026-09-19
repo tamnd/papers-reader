@@ -59,10 +59,11 @@ func Dollars(s string) string {
 // joined and inline pairs them on the line it makes.
 //
 // Everything else is left as it came, which is what sends it to the audit.
-// Milner has three formulas that open with `\[` and close with `\)` and
-// Hoare has one that closes with `\}`, and a mismatched pair is a misreading
-// rather than a dialect: there is no way to know from here which of the two
-// delimiters is the one the page actually printed.
+// Hoare has a formula that opens with `\(` and closes with `\}`, and a pair
+// like that is a misreading rather than a dialect: a brace is not a
+// delimiter, so there is no telling where the formula ends. uncross below
+// takes the one case where both halves of the pair do delimit, and says why
+// that one is answerable and this one is not.
 func standing(lines []string, code []bool) []string {
 	for i := 0; i < len(lines); i++ {
 		if code[i] || strings.TrimSpace(lines[i]) != `\(` {
@@ -270,8 +271,63 @@ func numbers(lines []string) []string {
 	return out
 }
 
+// uncross closes a pair that was opened in one dialect and closed in the
+// other.
+//
+// Nothing about a reader makes it consistent within a line. olmOCR sets
+// Milner's typed lambda expressions as `\[(\lambda v \cdot v)\) in $V$`,
+// opening with the display delimiter and closing with the inline one, and it
+// does it the same way on every reading of the page: three formulas on one
+// page, three crossed pairs, and the page read again at three resolutions
+// came back the same three times.
+//
+// The doc for standing above says a mismatched pair is a misreading rather
+// than a dialect, because there is no way to know which of the two the page
+// printed. That holds and this does not contradict it, because the question
+// is not which delimiter the page printed. Both of them delimit, so the
+// formula is the text between them either way, and what says whether it is a
+// display or not is the rest of the line: display below writes a pair that
+// shares its line with prose as one dollar, and Milner's formulas all have
+// "in $V$" after them. The delimiters say nothing that the line does not say
+// better.
+//
+// Only the crossed pair that has actually turned up is closed, the display
+// opener against the inline closer. The other way round would take the same
+// two lines and no page has printed one.
+func uncross(line string) string {
+	var out strings.Builder
+	rest := line
+	for {
+		open := strings.Index(rest, `\[`)
+		if open < 0 {
+			break
+		}
+		shut := strings.Index(rest[open+2:], `\)`)
+		if shut < 0 {
+			break
+		}
+		shut += open + 2
+		// Another delimiter in between means the pairing is not this one's
+		// to guess: two formulas on a line with one closer missing between
+		// them is damage, and joining the outer two would swallow the prose
+		// between them into the mathematics.
+		if mid := rest[open+2 : shut]; strings.Contains(mid, `\[`) ||
+			strings.Contains(mid, `\]`) || strings.Contains(mid, `\(`) {
+			out.WriteString(rest[:shut+2])
+			rest = rest[shut+2:]
+			continue
+		}
+		out.WriteString(rest[:shut])
+		out.WriteString(`\]`)
+		rest = rest[shut+2:]
+	}
+	out.WriteString(rest)
+	return out.String()
+}
+
 // onOneLine rewrites the pairs that open and close on the same line.
 func onOneLine(line string) string {
+	line = uncross(line)
 	var out strings.Builder
 	rest := line
 	for {

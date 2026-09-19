@@ -211,11 +211,10 @@ func TestAnOpenerOnItsOwnLineWithProseAfterTheCloserIsJoined(t *testing.T) {
 }
 
 // A pair that does not match is a misreading and not a dialect, so it stays
-// where the audit can see it. There is no way to tell from here which of the
-// two delimiters is the one the page printed.
+// where the audit can see it. A brace is not a delimiter and half a pair is
+// not one either, so neither of these says where its formula ends.
 func TestAMismatchedPairIsLeftForTheAudit(t *testing.T) {
 	for _, in := range []string{
-		"\\[(\\lambda v \\cdot v)\\) in $V$.\n",
 		"| \\( (r := r-y) \\} |\n",
 		"and then \\) on its own.\n",
 	} {
@@ -231,5 +230,25 @@ func TestAnOpenerOnItsOwnLineWithNoCloserIsLeftAlone(t *testing.T) {
 	in := "\\(\n\\alpha + \\beta\n\nThe next paragraph.\n"
 	if got := Dollars(in); got != in {
 		t.Errorf("Dollars() = %q, want it left alone", got)
+	}
+}
+
+// olmOCR opens Milner's typed lambda expressions with the display delimiter
+// and closes them with the inline one, the same way every time. Both of them
+// delimit, and what says the formula is not a display is the prose after it.
+func TestDollarsClosesACrossedPair(t *testing.T) {
+	in := `\[(\lambda v \cdot v)\) in $V : \alpha \rightarrow \alpha.$`
+	want := `$(\lambda v \cdot v)$ in $V : \alpha \rightarrow \alpha.$`
+	if got := Dollars(in); got != want {
+		t.Errorf("Dollars() = %q, want %q", got, want)
+	}
+}
+
+// Two openers and one closer is damage rather than a dialect, and pairing
+// the outer two would swallow the prose between them into the mathematics.
+func TestDollarsLeavesAPairItCannotTellApart(t *testing.T) {
+	in := `\[a = b \[c = d\) again`
+	if got := Dollars(in); got != in {
+		t.Errorf("Dollars(%q) = %q, want it left alone", in, got)
 	}
 }
