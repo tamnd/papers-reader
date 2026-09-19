@@ -245,6 +245,14 @@ func (a *assignment) file(id, path string, lang corpus.Lang) error {
 		case front.Tag == "":
 			front.Tag = string(t)
 			handed++
+		case front.Tag != string(t) && a.strayed(front.Tag, id):
+			// The file carries a tag the register holds against a different
+			// anchor of this same paper, which is audit rule G04. See
+			// strayed for the one thing that does this.
+			fmt.Printf("  %s: the section carries %s and the register gives this anchor %s, so %s goes back in\n",
+				path, front.Tag, t, t)
+			front.Tag = string(t)
+			handed++
 		default:
 			a.had++
 		}
@@ -287,6 +295,33 @@ func (a *assignment) file(id, path string, lang corpus.Lang) error {
 	}
 	a.writes = append(a.writes, write{path: path, body: out})
 	return nil
+}
+
+// strayed says whether a tag a file is carrying belongs to some other anchor
+// of the same paper, which is the one case where the tag in the file is the
+// wrong one and the register is right.
+//
+// It comes from a split that produced two sections of a kind and a later one
+// that produced one. The first split gave Dynamo's references 069D and the
+// leftover second references file 093E, the second split produced one
+// references section, and the file left standing on disk is the one carrying
+// 093E. Nothing is ambiguous about what that section is: the register has
+// held this paper's references under 069D since the day they were first
+// read, and the item has not changed, only which file on disk holds it.
+//
+// The same paper is the whole of the test, and it has to be, because that is
+// what says the two anchors name the same thing. A tag from another paper in
+// a file is a copied front matter block and a much worse problem, and one
+// this must not paper over. A tag in no register at all is left alone too:
+// somebody may have written it there by hand ahead of the run, and the
+// register grows to meet it rather than the other way about.
+func (a *assignment) strayed(tag, paper string) bool {
+	t, err := tags.ParseTag(tag)
+	if err != nil {
+		return false
+	}
+	anchor, ok := a.register.Anchor(t)
+	return ok && strings.HasPrefix(anchor, paper+"-")
 }
 
 // tagFor is the tag one file gets for one anchor, and whether there is one.

@@ -262,6 +262,61 @@ func Prune(dir string, stale []string) error {
 	return nil
 }
 
+// Collided are the stale files that carry a section number one of this
+// split's own files carries too.
+//
+// It is the part of Stale a caller can act on without having read the whole
+// paper. A split of part of a paper must not prune, because most of what it
+// calls stale is the rest of the paper that an earlier and better extraction
+// wrote, and deleting that is the accident partial in the command guards
+// against. But a stale file numbered 08 next to a file this run just wrote
+// as 08 is not that. Two files for one section is wrong however few pages
+// were read, the number belongs to the one the current split produced, and
+// the other is the leftover of a run whose section boundaries fell
+// elsewhere.
+//
+// That is the whole of T04 on the papers that are one page short of
+// complete. Dynamo is missing page 7 and carries an 08_references.md beside
+// an 08_acknowledgments.md, Volcano is missing page 16 and has two 07s and
+// two 08s, and neither of them could be pruned until the missing page came
+// back, which for a page the reader keeps refusing is never.
+//
+// The number is the prefix up to the first underscore, which is how Name
+// writes it, and a file whose name is not in that shape is not one of ours
+// and is left out of the answer.
+func (r *Report) Collided() []string {
+	mine := map[string]bool{}
+	for _, set := range [][]string{r.Created, r.Updated, r.Unchanged, r.Kept} {
+		for _, name := range set {
+			if n := number(name); n != "" {
+				mine[n] = true
+			}
+		}
+	}
+	var out []string
+	for _, name := range r.Stale {
+		if n := number(name); n != "" && mine[n] {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// number is the section number a file name starts with, or the empty string
+// if it does not start with one.
+func number(name string) string {
+	i := strings.Index(name, "_")
+	if i <= 0 {
+		return ""
+	}
+	for _, c := range name[:i] {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return name[:i]
+}
+
 // write replaces a file in one step, so that an interrupted run leaves the
 // old file rather than half of the new one.
 func write(path string, b []byte) error {

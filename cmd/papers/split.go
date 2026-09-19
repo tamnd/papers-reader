@@ -349,11 +349,24 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, prune
 		n.notes = append(n.notes, fmt.Sprintf("%s %s", name, what))
 	}
 	if prune {
-		if short, err := partial(c, p.ID, rec); err != nil {
+		dir := c.Content(corpus.EN, p.ID)
+		short, err := partial(c, p.ID, rec)
+		if err != nil {
 			return n, err
-		} else if short != "" {
+		}
+		gone := report.Stale
+		if short != "" {
+			// Part of the paper, so most of what is stale is the rest of it
+			// and has to stay. The exception is a leftover that has taken a
+			// section number this split just used, which is wrong whatever
+			// else is missing. See Collided.
+			gone = report.Collided()
 			n.notes = append(n.notes, short)
-		} else if err := split.Prune(c.Content(corpus.EN, p.ID), report.Stale); err != nil {
+			if len(gone) > 0 {
+				n.notes = append(n.notes, fmt.Sprintf("%d of them share a section number with a file this split wrote and have been deleted anyway", len(gone)))
+			}
+		}
+		if err := split.Prune(dir, gone); err != nil {
 			return n, err
 		}
 	}

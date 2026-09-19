@@ -398,3 +398,65 @@ Text.
 		t.Errorf("the register reads\n  %s\nand reading order is\n  %s", strings.Join(got, " "), strings.Join(want, " "))
 	}
 }
+
+// A split that produced two sections of a kind and a later one that produced
+// one leaves the file on disk carrying the second section's tag. The register
+// has held the item under the first one all along, and it is right.
+func TestASectionCarryingAnotherAnchorsTagGetsItsOwnBack(t *testing.T) {
+	root := tagsCorpus(t, section(""))
+	path := filepath.Join(root, "content/en/a-1970-paper/01_first.md")
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+	before := read(t, path)
+	mine := tagOf(t, before, "tag: ")
+
+	// The leftover: the register knows a second section of this paper, and
+	// the file is carrying that one's tag instead of its own.
+	reg := filepath.Join(root, "tags", "tags")
+	append_(t, reg, "0FFF,a-1970-paper-s1-9\n")
+	if err := os.WriteFile(path, []byte(strings.Replace(before, mine, "0FFF", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagOf(t, read(t, path), "tag: "); got != mine {
+		t.Errorf("the section carries %s, want its own tag %s back", got, mine)
+	}
+}
+
+// A tag from another paper is a copied front matter block and a worse problem
+// than this one, so it is left where the audit can see it.
+func TestASectionCarryingAnotherPapersTagIsLeftAlone(t *testing.T) {
+	root := tagsCorpus(t, section(""))
+	path := filepath.Join(root, "content/en/a-1970-paper/01_first.md")
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+	mine := tagOf(t, read(t, path), "tag: ")
+	append_(t, filepath.Join(root, "tags", "tags"), "0FFF,b-1971-paper-s1\n")
+	if err := os.WriteFile(path, []byte(strings.Replace(read(t, path), mine, "0FFF", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runTagsAssign([]string{"-corpus", root, "-all"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagOf(t, read(t, path), "tag: "); got != "0FFF" {
+		t.Errorf("the section carries %s, want the tag it came with", got)
+	}
+}
+
+func append_(t *testing.T, path, text string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(text); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -758,3 +758,50 @@ func TestPruneIsHappyWithAFileThatHasAlreadyGone(t *testing.T) {
 		t.Errorf("prune wanted the file to still be there: %v", err)
 	}
 }
+
+// A split of part of a paper must not prune, because most of what it calls
+// stale is the rest of the paper. The one thing it may delete is a leftover
+// that has taken a section number this run just used.
+func TestCollidedIsTheStaleFilesThatShareANumber(t *testing.T) {
+	r := &Report{
+		Created:   []string{"08_acknowledgments.md"},
+		Updated:   []string{"07_summary.md"},
+		Unchanged: []string{"02_a_method.md"},
+		Kept:      []string{"03_results.md"},
+		Stale: []string{
+			"08_references.md",
+			"07_vertical_parallelism.md",
+			"02_an_older_title.md",
+			"03_an_older_results.md",
+			"11_the_rest_of_the_paper.md",
+			"notes.md",
+		},
+	}
+	want := []string{
+		"08_references.md",
+		"07_vertical_parallelism.md",
+		"02_an_older_title.md",
+		"03_an_older_results.md",
+	}
+	got := r.Collided()
+	if len(got) != len(want) {
+		t.Fatalf("Collided() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Collided()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// A section this split did not write keeps its file, which is the whole
+// reason a partial split does not prune.
+func TestCollidedLeavesTheRestOfThePaperAlone(t *testing.T) {
+	r := &Report{
+		Created: []string{"01_introduction.md"},
+		Stale:   []string{"02_a_method.md", "03_results.md"},
+	}
+	if got := r.Collided(); len(got) != 0 {
+		t.Errorf("Collided() = %v, want nothing", got)
+	}
+}
