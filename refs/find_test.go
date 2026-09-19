@@ -240,3 +240,45 @@ func TestReorderLeavesAPaperInOrderAlone(t *testing.T) {
 		t.Errorf("Reorder moved something:\n%s", d.Text())
 	}
 }
+
+// A journal prints the heading at the top of every page of the list, so a
+// bibliography that runs over three pages has three of them and only the
+// first is the heading.
+func TestARepeatedHeadingIsARunningHead(t *testing.T) {
+	d := doc(
+		"the body of the paper, which is long enough that nothing in it reads as a heading of any kind.",
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"[2] Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971).",
+		"REFERENCES",
+		"[3] Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972).",
+		"REFERENCES",
+		"[4] Danforth, S. On the fourth of the invented papers. Journal of Nothing 2, 2 (1973).",
+	)
+	section := got(Bibliography(d))
+	if len(section) != 4 {
+		t.Fatalf("the bibliography is %v, want the four entries", section)
+	}
+	for i, p := range section {
+		if !strings.HasPrefix(p, "["+string(rune('1'+i))+"]") {
+			t.Errorf("entry %d is %q", i+1, p)
+		}
+	}
+}
+
+// A contents page lists References along with every other heading of the
+// paper, and walking back to it would file the whole paper as references.
+func TestAContentsPageIsNotTheHeading(t *testing.T) {
+	d := doc(
+		"1. Introduction",
+		"2. The Method",
+		"References",
+		"the body of the paper, which is long enough that nothing in it reads as a heading of any kind.",
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+	)
+	section := got(Bibliography(d))
+	if len(section) != 1 || !strings.HasPrefix(section[0], "[1]") {
+		t.Errorf("the bibliography is %v, want the one entry", section)
+	}
+}

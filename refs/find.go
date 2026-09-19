@@ -20,31 +20,51 @@ import (
 // The heading is looked for from the end backwards. A paper that says "see
 // the references" in its introduction has the word on page one, and the
 // heading is the last one, not the first.
+//
+// The last one is not always the heading, though, because a journal prints
+// one at the top of every page. Jacobson's list runs over three pages of the
+// SIGCOMM proceedings and the document has References above entry 1, then
+// REFERENCES above entry 6 and REFERENCES again above entry 23, both of them
+// running heads that the furniture pass keeps because a heading is not
+// furniture. Taking the last of the three gave a bibliography of four
+// entries starting at 23, which no citation in the paper could reach, and it
+// is the whole of R02 on that paper: 49 citations pointing at an index of
+// four.
+//
+// So an earlier heading is taken instead when every paragraph between the
+// two is a numbered entry. A label is asked for rather than anything looser,
+// because looser is how this goes wrong: a contents page lists References
+// along with the other headings, and a rule that walked back over anything
+// that was not itself a heading would walk from the real heading past the
+// body of the paper and file the lot as references. A label is also what a
+// list long enough to run over a page nearly always has.
 func Bibliography(d *assemble.Document) []assemble.Paragraph {
 	if d == nil {
 		return nil
 	}
-	start := -1
-	for i := len(d.Paragraphs) - 1; i >= 0; i-- {
-		if isBibliographyHeading(d.Paragraphs[i].Text) {
-			start = i + 1
-			break
-		}
-	}
-	if start < 0 {
+	head, end := span(d)
+	if head < 0 {
 		return nil
 	}
-	end := len(d.Paragraphs)
-	for i := start; i < end; i++ {
-		if endsBibliography(d.Paragraphs[i].Text) {
-			end = i
-			break
+	return gathered(d.Paragraphs[:head+1], unheaded(d.Paragraphs[head+1:end]))
+}
+
+// unheaded is the section with the running heads taken out of it.
+//
+// They have to go, because everything downstream reads the section as
+// entries. The parse cuts at the labels, so a REFERENCES between entry 5 and
+// entry 6 is filed as the last two words of entry 5, and the splitter writes
+// the section from these same paragraphs and would print it in the middle of
+// the reference list.
+func unheaded(ps []assemble.Paragraph) []assemble.Paragraph {
+	out := make([]assemble.Paragraph, 0, len(ps))
+	for _, p := range ps {
+		if isBibliographyHeading(p.Text) {
+			continue
 		}
+		out = append(out, p)
 	}
-	if start >= end {
-		return nil
-	}
-	return gathered(d.Paragraphs[:start], d.Paragraphs[start:end])
+	return out
 }
 
 // Reorder moves the entries the column order scattered back into the
@@ -102,7 +122,9 @@ func Reorder(d *assemble.Document) bool {
 }
 
 // span is the index of the bibliography heading and the index one past the
-// last paragraph of the section, or -1 if the paper has no heading.
+// last paragraph of the section, or -1 if the paper has no heading. The
+// heading it finds is the first of the run of them a list printed over
+// several pages has, so both callers see the whole section.
 func span(d *assemble.Document) (int, int) {
 	head := -1
 	for i := len(d.Paragraphs) - 1; i >= 0; i-- {
@@ -113,6 +135,17 @@ func span(d *assemble.Document) (int, int) {
 	}
 	if head < 0 {
 		return -1, 0
+	}
+	// Back over the running heads. See Bibliography for what they are and
+	// why a label is what it takes to walk past a paragraph.
+	for i := head - 1; i >= 0; i-- {
+		if isBibliographyHeading(d.Paragraphs[i].Text) {
+			head = i
+			continue
+		}
+		if _, ok := labelled(d.Paragraphs[i].Text); !ok {
+			break
+		}
 	}
 	end := len(d.Paragraphs)
 	for i := head + 1; i < end; i++ {
