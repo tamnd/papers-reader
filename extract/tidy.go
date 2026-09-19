@@ -55,6 +55,11 @@ import (
 // the time it looks, and a number sign in either of them is the character the
 // page printed just as it is in a formula the reader delimited itself.
 //
+// Undisplay runs before Dollars, because a display of prose is a display
+// the reader never closed and Dollars only pairs a delimiter it can find the
+// other half of. Left to Dollars the opener goes through as the two
+// characters the model wrote and the paragraph is lost inside them.
+//
 // Dollars runs before Untable so that a cell already written in TeX's own
 // delimiters is in this corpus's delimiters by the time the table is read.
 // Untable puts dollars round a cell that is bare TeX, and a cell it had
@@ -75,6 +80,7 @@ func Tidy(s string) string {
 	s = dropPreamble(s)
 	s = dropTrailer(s)
 	s = unwrap(s)
+	s = Undisplay(s)
 	s = Dollars(s)
 	s = Money(s)
 	s = Untable(s)
