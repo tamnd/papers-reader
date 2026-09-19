@@ -314,3 +314,24 @@ func TestAnInitialsAndYearLabelIsStillAnEntryLabel(t *testing.T) {
 		}
 	}
 }
+
+// A candidate label that is rejected must not take the separator the next
+// one needs with it. The journal prints its own name and volume at the foot
+// of every page, so an entry can end in "Not. 21, 7." and the "7." was
+// eating the newline in front of the entry after it.
+func TestALabelSurvivesARejectedOneInFrontOfIt(t *testing.T) {
+	r := parse(
+		"1. Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970), 1-10. Published as Notices 21, 7.",
+		"2. Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971), 11-20. Published as Notices 21, 7.",
+		"3. Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972), 21-30.",
+		"4. Danforth, S. On the fourth of the invented papers. Journal of Nothing 2, 2 (1973), 31-40.",
+	)
+	if len(r.Entries) != 4 {
+		t.Fatalf("the parse found %d entries, want 4: %v", len(r.Entries), keys(r))
+	}
+	for i, want := range []string{"1", "2", "3", "4"} {
+		if r.Entries[i].Key != want {
+			t.Errorf("entry %d is keyed %q, want %q", i, r.Entries[i].Key, want)
+		}
+	}
+}

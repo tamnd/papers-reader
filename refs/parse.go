@@ -133,8 +133,17 @@ var (
 	// is the reason: its appendix repeats the masked language model examples,
 	// and [MASK], [CLS] and [SEP] were read as the labels of a bibliography
 	// seventeen entries long, none of which was a reference.
-	bracketLabel = regexp.MustCompile(`(?:^|[ \n])\[(\d{1,3}|[\p{L}\d+.\-]{0,12}\d{2,4}[a-z]?)\][ \n]\s*`)
-	numberLabel  = regexp.MustCompile(`(?:^|[ \n])(\d{1,3})[.)][ \n]\s*`)
+	//
+	// Neither of the two numbered patterns matches what comes before the
+	// label, and the separator is checked in marks instead. It used to be in
+	// the pattern, and a pattern that matches the separator eats it: Wegman
+	// ends five of his entries with the journal's own "SIGPLAN Not. 21, 7."
+	// and the "7." was tried as a label, rejected as not carrying on the
+	// count, and had already taken the newline the next label needed. The
+	// entries lost that way were 12, 13 and 25, and the paper cites all
+	// three.
+	bracketLabel = regexp.MustCompile(`\[(\d{1,3}|[\p{L}\d+.\-]{0,12}\d{2,4}[a-z]?)\][ \n]\s*`)
+	numberLabel  = regexp.MustCompile(`(\d{1,3})[.)][ \n]\s*`)
 	yearLabel    = regexp.MustCompile(`(?m)^(\p{Lu}[^()\n]{0,200}?)\(((?:1[6-9]|20)\d{2}[a-z]?)\)[.,]?\s*`)
 )
 
@@ -148,6 +157,13 @@ func pattern(s Style) *regexp.Regexp {
 		return yearLabel
 	}
 	return nil
+}
+
+// opens says whether a label at this offset begins its line or its sentence,
+// which is the only place an entry starts. The author-year pattern anchors
+// itself to the start of a line and does not come through here.
+func opens(text string, at int) bool {
+	return at == 0 || text[at-1] == ' ' || text[at-1] == '\n'
 }
 
 // A mark is one place a label was found: where the entry starts, where the
@@ -167,11 +183,10 @@ func marks(s Style, text string) []mark {
 	}
 	var out []mark
 	for _, loc := range re.FindAllStringSubmatchIndex(text, -1) {
-		m := mark{at: loc[0], after: loc[1]}
-		if m.at > 0 {
-			// The separator the pattern matched belongs to the entry before.
-			m.at++
+		if s != StyleAuthorYear && !opens(text, loc[0]) {
+			continue
 		}
+		m := mark{at: loc[0], after: loc[1]}
 		switch s {
 		case StyleAuthorYear:
 			authors, year := text[loc[2]:loc[3]], text[loc[4]:loc[5]]
