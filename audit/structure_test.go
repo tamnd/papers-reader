@@ -697,6 +697,8 @@ func TestT11FindsRawHTML(t *testing.T) {
 		{"an email address is not a tag", long + "\n\nwrite to <someone@example.com> about it.\n", false},
 		{"a comparison is not a tag", long + "\n\nwhenever n < k and k > 0 the bound holds.\n", false},
 		{"a pipe table is not HTML", long + "\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n", false},
+		{"a one letter marker is a token", long + "\n\nthe prefixes are <B>, <M> and <E>.\n", false},
+		{"a one letter tag in lower case is markup", long + "\n\nthe word is <b>bold</b> here.\n", true},
 	}
 	for _, tc := range cases {
 		files := map[string]string{

@@ -638,7 +638,7 @@ func ruleT11(in *Input) ([]Finding, error) {
 				continue
 			}
 			for _, m := range htmlTag.FindAllStringSubmatch(inlineCode.ReplaceAllString(line, " "), -1) {
-				if !extract.HTMLTags[strings.ToLower(m[1])] {
+				if !extract.IsTag(m[1]) {
 					continue
 				}
 				count++

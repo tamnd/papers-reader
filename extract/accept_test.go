@@ -664,3 +664,25 @@ func TestA11DoesNotReadAListingAsMathematics(t *testing.T) {
 		t.Errorf("A11 refused a page for the notation inside a listing: %v", c.Faults(3, text))
 	}
 }
+
+// A token of one letter in angle brackets lands on the tag list by
+// accident. The GNMT mixed word and character model marks the beginning,
+// the middle and the end of a word with these, b is the bold tag, and page
+// 8 of the paper was refused as HTML three times over and then lost.
+func TestAOneLetterMarkerIsNotMarkup(t *testing.T) {
+	var c Checker
+	text := "There are three prefixes: <B>, <M> and <E>, and Miki becomes <B>M <M>i <M>k <E>i.\n"
+	if faults := c.Check(1, text); has(faults, A10) {
+		t.Errorf("a page of word markers was refused as HTML: %v", faults)
+	}
+}
+
+// The other half of it. A tag of one letter in lower case is the tag.
+func TestAOneLetterTagInLowerCaseIsStillMarkup(t *testing.T) {
+	for _, tag := range []string{"<b>", "</b>", "<i>", "<u>", "<p>"} {
+		var c Checker
+		if faults := c.Check(1, "Some prose and then "+tag+" on the page.\n"); !has(faults, A10) {
+			t.Errorf("%s was not read as markup", tag)
+		}
+	}
+}

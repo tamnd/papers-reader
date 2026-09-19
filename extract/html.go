@@ -454,7 +454,7 @@ func markup(s string) (string, int) {
 			continue
 		}
 		for _, m := range anyTag.FindAllStringSubmatch(backticks.ReplaceAllString(line, " "), -1) {
-			if !HTMLTags[strings.ToLower(m[1])] {
+			if !IsTag(m[1]) {
 				continue
 			}
 			count++
@@ -464,6 +464,39 @@ func markup(s string) (string, int) {
 		}
 	}
 	return first, count
+}
+
+// IsTag says a name read out of angle brackets is markup.
+//
+// Acceptance rule A10 and audit rule T11 both ask it, for the reason
+// HTMLTags gives: they are the same question at two moments and two
+// opinions about what counts as markup would mean the reader writing pages
+// the audit then refuses.
+func IsTag(name string) bool {
+	return HTMLTags[strings.ToLower(name)] && !printedMarker(name)
+}
+
+// printedMarker says a tag name is one letter in capitals, which in this
+// corpus is a token a paper printed and not markup.
+//
+// Papers write a great many tokens in angle brackets, and the extracted
+// pages hold twenty `<pad>`, eighteen `<segid>`, fourteen `<EOS>` and a
+// long tail of placeholders like `<cursor name>`. None of those is on the
+// tag list and none of them ever needed to be thought about. A token of one
+// letter lands on it by accident, which is what happened to page 8 of the
+// GNMT paper: the mixed word and character model marks the beginning, the
+// middle and the end of a word with `<B>`, `<M>` and `<E>`, b is the bold
+// tag, and the page was refused as HTML at three resolutions and then lost.
+// The paper is three sections short in the corpus because of it and rule
+// T04 reports the hole.
+//
+// Case is what tells the two apart, and it is a reading of the corpus
+// rather than a rule about HTML. Not one of the tags in the two thousand
+// extracted pages is written in capitals: a reader that writes markup
+// writes `<table>` and `<br/>`, in lower case, every time. A paper writing
+// a marker capitalises it, because it is standing in for a word.
+func printedMarker(name string) bool {
+	return len(name) == 1 && name >= "A" && name <= "Z"
 }
 
 // Unscript rewrites the subscripts and superscripts a reader wrote in HTML
