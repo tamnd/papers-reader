@@ -85,6 +85,11 @@ func structureRules() []Rule {
 			What:  "no word is left split at the hyphen the page broke it with.",
 			Check: ruleT13,
 		},
+		{
+			ID: "T14", Hard: true,
+			What:  "no section file has an empty body.",
+			Check: ruleT14,
+		},
 	}
 }
 
@@ -461,6 +466,32 @@ func ruleT08(in *Input) ([]Finding, error) {
 			return fmt.Sprintf("the body is %d characters, which is a split that landed in the wrong place", n)
 		}
 		return ""
+	})
+}
+
+// ruleT14 is a section file with nothing in it, which T08 also reports and
+// reports softly, along with the one line sections and the split that landed
+// two words early. Nothing at all is a different thing from short and it is
+// worth failing a build over, because there is no reading of the corpus in
+// which a blank page is what the paper says.
+//
+// Nine of them were written before the splitter learned to fold a heading
+// with nothing under it into the section below, and every one came from a
+// heading the reader set over another heading: Saltzer's section V and its
+// first lettered subsection, the appendix of the Turing award lecture on
+// clocks and the proof named on the next line, and the list of the features
+// of TX-2 in Sketchpad's appendix G, every item of which the reader set
+// large. None of them was ever committed, and this is what says so.
+//
+// The front file is not exempt. A paper with no front matter at all has
+// something wrong with the head of page 1, and rule T06 has already gone
+// looking for the title and the authors by then.
+func ruleT14(in *Input) ([]Finding, error) {
+	return eachFile(in, "T14", func(f *File) string {
+		if strings.TrimSpace(f.Body) != "" {
+			return ""
+		}
+		return "the body is empty, so the file publishes a title and a blank page"
 	})
 }
 

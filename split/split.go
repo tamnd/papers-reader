@@ -253,7 +253,6 @@ func Titled(d *assemble.Document, title string) *Result {
 	for _, h := range cuts {
 		starts = append(starts, h.Index)
 	}
-	ordinal := 0
 	for i, start := range starts {
 		end := len(paragraphs)
 		if i+1 < len(starts) {
@@ -262,10 +261,8 @@ func Titled(d *assemble.Document, title string) *Result {
 		s := Section{Kind: KindFront, Title: "Front Matter"}
 		if h, ok := headingAt(cuts, start); ok {
 			s.Number, s.Title, s.Kind, s.How = h.Number, h.Title, h.Kind, h.How
-			ordinal = next(ordinal, h.Number)
 			start++
 		}
-		s.Ordinal = ordinal
 		s.Body, s.First, s.Last = body(paragraphs, start, end, sub, bare)
 		if s.Title == "Notes" {
 			if b, n := Endnotes(s.Body, marked); n > 0 {
@@ -274,6 +271,24 @@ func Titled(d *assemble.Document, title string) *Result {
 			}
 		}
 		r.Sections = append(r.Sections, s)
+	}
+	folded, empty, heads := fold(r.Sections, title)
+	r.Sections = folded
+	for _, name := range empty {
+		r.Notes = append(r.Notes, fmt.Sprintf("the heading %q has nothing under it and was kept as a subheading of the section that follows", name))
+	}
+	if heads > 0 {
+		r.Notes = append(r.Notes, fmt.Sprintf("the paper's own title is printed again on %d later pages and the repeats were taken out", heads))
+	}
+	// The file numbers are given out after the fold and not before it,
+	// because a section that has gone takes its number with it and a run of
+	// files numbered 4, 6, 7 is rule T04's hole in the numbering.
+	ordinal := 0
+	for i := range r.Sections {
+		if r.Sections[i].Kind != KindFront {
+			ordinal = next(ordinal, r.Sections[i].Number)
+		}
+		r.Sections[i].Ordinal = ordinal
 	}
 	if len(r.Sections) == 1 {
 		r.Notes = append(r.Notes, "no section headings were found: the paper is one file")
@@ -290,6 +305,86 @@ func Titled(d *assemble.Document, title string) *Result {
 		}
 	}
 	return r
+}
+
+// fold gives a heading with nothing under it to the section that follows,
+// and returns the sections that are left along with the titles it folded.
+//
+// A section file with an empty body publishes nothing. It carries a title in
+// its front matter, it takes a number in the run of files, and a reader who
+// opens it is shown a blank page. Three papers in the corpus wrote nine of
+// them between them.
+//
+// Forward and not backward, because a heading is a heading of what comes
+// after it. Saltzer's section V is a heading and then its first lettered
+// subsection with no prose in between, and the Turing award lecture on clocks
+// heads its appendix and then names the proof in it on the next line. Both of
+// those read correctly with the empty heading at the top of the section under
+// it and misleadingly with it on the end of the section above, where an
+// appendix would be tacked onto the end of a conclusion.
+//
+// Sketchpad is the paper it is not right for. Appendix G says the distinctive
+// features of TX-2 are, and the reader set each feature in the list that
+// follows as a heading of its own, so five of them come out as empty sections
+// and the fold moves them to the head of the section after the list instead
+// of the foot of the one before it. The paper is one of the twenty five
+// waiting on a layout tool and the list survives either way, which is the
+// part that matters: nothing here deletes anything.
+//
+// A heading at the very end of the paper has nothing to fold into and stays
+// where it is, because dropping it would lose the only record that the paper
+// has a heading there.
+//
+// The paper's own name is the exception and goes nowhere. A journal prints
+// the title over every page of the article, the reader transcribes it the way
+// it transcribes everything else it sees set large, and the repeat has
+// nothing under it because it is a running head and not a heading. The first
+// one is already taken off the front of the cuts for the same reason: the
+// title is in the front matter as title and the paper's name is not a level
+// of anything.
+func fold(sections []Section, title string) ([]Section, []string, int) {
+	out := make([]Section, 0, len(sections))
+	var titles []string
+	var held []string
+	var first, last int
+	heads := 0
+	for i, s := range sections {
+		if s.Body == "" && s.Kind != KindFront && i+1 < len(sections) {
+			if title != "" && sameText(s.Title, title) {
+				heads++
+				continue
+			}
+			titles = append(titles, s.Title)
+			held = append(held, "### "+heading(s))
+			if s.First != 0 && (first == 0 || s.First < first) {
+				first = s.First
+			}
+			if s.Last > last {
+				last = s.Last
+			}
+			continue
+		}
+		if len(held) > 0 {
+			s.Body = strings.Join(held, "\n\n") + "\n\n" + s.Body
+			if s.First == 0 || (first != 0 && first < s.First) {
+				s.First = first
+			}
+			if last > s.Last {
+				s.Last = last
+			}
+			held, first, last = nil, 0, 0
+		}
+		out = append(out, s)
+	}
+	return out, titles, heads
+}
+
+// heading is the section's heading as the paper prints it, number and all.
+func heading(s Section) string {
+	if s.Number == "" {
+		return s.Title
+	}
+	return s.Number + " " + s.Title
 }
 
 // next is the number a section's file takes.

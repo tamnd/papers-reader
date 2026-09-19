@@ -278,9 +278,12 @@ func TestTheTitleIsMatchedThroughCaseAndPunctuation(t *testing.T) {
 	}
 }
 
-// Only the first heading is offered the comparison. A paper that prints its
-// title again in the middle is printing a running head, and the section it
-// heads is still a section.
+// Only the first heading is offered the comparison, so a title printed again
+// in the middle of the paper is still a cut when the sections are made. It
+// has nothing under it, because the section it appears to head has a heading
+// of its own on the next line, and a repeat of the paper's own name with
+// nothing under it is a running head. It goes, and the section it was
+// printed over is still a section.
 func TestATitlePrintedAgainDoesNotSwallowASection(t *testing.T) {
 	r := Titled(doc(
 		"# A Study of Something",
@@ -290,10 +293,99 @@ func TestATitlePrintedAgainDoesNotSwallowASection(t *testing.T) {
 		"# 2 Background", prose,
 		"# 3 Results", prose,
 	), "A Study of Something")
-	want := []string{"00_front.md", "01_introduction.md", "02_a_study_of_something.md", "03_background.md", "04_results.md"}
+	want := []string{"00_front.md", "01_introduction.md", "02_background.md", "03_results.md"}
 	if got := names(r); !equal(got, want) {
 		t.Errorf("split into %v, want %v", got, want)
 	}
+	for _, s := range r.Sections[1:] {
+		if strings.Contains(s.Body, "A Study of Something") {
+			t.Errorf("the running head was published in %s", s.Title)
+		}
+	}
+}
+
+// A heading with nothing under it is a heading of what comes after it, not of
+// what came before, so it goes to the top of the next section and not the
+// bottom of the last one. An appendix tacked onto the end of a conclusion
+// reads as part of the conclusion.
+func TestAHeadingWithNothingUnderItGoesToTheSectionBelow(t *testing.T) {
+	r := Split(doc(
+		"# Introduction", prose,
+		"# Conclusion", prose,
+		"# Appendix",
+		"# Proof of the Theorem", prose,
+	))
+	want := []string{"01_introduction.md", "02_conclusion.md", "03_proof_of_the_theorem.md"}
+	if got := names(r); !equal(got, want) {
+		t.Fatalf("split into %v, want %v", got, want)
+	}
+	last := r.Sections[len(r.Sections)-1]
+	if !strings.HasPrefix(last.Body, "### Appendix\n\n") {
+		t.Errorf("the proof opens %q, want the appendix heading over it", first(last.Body))
+	}
+	if strings.Contains(r.Sections[1].Body, "Appendix") {
+		t.Errorf("the appendix heading was left on the end of the conclusion")
+	}
+}
+
+// A run of them all lands in the same place, in the order the paper printed
+// them. Sketchpad's appendix G lists the features of TX-2 and the reader set
+// every item in the list as a heading of its own.
+func TestARunOfEmptyHeadingsKeepsItsOrder(t *testing.T) {
+	r := Split(doc(
+		"# Introduction", prose,
+		"# Sixty four index registers",
+		"# Deferred addressing",
+		"# Magnetic tape", prose,
+	))
+	want := []string{"01_introduction.md", "02_magnetic_tape.md"}
+	if got := names(r); !equal(got, want) {
+		t.Fatalf("split into %v, want %v", got, want)
+	}
+	body := r.Sections[1].Body
+	at, to := strings.Index(body, "Sixty four"), strings.Index(body, "Deferred")
+	if at < 0 || to < 0 || at > to {
+		t.Errorf("the two headings are at %d and %d in %q", at, to, first(body))
+	}
+}
+
+// The numbers the files take are given out after the fold, because a section
+// that has gone takes its number with it and a run of files numbered 1, 3, 4
+// is rule T04's hole in the numbering.
+func TestTheFoldDoesNotLeaveAHoleInTheNumbering(t *testing.T) {
+	r := Split(doc(
+		"# Introduction", prose,
+		"# Method",
+		"# Magnetic tape", prose,
+		"# Conclusion", prose,
+	))
+	want := []string{"01_introduction.md", "02_magnetic_tape.md", "03_conclusion.md"}
+	if got := names(r); !equal(got, want) {
+		t.Errorf("split into %v, want %v", got, want)
+	}
+}
+
+// The last heading in the paper has nothing to fold into, and dropping it
+// would lose the only record that the paper has a heading there.
+func TestAnEmptyHeadingAtTheEndStaysWhereItIs(t *testing.T) {
+	r := Split(doc(
+		"# Introduction", prose,
+		"# Conclusion", prose,
+		"# Acknowledgments",
+	))
+	want := []string{"01_introduction.md", "02_conclusion.md", "03_acknowledgments.md"}
+	if got := names(r); !equal(got, want) {
+		t.Errorf("split into %v, want %v", got, want)
+	}
+}
+
+// first is the opening of a body, for an error message that has to fit on a
+// line.
+func first(body string) string {
+	if line, _, ok := strings.Cut(body, "\n"); ok {
+		return line
+	}
+	return body
 }
 
 // A paper with no title on record keeps every heading, because a comparison

@@ -333,6 +333,35 @@ func TestT08AndT09OnLength(t *testing.T) {
 	}
 }
 
+// A heading the reader set over another heading used to come out as a file
+// with a title and nothing under it. T08 reported it along with the stubs
+// and the splits that landed early, and a blank page is worse than any of
+// those: there is no reading of the corpus in which it is what the paper
+// says.
+func TestT14ReportsASectionWithNoBodyAtAll(t *testing.T) {
+	for _, body := range []string{"", "\n", "   \n\n"} {
+		files := map[string]string{
+			"manifests/sources.yaml":                          openSources,
+			"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+			"content/en/vaswani-2017-attention/01_section.md": file(section("section"), body),
+		}
+		if res := result(t, Run(in(t, files), false), "T14"); !res.Failed() {
+			t.Errorf("T14 accepted a body of %q", body)
+		}
+	}
+}
+
+func TestT14AcceptsASectionWithSomethingInIt(t *testing.T) {
+	files := map[string]string{
+		"manifests/sources.yaml":                          openSources,
+		"content/en/vaswani-2017-attention/00_front.md":   file(section("front"), abstract),
+		"content/en/vaswani-2017-attention/01_section.md": file(section("section"), "Section 3.\n"),
+	}
+	if res := result(t, Run(in(t, files), false), "T14"); res.Failed() {
+		t.Errorf("T14 reported a short section: %v", res.Findings)
+	}
+}
+
 // Section 3 of the GPT-3 paper is sixty three thousand characters and it is
 // nineteen subsections of a results section that runs to twenty pages. The
 // length is a symptom of a splitter that missed every heading, and a file

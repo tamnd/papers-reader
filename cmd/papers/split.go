@@ -341,32 +341,47 @@ func splitOne(c *corpus.Corpus, p corpus.Paper, rec *corpus.Source, force, prune
 	for _, name := range report.Kept {
 		n.notes = append(n.notes, fmt.Sprintf("%s was edited by hand and is left alone", name))
 	}
-	for _, name := range report.Stale {
-		what := "is from an earlier split and this one did not produce it"
-		if prune {
-			what = "is from an earlier split and has been deleted"
-		}
-		n.notes = append(n.notes, fmt.Sprintf("%s %s", name, what))
-	}
+	// What is deleted is worked out before anything is reported, because the
+	// report has to say what happened and not what the flag asked for. A
+	// partial split keeps most of what is stale, and a note that said every
+	// one of them had been deleted sent one reading of the corpus looking
+	// for a bug in Prune that was not there.
+	var gone []string
+	short := ""
 	if prune {
-		dir := c.Content(corpus.EN, p.ID)
-		short, err := partial(c, p.ID, rec)
+		s, err := partial(c, p.ID, rec)
 		if err != nil {
 			return n, err
 		}
-		gone := report.Stale
+		short = s
+		gone = report.Stale
 		if short != "" {
 			// Part of the paper, so most of what is stale is the rest of it
 			// and has to stay. The exception is a leftover that has taken a
 			// section number this split just used, which is wrong whatever
 			// else is missing. See Collided.
 			gone = report.Collided()
+		}
+	}
+	deleted := map[string]bool{}
+	for _, name := range gone {
+		deleted[name] = true
+	}
+	for _, name := range report.Stale {
+		what := "is from an earlier split and this one did not produce it"
+		if deleted[name] {
+			what = "is from an earlier split and has been deleted"
+		}
+		n.notes = append(n.notes, fmt.Sprintf("%s %s", name, what))
+	}
+	if prune {
+		if short != "" {
 			n.notes = append(n.notes, short)
 			if len(gone) > 0 {
 				n.notes = append(n.notes, fmt.Sprintf("%d of them share a section number with a file this split wrote and have been deleted anyway", len(gone)))
 			}
 		}
-		if err := split.Prune(dir, gone); err != nil {
+		if err := split.Prune(c.Content(corpus.EN, p.ID), gone); err != nil {
 			return n, err
 		}
 	}
