@@ -457,7 +457,7 @@ func Headings(paragraphs []string) (Scheme, []Heading) {
 			out = append(out, h)
 		}
 	}
-	assignKinds(out)
+	assignKinds(paragraphs, out)
 	return s, out
 }
 
@@ -723,12 +723,18 @@ const (
 // it is only taken off a heading in this position: before the references
 // "A Note on Two Problems" is a title that starts with an article, and after
 // them it is not a title anybody prints.
-func assignKinds(hs []Heading) {
+//
+// Only one heading gets the references kind, and bibliography says which.
+// The rest of them fall through to the rules above, which is how a second
+// list ends up an appendix when it comes after the paper's own and a section
+// when it comes before it.
+func assignKinds(texts []string, hs []Heading) {
+	bib := bibliography(texts, hs)
 	appendices, cited := false, false
 	for i := range hs {
 		title := strings.ToLower(hs[i].Title)
 		switch {
-		case sectionNames[title] == "References":
+		case i == bib:
 			hs[i].Kind = KindReferences
 			cited = true
 		case hs[i].How == Lettered || strings.HasPrefix(title, "appendix") || appendices || cited:
@@ -741,6 +747,44 @@ func assignKinds(hs []Heading) {
 			hs[i].Kind = KindSection
 		}
 	}
+}
+
+// bibliography is which of the headings starts the paper's own reference
+// list, or -1 if none of them does.
+//
+// A paper has one bibliography. A second References heading is not a second
+// one: it belongs to something else the PDF carries, and both papers in the
+// corpus that have one carry a whole other document. The Sketchpad scan
+// opens with a foreword the editors of the 2003 electronic edition wrote,
+// with ten references of its own on page 7, and Sutherland's own twelve are
+// eighty pages later. The Borg PDF closes with a one page errata sheet that
+// has its own related work and its own two references, four pages after
+// Borg's eighty four.
+//
+// Calling both of them references cost both papers their structure, because
+// everything after a bibliography is an appendix: the foreword's list turned
+// the seventy five sections of the thesis behind it into appendices, and
+// rule T07 reported the pair in each paper.
+//
+// The paper's own list is the one with the most entries counting up under
+// it. What a journal prints at the head of each page of a long list is not
+// in the way here, because oneBibliography has already taken the repeats
+// out, so the headings left are separate lists and the longest is the
+// paper's. A tie goes to the last, which is where a bibliography belongs and
+// what refs.Bibliography settles on for the same reason. A paper whose
+// entries are not bracketed and numbered counts zero everywhere and so falls
+// on that tie, which leaves it where it was before any of this.
+func bibliography(texts []string, hs []Heading) int {
+	at, most := -1, -1
+	for i := range hs {
+		if sectionNames[strings.ToLower(hs[i].Title)] != "References" {
+			continue
+		}
+		if n := entries(texts, hs[i].Index+1); n >= most {
+			at, most = i, n
+		}
+	}
+	return at
 }
 
 // lettered pulls the appendix letter off the front of a heading that has one

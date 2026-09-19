@@ -62,9 +62,13 @@ func headReferences(paragraphs []assemble.Paragraph) ([]assemble.Paragraph, bool
 	if cited(paragraphs) {
 		return paragraphs, false
 	}
+	texts := make([]string, len(paragraphs))
+	for i, p := range paragraphs {
+		texts[i] = p.Text
+	}
 	at := -1
 	for i := range paragraphs {
-		if entries(paragraphs, i) >= entriesInARow {
+		if entries(texts, i) >= entriesInARow {
 			at = i
 			break
 		}
@@ -95,10 +99,10 @@ func headReferences(paragraphs []assemble.Paragraph) ([]assemble.Paragraph, bool
 // thing a bibliography does that nothing else does is number its entries in
 // order. Equal does not count: a list that prints [1] twice is not a list
 // this should cut at.
-func entries(paragraphs []assemble.Paragraph, i int) int {
+func entries(texts []string, i int) int {
 	n, last := 0, 0
-	for ; i < len(paragraphs); i++ {
-		text := strings.TrimSpace(paragraphs[i].Text)
+	for ; i < len(texts); i++ {
+		text := strings.TrimSpace(texts[i])
 		m := entryLabel.FindStringSubmatch(text)
 		if m == nil || !entryYear.MatchString(text) {
 			break

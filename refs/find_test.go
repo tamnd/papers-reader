@@ -282,3 +282,62 @@ func TestAContentsPageIsNotTheHeading(t *testing.T) {
 		t.Errorf("the bibliography is %v, want the one entry", section)
 	}
 }
+
+// A PDF that carries a second document carries its references too, and the
+// paper's own list is the longer of the two.
+func TestTheSecondListInThePDFIsNotThePapersOwn(t *testing.T) {
+	d := doc(
+		"the body of the paper, which is long enough that nothing in it reads as a heading of any kind.",
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"[2] Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971).",
+		"[3] Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972).",
+		"On the Invented Method: errata",
+		"a paragraph of the errata sheet, which is long enough that nothing in it reads as a heading.",
+		"Acknowledgements",
+		"another paragraph of the errata sheet, and it is long enough not to read as a heading either.",
+		"References",
+		"[1] Danforth, S. On the fourth of the invented papers. Journal of Nothing 2, 2 (1973).",
+	)
+	section := got(Bibliography(d))
+	if len(section) != 3 {
+		t.Fatalf("the bibliography is %v, want the paper's own three entries", section)
+	}
+	for i, p := range section {
+		if !strings.HasPrefix(p, "["+string(rune('1'+i))+"]") {
+			t.Errorf("entry %d is %q", i+1, p)
+		}
+	}
+}
+
+// The errata sheet's own prose sits between the paper's last entry and the
+// errata's first, and none of it belongs to the paper's last entry.
+func TestASecondListEndsTheFirstAtItsLastEntry(t *testing.T) {
+	d := doc(
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"[2] Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971).",
+		"a paragraph of the errata sheet, which is long enough that nothing in it reads as a heading.",
+		"References",
+		"[1] Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972).",
+	)
+	section := got(Bibliography(d))
+	if len(section) != 2 {
+		t.Fatalf("the bibliography is %v, want the two entries and none of the prose", section)
+	}
+}
+
+// Nothing is cut off the end of a paper that has one list, because what
+// trails the last entry there is the rest of the last entry.
+func TestTheRestOfTheLastEntryIsKept(t *testing.T) {
+	d := doc(
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"[2] Beacham, Q. On the second of the invented papers. Journal of",
+		"Nothing 1, 2 (1971).",
+	)
+	section := got(Bibliography(d))
+	if len(section) != 3 {
+		t.Fatalf("the bibliography is %v, want the second entry whole", section)
+	}
+}

@@ -722,3 +722,81 @@ func TestAMarkedHeadingSetOffWithAQuadIsStillAHeading(t *testing.T) {
 		t.Errorf("3.1 came back numbered %q at level %d", hs[4].Number, hs[4].Level)
 	}
 }
+
+// A foreword written for a reprint brings its own reference list, and it is
+// in front of the paper rather than behind it. The Sketchpad scan is the
+// case: the editors of the 2003 electronic edition head the volume, their
+// ten references print on page 7, and Sutherland's own twelve are eighty
+// pages later. Calling the first list the bibliography made an appendix of
+// the whole thesis.
+func TestAForewordsReferencesAreNotThePapersOwn(t *testing.T) {
+	_, hs := Headings([]string{
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"[2] Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971).",
+		"## 1 Introduction", prose,
+		"## 2 Method", prose,
+		"References",
+		"[1] Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972).",
+		"[2] Danforth, S. On the fourth of the invented papers. Journal of Nothing 2, 2 (1973).",
+		"[3] Eglinton, T. On the fifth of the invented papers. Journal of Nothing 3, 1 (1974).",
+	})
+	if len(hs) != 4 {
+		t.Fatalf("found %d headings, want 4: %v", len(hs), titles(hs))
+	}
+	if hs[0].Kind != KindSection {
+		t.Errorf("the foreword's references came back as %q, want %q", hs[0].Kind, KindSection)
+	}
+	for _, h := range hs[1:3] {
+		if h.Kind != KindSection {
+			t.Errorf("%q came back as %q, want %q", h.Title, h.Kind, KindSection)
+		}
+	}
+	if hs[3].Kind != KindReferences {
+		t.Errorf("the paper's references came back as %q, want %q", hs[3].Kind, KindReferences)
+	}
+}
+
+// An errata sheet bound in behind the paper brings its own list too, and
+// that one is an appendix because it comes after the paper's.
+func TestAnErrataSheetsReferencesAreAnAppendix(t *testing.T) {
+	_, hs := Headings([]string{
+		"## 1 Introduction", prose,
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"[2] Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971).",
+		"[3] Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972).",
+		"References",
+		"[1] Danforth, S. On the fourth of the invented papers. Journal of Nothing 2, 2 (1973).",
+	})
+	if len(hs) != 3 {
+		t.Fatalf("found %d headings, want 3: %v", len(hs), titles(hs))
+	}
+	if hs[1].Kind != KindReferences {
+		t.Errorf("the paper's references came back as %q, want %q", hs[1].Kind, KindReferences)
+	}
+	if hs[2].Kind != KindAppendix {
+		t.Errorf("the errata's references came back as %q, want %q", hs[2].Kind, KindAppendix)
+	}
+}
+
+// A paper whose entries are not numbered in brackets counts nothing under
+// either heading, and the last one is where a bibliography belongs.
+func TestWithNothingToCountTheLastListWins(t *testing.T) {
+	_, hs := Headings([]string{
+		"References",
+		"Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"## 1 Introduction", prose,
+		"References",
+		"Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971).",
+	})
+	if len(hs) != 3 {
+		t.Fatalf("found %d headings, want 3: %v", len(hs), titles(hs))
+	}
+	if hs[0].Kind != KindSection {
+		t.Errorf("the first list came back as %q, want %q", hs[0].Kind, KindSection)
+	}
+	if hs[2].Kind != KindReferences {
+		t.Errorf("the last list came back as %q, want %q", hs[2].Kind, KindReferences)
+	}
+}
