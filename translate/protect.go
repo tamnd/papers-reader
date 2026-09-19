@@ -404,6 +404,18 @@ func same(want, got Span) bool {
 
 func canonical(s string) string { return spacing(rebrace(maskText(s))) }
 
+// alike is two formulas that are the same but for the names inside their
+// \text commands, which is what a translated name looks like from the
+// outside. Unrename says what it is for.
+func alike(want, got Span) bool {
+	if want.Kind != Math || got.Kind != Math {
+		return false
+	}
+	return named(want.Text) == named(got.Text)
+}
+
+func named(s string) string { return spacing(rebrace(mask(s, true))) }
+
 // blanks is a run of whitespace.
 var blanks = regexp.MustCompile(`\s+`)
 
@@ -438,7 +450,16 @@ var textCommand = regexp.MustCompile(`\\(?:text|textit|textbf|textrm|textnormal|
 // formulas that differ only in the words inside their \text are the same
 // formula. The braces themselves stay, because moving one is a change to the
 // mathematics and not to the prose inside it.
-func maskText(s string) string {
+func maskText(s string) string { return mask(s, false) }
+
+// mask is maskText, and with all set it masks the arguments that are not
+// prose as well.
+//
+// Only one caller sets it. Unrename has already decided that a formula is
+// wrong and is asking what it was meant to be, so it wants the comparison
+// that says two formulas differ in nothing but a name. Every other caller
+// wants the comparison that calls that a difference, because it is one.
+func mask(s string, all bool) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
 		loc := textCommand.FindStringIndex(s[i:])
@@ -458,7 +479,7 @@ func maskText(s string) string {
 		// whole. mathtex reads \text{$\Gamma$ correspondence} as one span on
 		// purpose, and masking the argument would let a translator rewrite the
 		// \Gamma inside it with nothing to catch that.
-		if strings.Contains(arg, "$") || Upright[strings.TrimSpace(arg)] || Applied(s, shut) {
+		if strings.Contains(arg, "$") || !all && (Upright[strings.TrimSpace(arg)] || Applied(s, shut)) {
 			b.WriteString(arg)
 		} else {
 			// The spaces at the edges stay. A "\text{not }" carries the space

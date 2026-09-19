@@ -287,7 +287,54 @@ func TestAFormulaTheAnswerDroppedIsNotInvented(t *testing.T) {
 	}
 }
 
-// Repair is all four of them in one call, which is what the run makes.
+// Goldwasser, where the paragraph goes on calling the same object pair$_j$
+// in prose four more times.
+func TestANameThePaperPrintsIsPutBack(t *testing.T) {
+	source := `Since $i'_j = 1$, $(v_j)^2 w^{-1} \mod x \in \text{pair}_j$ holds, and pair$_j$ is fixed.` + "\n"
+	answer := `Vì $i'_j = 1$, $(v_j)^2 w^{-1} \mod x \in \text{cặp}_j$ đúng, và pair$_j$ là cố định.` + "\n"
+	want := `Vì $i'_j = 1$, $(v_j)^2 w^{-1} \mod x \in \text{pair}_j$ đúng, và pair$_j$ là cố định.` + "\n"
+	if got := Unrename(source, answer); got != want {
+		t.Errorf("Unrename gave\n%q\nand the paper prints\n%q", got, want)
+	}
+	if bad := Verify(source, Unrename(source, answer), corpus.VI); bad != nil {
+		t.Errorf("a repaired answer was still refused: %s", bad[0])
+	}
+}
+
+// Two names renamed in one paragraph and each of them could have been
+// either, so neither is touched and the passage is refused.
+func TestTwoRenamedNamesInOneParagraphAreLeftAlone(t *testing.T) {
+	source := `The sets $\text{pair}_j$ and $\text{item}_j$ are built.` + "\n"
+	answer := `Các tập $\text{cặp}_j$ và $\text{mục}_j$ được dựng.` + "\n"
+	if got := Unrename(source, answer); got != answer {
+		t.Errorf("Unrename gave %q and there is no telling which name is which", got)
+	}
+}
+
+// A \text that says something about the formula is prose and is meant to be
+// translated. Nothing here puts it back.
+func TestATranslatedWordInsideAFormulaIsLeftTranslated(t *testing.T) {
+	source := `The guard is $(\text{not } A) \text{ or } B$ throughout.` + "\n"
+	answer := `Điều kiện là $(\text{không } A) \text{ hoặc } B$ xuyên suốt.` + "\n"
+	if got := Unrename(source, answer); got != answer {
+		t.Errorf("Unrename gave %q and the words in it are prose", got)
+	}
+}
+
+// A formula that changed outside its \text is a changed formula, and the
+// answer is refused rather than patched up.
+func TestAFormulaThatChangedMoreThanItsNameIsNotPutBack(t *testing.T) {
+	source := `The value $(v_j)^2 \in \text{pair}_j$ is fixed.` + "\n"
+	answer := `Giá trị $(v_j)^3 \in \text{cặp}_j$ là cố định.` + "\n"
+	if got := Unrename(source, answer); got != answer {
+		t.Errorf("Unrename gave %q and the exponent moved", got)
+	}
+	if Verify(source, answer, corpus.VI) == nil {
+		t.Error("Verify accepted an answer that changed a formula")
+	}
+}
+
+// Repair is all five of them in one call, which is what the run makes.
 func TestRepairPutsBackAnAddressAndAFormulaAtOnce(t *testing.T) {
 	source := "See http://x.test/~a for $x_1$ and the rest.\n"
 	answer := "Xem http://x.test/\\~a để biết $x\\_1$ và phần còn lại.\n"

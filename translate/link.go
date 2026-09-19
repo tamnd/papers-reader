@@ -280,30 +280,73 @@ var letterMath = regexp.MustCompile(`^\$([A-Za-z])\$$`)
 // the section came back the same way on every try of the run, and the paper
 // is held back whole over them.
 //
-// The arithmetic has to come out exactly. A letter is only wrapped when the
-// answer is short of that formula by the same number of bare copies of the
-// letter as it has standing on their own outside every protected span. So a
-// paragraph whose prose really does use the letter as a word is left alone,
-// because then there is one copy too many and nothing fires, and a paragraph
-// that dropped the formula altogether is still refused.
+// Paragraph by paragraph, and only where the arithmetic comes out exactly.
+// The English paragraph has to write the letter as mathematics and never as
+// a bare letter, and the answer has to be short of that formula by the same
+// number of bare copies of it as the answer has standing on their own
+// outside every protected span. Both halves matter and neither is enough.
+//
+// A page is what showed that. Section 8 of Shannon came back with two bare
+// q, one bare N and two bare H in its twenty third paragraph, two more bare
+// N in its twenty seventh and one in its thirty first, and every one of them
+// was a formula whose dollars had gone. Counted over the whole page instead
+// of paragraph by paragraph, the same answer has four bare q against a
+// shortfall of two, seven bare N against four and six bare H against two,
+// because Shannon's prose also says "for each possible state i" and "the
+// sequences of N symbols" in plain words. Whole page arithmetic never comes
+// out and the repair never fires; paragraph arithmetic came out on the nose
+// five times out of five.
 //
 // Standing on its own means with no letter, digit, dash, backslash, brace,
 // underscore, caret, backtick, apostrophe or dollar sign either side of it.
 // The dash is in that list for "$q$-ary", which is a compound word: wrapping
 // its letter would be right and the guard is cheaper than being sure.
+//
+// A paragraph that dropped the formula and wrote no letter at all is still
+// refused, and so is an answer whose paragraphs do not line up with the
+// source's, which Verify has better words for.
 func Redollar(source, answer string) string {
 	if !strings.Contains(source, "$") {
 		return answer
 	}
+	was, now := blocks(source), blocks(answer)
+	if len(was) != len(now) {
+		return answer
+	}
+	src, rs := []rune(source), []rune(answer)
+	var b strings.Builder
+	at := 0
+	for i := range now {
+		had := string(rs[now[i].start:now[i].end])
+		fixed := redollarBlock(string(src[was[i].start:was[i].end]), had)
+		if fixed == had {
+			continue
+		}
+		b.WriteString(string(rs[at:now[i].start]))
+		b.WriteString(fixed)
+		at = now[i].end
+	}
+	if at == 0 {
+		return answer
+	}
+	b.WriteString(string(rs[at:]))
+	return b.String()
+}
+
+// redollarBlock is one paragraph of the answer with its lost dollar signs
+// put back.
+func redollarBlock(source, answer string) string {
 	letters, want := singles(Protect(source))
 	if len(letters) == 0 {
 		return answer
 	}
 	_, have := singles(Protect(answer))
 	for _, l := range letters {
-		if n := want[l] - have[l]; n > 0 {
-			answer = redollar(answer, l, n)
+		n := want[l] - have[l]
+		if n <= 0 || len(loose(source, l)) > 0 {
+			continue
 		}
+		answer = redollar(answer, l, n)
 	}
 	return answer
 }
@@ -378,14 +421,112 @@ func joined(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune("$`\\_^{}-'", r)
 }
 
+// Unrename puts back the name of something the paper names inside a formula
+// and the answer translated.
+//
+// A \text that carries an index or an argument is a name and not prose, and
+// Applied has the reasoning and the measurements for that. The prompt does
+// not say so in as many words, and where a paper names something with an
+// ordinary word the translator translates it. Goldwasser calls the jth of m
+// pairs $\text{pair}_j$, and the Vietnamese came back with
+// $(v_j)^2 w^{-1} \mod x \in \text{cặp}_j$. The same paragraph writes the
+// same object as a bare pair$_j$ four more times, in prose, where nothing
+// asked the translator to rename it and it did not, so the page would have
+// called one thing two things. The section came back that way on every try
+// of the run and the paper is held back whole over it.
+//
+// Paragraph by paragraph, and only where the pairing is not in doubt. A
+// formula of the answer is put back when the source does not have it
+// anywhere in the paragraph, exactly one formula of the source is the same
+// but for the words inside its \text commands, and that one is itself
+// nowhere in the answer. Two candidates and it is left alone, because
+// picking between them would be guessing.
+//
+// What goes back is the source formula, character for character, so the
+// reader gets what the paper printed and never something this invented. And
+// an answer that passes the comparison is never touched at all, because the
+// only formulas looked at are the ones Compare would report as additions.
+func Unrename(source, answer string) string {
+	if !textCommand.MatchString(answer) {
+		return answer
+	}
+	was, now := blocks(source), blocks(answer)
+	if len(was) != len(now) {
+		return answer
+	}
+	src, rs := []rune(source), []rune(answer)
+	var b strings.Builder
+	at := 0
+	for i := range now {
+		had := string(rs[now[i].start:now[i].end])
+		fixed := unrenameBlock(string(src[was[i].start:was[i].end]), had)
+		if fixed == had {
+			continue
+		}
+		b.WriteString(string(rs[at:now[i].start]))
+		b.WriteString(fixed)
+		at = now[i].end
+	}
+	if at == 0 {
+		return answer
+	}
+	b.WriteString(string(rs[at:]))
+	return b.String()
+}
+
+// unrenameBlock is one paragraph of the answer with its renamed formulas put
+// back.
+func unrenameBlock(source, answer string) string {
+	want, got := Protect(source), Protect(answer)
+	rs := []rune(answer)
+	var b strings.Builder
+	at := 0
+	for _, s := range got {
+		if s.Kind != Math || holds(want, s) {
+			continue
+		}
+		t := only(want, got, s)
+		if t == "" {
+			continue
+		}
+		b.WriteString(string(rs[at:s.Start]))
+		b.WriteString(t)
+		at = s.End
+	}
+	if at == 0 {
+		return answer
+	}
+	b.WriteString(string(rs[at:]))
+	return b.String()
+}
+
+// only is the one formula of the source that this formula of the answer can
+// have been, and the empty string when there is no such formula or more than
+// one of them. A formula the answer still has somewhere is not a candidate,
+// because it came through and is not the one that was renamed.
+func only(want, got []Span, s Span) string {
+	out := ""
+	for _, t := range want {
+		if t.Kind != Math || holds(got, t) || !alike(t, s) {
+			continue
+		}
+		if out != "" && out != t.Text {
+			return ""
+		}
+		out = t.Text
+	}
+	return out
+}
+
 // Repair is the answer with the tics taken out of it that asking again does
 // not cure: a web address turned into a link to itself, an address written
-// back with Markdown escapes in it, a formula written back the same way, and
-// a one letter formula written back without its dollar signs. Every one of
-// them leaves the reader the text the paper printed, which is why each is a
-// repair and not a relaxation of the check.
+// back with Markdown escapes in it, a formula written back the same way, a
+// name the paper prints inside a formula written back in another language,
+// and a one letter formula written back without its dollar signs. Every one
+// of them leaves the reader the text the paper printed, which is why each is
+// a repair and not a relaxation of the check.
 func Repair(source, answer string) string {
-	return Redollar(source, UnescapeMath(source, Unescape(source, Unlink(source, answer))))
+	return Redollar(source, Unrename(source, UnescapeMath(source, Unescape(source, Unlink(source, answer)))))
 }
 
 // escape is a backslash in front of a piece of ASCII punctuation, which is
