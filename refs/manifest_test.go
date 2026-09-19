@@ -83,3 +83,16 @@ func TestAManifestKnowsWhatItResolved(t *testing.T) {
 		t.Error("found an entry that is not there")
 	}
 }
+
+func TestAGapIsAnEntryTheManifestSaysIsNotThere(t *testing.T) {
+	m := &Manifest{Gaps: []Gap{{Key: "67", Why: "the page runs 66 then 68 in four reads of it"}}}
+	if !m.Missing("67") {
+		t.Error("the manifest does not know 67 is a gap")
+	}
+	if m.Missing("68") {
+		t.Error("the manifest calls 68 a gap and it is not one")
+	}
+	if (&Manifest{}).Missing("67") {
+		t.Error("a manifest with no gaps at all has one")
+	}
+}

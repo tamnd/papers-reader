@@ -68,6 +68,33 @@ entries:
 	}
 }
 
+// A gap is a person saying they went and looked and the entry is not on the
+// page, so R02 has nothing left to report about it. Nothing generates one,
+// which is what keeps the rule honest.
+func TestR02LeavesARecordedGapAlone(t *testing.T) {
+	in := build(t, map[string]string{
+		"manifests/refs/vaswani-2017-attention.yaml": `paper: vaswani-2017-attention
+style: bracket
+entries:
+  - key: "1"
+    raw: A. Nkemelu. A theory of slow indexes. Journal of Slow Things, 1991.
+    resolves_to: ""
+  - key: "2"
+    raw: B. Oyelaran. Indexes that are slower still. Slow Things Quarterly, 1994.
+    resolves_to: ""
+gaps:
+  - key: "7"
+    why: the list runs 6 then 8 in four reads of the page
+`,
+		"content/en/vaswani-2017-attention/02_model.md": front("vaswani-2017-attention", "section",
+			"This follows [1] and [2], and the bound is due to [7]."),
+	})
+	res := result(t, Run(in, true), "R02")
+	if len(res.Findings) != 0 {
+		t.Fatalf("R02 found %d, want none: %v", len(res.Findings), res.Findings)
+	}
+}
+
 // A citation inside a listing is an array index, and R02 reads a body the
 // same way the rewriter does so that it does not complain about one.
 func TestR02LeavesCodeAndMathematicsAlone(t *testing.T) {

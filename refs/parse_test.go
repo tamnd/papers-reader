@@ -375,3 +375,37 @@ func TestABracketRunningIntoSomethingElseIsNotALabel(t *testing.T) {
 		t.Errorf("entry 1 reads %q, want the whole of it", got)
 	}
 }
+
+// A numbered list can lose the point after a number the same way a
+// bracketed one loses the space, and it costs the entry after it too.
+func TestANumberWithNoPointAfterItIsStillALabel(t *testing.T) {
+	r := parse(
+		"1. Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970), 1-10.",
+		"2. Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971), 11-20.",
+		"3 Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972), 21-30.",
+		"4. Danforth, S. On the fourth of the invented papers. Journal of Nothing 2, 2 (1973), 31-40.",
+	)
+	if len(r.Entries) != 4 {
+		t.Fatalf("the parse found %d entries, want 4: %v", len(r.Entries), keys(r))
+	}
+	if got := r.Entries[2].Raw; !strings.HasPrefix(got, "Coleridge") {
+		t.Errorf("entry 3 reads %q, want it to start at the author", got)
+	}
+}
+
+// An ordinal in the middle of an entry is the shape a number with no point
+// after it would otherwise be read as, and the venue of a conference paper
+// is full of them.
+func TestAnOrdinalInTheMiddleOfAnEntryIsNotALabel(t *testing.T) {
+	r := parse(
+		"1. Aarons, P. On the first of the invented papers. In Proceedings of the 2nd Symposium on Nothing (Springfield, 1970).",
+		"2. Beacham, Q. On the second of the invented papers. In Proceedings of the 3rd Symposium on Nothing (Springfield, 1971).",
+		"3. Coleridge, R. On the third of the invented papers. Journal of Nothing 2, 1 (1972), 21-30.",
+	)
+	if len(r.Entries) != 3 {
+		t.Fatalf("the parse found %d entries, want 3: %v", len(r.Entries), keys(r))
+	}
+	if got := r.Entries[0].Raw; !strings.HasSuffix(got, "(Springfield, 1970).") {
+		t.Errorf("entry 1 reads %q, want the whole of it", got)
+	}
+}

@@ -104,6 +104,11 @@ func ruleR01(in *Input) ([]Finding, error) {
 // ruleR02 catches a citation that points at nothing. A paper that says "as
 // shown in [31]" and has thirty references has lost an entry somewhere in
 // extraction, and the reader following the number finds nothing.
+//
+// An entry the manifest records as a gap is left out, because somebody has
+// been and looked and the page will not give it back. Nothing generates
+// those and they are a line of YAML a person wrote, which is the only
+// reason this rule can keep its teeth: see refs.Gap.
 func ruleR02(in *Input) ([]Finding, error) {
 	var out []Finding
 	ran := false
@@ -128,7 +133,7 @@ func ruleR02(in *Input) ([]Finding, error) {
 			ran = true
 			seen := map[string]bool{}
 			for _, key := range refs.Citations(string(body)) {
-				if keys[key] || seen[key] {
+				if keys[key] || seen[key] || m.Missing(key) {
 					continue
 				}
 				seen[key] = true

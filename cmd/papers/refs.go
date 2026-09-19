@@ -117,12 +117,20 @@ the decision to do so is recorded in that file rather than in this one.
 		}
 		n := refs.Resolve(r.Entries, manifest.Papers, p.ID)
 		m := refs.NewManifest(p.ID, r)
+		// A gap is written by hand and says why an entry is not there to be
+		// had, so it survives a rebuild of everything around it.
+		if old, err := refs.Load(c.Refs(p.ID)); err == nil {
+			m.Gaps = old.Gaps
+		}
 		papers++
 		entries += len(r.Entries)
 		linked += n
 		fmt.Printf("  %-34s %s, %d entries, %d into the corpus\n", p.ID, r.Style, len(r.Entries), n)
 		for _, note := range r.Notes {
 			fmt.Printf("    %s\n", note)
+		}
+		for _, g := range m.Gaps {
+			fmt.Printf("    entry %s is recorded as not on the page: %s\n", g.Key, g.Why)
 		}
 		if *long {
 			printLinks(m)

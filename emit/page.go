@@ -316,6 +316,13 @@ func buildPage(in pageInput) (*Page, []Fault, error) {
 	if in.bib != nil {
 		r.cites = map[string]bool{}
 		r.byPaper = map[string]string{}
+		// An entry recorded as not on the page is not linked, because there
+		// is nothing to link to, and not reported either, because somebody
+		// has been and looked. See refs.Gap.
+		r.gaps = map[string]bool{}
+		for _, g := range in.bib.Gaps {
+			r.gaps[g.Key] = true
+		}
 		for _, e := range in.bib.Entries {
 			r.cites[e.Key] = true
 			if e.ResolvesTo != "" {

@@ -144,14 +144,16 @@ var (
 	// entries lost that way were 12, 13 and 25, and the paper cites all
 	// three.
 	//
-	// The separator after a bracket key is optional, and what follows the
-	// label is checked in marks in its place. Saltzer's list is set tight
-	// on the page in a few places and the reader transcribes what it sees,
-	// so "[7]J. Martin" and "[9]G. Bender" have no space at all. Losing
-	// those two lost entry 8 with them, because 8 then failed the test that
-	// a label carries on the count.
+	// The separator after the key is optional in both of them, and tight
+	// below decides the ones that go without. A page sets its labels the
+	// way it sets them and the reader gives back what it sees: Saltzer has
+	// "[7]J. Martin" and "[9]G. Bender" with nothing at all between the
+	// label and the author, and Wegman has "41 Tenenbaum, A. M." with no
+	// point after the number. Each of those took the entry after it down as
+	// well, since a label following a missing one no longer carries on the
+	// count.
 	bracketLabel = regexp.MustCompile(`\[(\d{1,3}|[\p{L}\d+.\-]{0,12}\d{2,4}[a-z]?)\](?:[ \n]\s*)?`)
-	numberLabel  = regexp.MustCompile(`(\d{1,3})[.)][ \n]\s*`)
+	numberLabel  = regexp.MustCompile(`(\d{1,3})[.)]?[ \n]?\s*`)
 	yearLabel    = regexp.MustCompile(`(?m)^(\p{Lu}[^()\n]{0,200}?)\(((?:1[6-9]|20)\d{2}[a-z]?)\)[.,]?\s*`)
 )
 
@@ -174,19 +176,35 @@ func opens(text string, at int) bool {
 	return at == 0 || text[at-1] == ' ' || text[at-1] == '\n'
 }
 
-// starts says whether what comes after a label is the start of an entry.
-//
-// It only has anything to decide where the label ran straight into the text
-// with no space between, since a separator is a separator and says so by
-// itself. An entry begins with an author, so a letter or the quotation mark
-// of a title is the start of one and a digit or a piece of punctuation is
-// the middle of something else. See bracketLabel for why the separator is
-// optional at all.
-func starts(text string, at int) bool {
-	if at > 0 && text[at-1] != ']' {
-		return true
+// separated says whether a label was written with a separator after it,
+// which means a point or a closing bracket of its own and not the space
+// that may follow one. A space is not enough by itself, because half the
+// numbers in a bibliography have one after them.
+func separated(s Style, text string, loc []int) bool {
+	switch s {
+	case StyleBracket:
+		return loc[1] > loc[3]+1
+	case StyleNumber:
+		return loc[3] < len(text) && (text[loc[3]] == '.' || text[loc[3]] == ')')
 	}
-	r, _ := utf8.DecodeRuneInString(text[at:])
+	return true
+}
+
+// tight says whether a label written without a separator is a label.
+//
+// Two things have to hold and neither is asked of a label that has its
+// separator. It begins a line, which is where an entry begins and a number
+// in the middle of one does not: the text here is the paragraphs of the
+// section joined up, so a line is a paragraph. And what follows it begins
+// an entry, which means an author or the quotation mark of a title rather
+// than a digit or a piece of punctuation. Between them these leave "3rd ACM
+// Symposium" where it stands, which is the shape that would otherwise be
+// read as entry 3.
+func tight(text string, at, after int) bool {
+	if at > 0 && text[at-1] != '\n' {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(text[after:])
 	return unicode.IsLetter(r) || r == '"' || r == '\'' || r == '“' || r == '‘'
 }
 
@@ -207,8 +225,13 @@ func marks(s Style, text string) []mark {
 	}
 	var out []mark
 	for _, loc := range re.FindAllStringSubmatchIndex(text, -1) {
-		if s != StyleAuthorYear && (!opens(text, loc[0]) || !starts(text, loc[1])) {
-			continue
+		if s != StyleAuthorYear {
+			if !opens(text, loc[0]) {
+				continue
+			}
+			if !separated(s, text, loc) && !tight(text, loc[0], loc[1]) {
+				continue
+			}
 		}
 		m := mark{at: loc[0], after: loc[1]}
 		switch s {

@@ -22,6 +22,40 @@ type Manifest struct {
 	// the next person to read it does not have to re-run the parser to find
 	// out.
 	Notes []string `yaml:"notes,omitempty"`
+	// Gaps are the entries the page does not give back. See Gap.
+	Gaps []Gap `yaml:"gaps,omitempty"`
+}
+
+// A Gap is an entry the paper cites and the page will not give back.
+//
+// It is written by hand and nothing generates it, which is the point of it.
+// A citation pointing at nothing is rule R02 and nearly always a fault in
+// this toolchain rather than in the paper, and every one of them found so
+// far has been: a heading the journal printed on every page, a label with
+// no space after it, an array index read as a reference. A rule that let
+// the parser excuse its own misses would have hidden all four.
+//
+// So a gap is a person saying, in the corpus and in a diff somebody can
+// review, that they went and looked and the entry is not there to be had.
+// Mohan's entry 67 is the one this was written for: the page is a scan with
+// no text layer, the reference list runs 66 then 68 in four separate reads
+// of it, and the paper cites 67 three times.
+//
+// It is carried across a rebuild of the manifest, since the reason it was
+// written down does not change when the parser does.
+type Gap struct {
+	Key string `yaml:"key"`
+	Why string `yaml:"why"`
+}
+
+// Missing says whether an entry is one the manifest records as a gap.
+func (m *Manifest) Missing(key string) bool {
+	for _, g := range m.Gaps {
+		if g.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 // NewManifest is the parse of one paper's bibliography, ready to save.
