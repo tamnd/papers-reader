@@ -341,3 +341,42 @@ func TestTheRestOfTheLastEntryIsKept(t *testing.T) {
 		t.Fatalf("the bibliography is %v, want the second entry whole", section)
 	}
 }
+
+// A reprint carries the reference list of whatever it was reprinted in
+// front of, and the section ends where the reprinted article starts even
+// though a heading called "1. Introduction" is on no list of the things
+// that come after a bibliography.
+func TestThePaperUnderTheBibliographyIsNotPartOfIt(t *testing.T) {
+	d := doc(
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"[2] Beacham, Q. On the second of the invented papers. Journal of Nothing 1, 2 (1971).",
+		"1. Introduction",
+		"The first paragraph of the paper, which numbers the problems it takes on.",
+		"2. The Problems",
+		"[3] is a problem the paper poses and not a reference at all, and the numbering runs on from where the list above stopped.",
+		"3. The Method",
+		"The method is the usual one and the paper spends four pages on it.",
+		"4. Conclusion",
+		"The conclusion is that the problems are all the same problem.",
+	)
+	section := got(Bibliography(d))
+	if len(section) != 2 {
+		t.Fatalf("the bibliography is %v, want the two entries and none of the paper", section)
+	}
+}
+
+// An appendix ends the bibliography either way, but the last entry has to
+// stop at the heading rather than carry it and the appendix under it.
+func TestTheAppendixIsNotTheEndOfTheLastEntry(t *testing.T) {
+	d := doc(
+		"References",
+		"[1] Aarons, P. On the first of the invented papers. Journal of Nothing 1, 1 (1970).",
+		"Appendix A. Word Frequency",
+		"The listing runs to forty lines and none of it is a reference.",
+	)
+	section := got(Bibliography(d))
+	if len(section) != 1 {
+		t.Fatalf("the bibliography is %v, want the one entry", section)
+	}
+}

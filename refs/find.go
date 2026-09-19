@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/tamnd/papers-reader/assemble"
+	"github.com/tamnd/papers-reader/split"
 )
 
 // Bibliography is the run of paragraphs holding the paper's reference list.
@@ -154,6 +155,9 @@ func span(d *assemble.Document) (int, int) {
 			break
 		}
 	}
+	if next := resumes(d.Paragraphs, head); next < end {
+		end = next
+	}
 	// Another list after this one means everything between the two belongs
 	// to the second of them, so this one ends at its own last entry. The
 	// errata sheet at the back of the Borg PDF prints a title, a date and
@@ -170,6 +174,46 @@ func span(d *assemble.Document) (int, int) {
 		return -1, 0
 	}
 	return head, end
+}
+
+// resumes is where the paper takes up again after a bibliography heading,
+// and is the length of the document for a list nothing follows.
+//
+// The splitter is asked rather than the name list above, because the
+// splitter is what writes the section file and rule R08 is what checks the
+// index and the file agree. A name list can only end the section at a
+// heading somebody thought of, and what follows a bibliography is not
+// always one of those. The Karp PDF is the Springer reprint, and page 2
+// carries the two books the editors of the collection suggest reading under
+// a heading that says References. Under it the reprinted article starts,
+// and nothing on the name list stops the parse there: the index came back
+// with 21 entries of which 19 were Karp's own numbered list of combinatorial
+// problems, read as references because the paper numbers them, and R08
+// reported all 19 of them.
+//
+// It also takes the appendix off the end of the last entry, which is worth
+// as much. An appendix heading does end the section, but only once the
+// entry it is printed under has already swallowed it: MapReduce's last
+// reference came back with the whole of appendix A and its forty line C++
+// listing on the end of it, ResNet's with the first paragraph of the
+// detection baselines, and Saltzer's with the opening of the footnotes.
+// Four papers in the corpus change and the other ninety seven do not.
+//
+// A bibliography heading is walked past, because a list long enough to run
+// over a page has the word printed again at the head of the next one and
+// the splitter reads that repeat as a heading like any other.
+func resumes(ps []assemble.Paragraph, head int) int {
+	texts := make([]string, len(ps))
+	for i := range ps {
+		texts[i] = ps[i].Text
+	}
+	_, hs := split.Headings(texts)
+	for _, h := range hs {
+		if h.Index > head && !isBibliographyHeading(texts[h.Index]) {
+			return h.Index
+		}
+	}
+	return len(ps)
 }
 
 // repeated says whether a bibliography heading stands in a run of
