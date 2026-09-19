@@ -84,7 +84,29 @@ func Anchor(p poppler.Layout, f *extract.Furniture, frame Frame, caps []Caption,
 			// figure and not under both.
 			continue
 		}
-		band, ok := above(p, lines, cuts, frame, caps, c, head)
+		// Twice, and the tight reading first. A line is judged against its
+		// own column there and against the whole page here, and the
+		// difference is worth about eighty five crops on this corpus: the
+		// tight reading is what cuts figure 5 of the BERT paper down from
+		// 489 points to 131 and stops two thirds of appendix C.2 going out
+		// as a picture.
+		//
+		// What the tight reading cannot do is read a figure drawn out of
+		// type. ResNet's figure 3 is three stacks of boxed labels, each
+		// stack a column of its own once the gutters are found, so asked
+		// column by column the whole thing reads as prose and the region
+		// collapses to a corner. Forty figures across the corpus go that
+		// way, which is far more than the tight reading wins.
+		//
+		// So the collapse is the signal. A region the tight reading leaves
+		// too small to keep is a region it has misread, and the loose one
+		// is asked instead. That is not a guess about which papers are
+		// which: it is the test the pass already applies to every
+		// candidate, asked one step earlier.
+		band, ok := above(p, lines, cuts, frame, caps, c, head, true)
+		if !ok || len(keep([]Candidate{band}, p)) == 0 {
+			band, ok = above(p, lines, cuts, frame, caps, c, head, false)
+		}
 		if !ok || len(keep([]Candidate{band}, p)) == 0 || claimed(out, c, band.Box) {
 			continue
 		}
@@ -247,7 +269,7 @@ const half = 0.5
 
 // above grows a region upwards from a caption to the last line over it that
 // belongs to the paper.
-func above(p poppler.Layout, lines []poppler.TextLine, cuts []float64, frame Frame, caps []Caption, c *Caption, head float64) (Candidate, bool) {
+func above(p poppler.Layout, lines []poppler.TextLine, cuts []float64, frame Frame, caps []Caption, c *Caption, head float64, tight bool) (Candidate, bool) {
 	col := extract.Column(poppler.TextLine{Box: c.Box}, cuts)
 	var mine []poppler.TextLine
 	for _, l := range lines {
@@ -259,6 +281,21 @@ func above(p poppler.Layout, lines []poppler.TextLine, cuts []float64, frame Fra
 		return Candidate{}, false
 	}
 	body := bodyHeight(mine, c)
+
+	// Half a line above the caption, because a caption's first line and the
+	// bottom row of the picture can round to the same point.
+	//
+	// A line of this paper's own text, not the median gap between the lines
+	// of this page. The pages this pass is for are nearly all picture, and on
+	// one of them the median gap is not a line of anything. Page 67 of the
+	// GPT-3 paper is two charts and two captions, and pdftotext reads four
+	// lines on it whose median gap is 425 points, more than half the sheet.
+	// A margin of that is a margin wider than the figure: the region for
+	// figure H.11 started 170 points below where the chart does and stopped
+	// 170 points above its own caption, and what was left was too small to
+	// keep. The caption is set in the paper's text face, so the height of a
+	// word of it is a line of the paper wherever the pass runs.
+	ceiling := c.Box.YMin - body/2
 
 	// Every column's own left edge, because a line is prose or picture by
 	// the measure of the column it is set in and not by the measure of the
@@ -280,25 +317,58 @@ func above(p poppler.Layout, lines []poppler.TextLine, cuts []float64, frame Fra
 			widths[at] = r - e
 		}
 	}
+
+	// The same columns again, with only what stands above the caption in
+	// them, and the right measure of each.
+	//
+	// This pair is what alone is asked about on the tight reading, and it is
+	// asking about the company a line keeps in the part of the page the
+	// region can grow into. The caption is not company: the bottom label of
+	// a stack of type has the caption under it and nothing else, and
+	// counting that as white space let ResNet's figure 3 collapse to a
+	// corner.
+	overhead := make(map[int][]poppler.TextLine, len(byColumn))
+	for _, l := range lines {
+		if l.YMax > ceiling {
+			continue
+		}
+		at := extract.Column(l, cuts)
+		overhead[at] = append(overhead[at], l)
+	}
+	rights := make(map[int]float64, len(overhead))
+	for at, in := range overhead {
+		e, ok := margin0(in)
+		if !ok {
+			continue
+		}
+		if r, ok := margin1(in); ok && r > e {
+			rights[at] = r
+		}
+	}
+
 	edge := c.Box.XMin
 	if e, ok := edges[col]; ok {
 		edge = min(edge, e)
 	}
 
-	// Half a line above the caption, because a caption's first line and the
-	// bottom row of the picture can round to the same point.
+	// company is the lines a line is judged against by alone: its own
+	// column above the caption on the tight reading, the whole page on the
+	// loose one. See Anchor for which reading is asked for and when.
 	//
-	// A line of this paper's own text, not the median gap between the lines
-	// of this page. The pages this pass is for are nearly all picture, and on
-	// one of them the median gap is not a line of anything. Page 67 of the
-	// GPT-3 paper is two charts and two captions, and pdftotext reads four
-	// lines on it whose median gap is 425 points, more than half the sheet.
-	// A margin of that is a margin wider than the figure: the region for
-	// figure H.11 started 170 points below where the chart does and stopped
-	// 170 points above its own caption, and what was left was too small to
-	// keep. The caption is set in the paper's text face, so the height of a
-	// word of it is a line of the paper wherever the pass runs.
-	//
+	// A column whose right measure could not be read is judged the loose way
+	// whichever reading is being asked for. Type set to a measure is what
+	// makes a column a column here, and a run of lines that end wherever
+	// they end is as likely to be a picture as a paragraph: figure 7 of the
+	// Chord paper is forty lines of pseudocode set ragged right, every one
+	// of them alone in its own column, and the tight reading cut it down to
+	// the last three lines of the listing.
+	company := func(at int) []poppler.TextLine {
+		if !tight || rights[at] <= 0 {
+			return lines
+		}
+		return overhead[at]
+	}
+
 	// Over the whole page and not only the caption's own column, because a
 	// column is where pdftotext put a line and not where the paper set it.
 	// Page 5 of the ResNet paper runs the caption of table 1 across both
@@ -315,16 +385,16 @@ func above(p poppler.Layout, lines []poppler.TextLine, cuts []float64, frame Fra
 	// labels stopped the region dead. Those lines are dealt with lower down,
 	// by bringing the region's side in, which is the answer to where a thing
 	// beside the figure leaves off.
-	ceiling := c.Box.YMin - body/2
 	stop := head
 	for _, l := range lines {
-		if l.YMax > ceiling || !alone(l, lines) {
+		at := extract.Column(l, cuts)
+		if l.YMax > ceiling || !alone(l, company(at)) {
 			continue
 		}
 		if l.XMax <= c.Box.XMin || l.XMin >= c.Box.XMax {
 			continue
 		}
-		e, ok := edges[extract.Column(l, cuts)]
+		e, ok := edges[at]
 		if !ok {
 			e = edge
 		}
@@ -536,6 +606,22 @@ func above(p poppler.Layout, lines []poppler.TextLine, cuts []float64, frame Fra
 // sat in the middle of it leaves two boxes that overlap each other sideways
 // as well, and that is one line of the paper being read twice rather than
 // two things side by side.
+//
+// The column and not the page, which is the fix for the second of the two
+// faults left over from #102. Page 16 of the BERT paper sets appendix C.2 in
+// the left column and C.3 in the right, both full, and figure 5 at the foot
+// of the left one. Asked of the whole page, every line of C.2 has a line of
+// C.3 level with it, no line is ever alone, nothing stops the band, and the
+// PNG that went out carried the whole of C.2 above the chart. Asked of the
+// left column alone, C.2 reads as what it is.
+//
+// On its own that trade is bad. A figure drawn as columns of boxed type is
+// a column of lines with nothing beside them once the question is scoped,
+// so ResNet's figure 3, the three network diagrams that take a whole page,
+// reads as three columns of prose and the region collapses to nothing.
+// Forty figures across the corpus go that way. What keeps them is that a
+// region the tight reading collapses is thrown away and the loose reading
+// asked instead, which is Anchor's business rather than this function's.
 func alone(l poppler.TextLine, lines []poppler.TextLine) bool {
 	for _, o := range lines {
 		if o.Box == l.Box {

@@ -334,6 +334,84 @@ func TestTheSecondPassLeavesAPlateAlone(t *testing.T) {
 	}
 }
 
+// panel is a picture drawn with type inside one column rather than across
+// the whole measure, which is what a figure on a two column page looks like.
+func panel(x0, x1, from, to float64) []poppler.TextLine {
+	var out []poppler.TextLine
+	for y := from; y+25 <= to; y += 27 {
+		for i, x := 0, x0+14; x+14 <= x1; i, x = i+1, x+30 {
+			out = append(out, tall(x, y, y+25, marker(7, i, x)))
+		}
+	}
+	return out
+}
+
+// stack is one column of a diagram drawn as boxed labels: short lines, all
+// of them flush with the left edge of the stack and all of them the same
+// length. Nothing about the shape of one of these lines tells it from a
+// paragraph, which is the whole difficulty.
+func stack(x0, x1, from, to float64) []poppler.TextLine {
+	var out []poppler.TextLine
+	for i, y := 0, from; y+10 <= to; i, y = i+1, y+leading {
+		out = append(out, textLine(x0, y, x1, marker(8, i, x0)+" input output"))
+	}
+	return out
+}
+
+// The figure the second fault of the BERT paper is about. The paper's own
+// prose sits above the figure in the caption's column and more prose sits
+// beside it in the other column, so no line of it is alone on the page and
+// the growth ran straight past all of it to the top of the frame.
+func TestProseAboveTheFigureStopsItEvenWithAColumnBesideIt(t *testing.T) {
+	const mid, next = 288.0, 324.0
+	left := column(4, colLeft, mid, []poppler.Box{
+		{XMin: colLeft, YMin: 306, XMax: mid, YMax: 660},
+	})
+	left = append(left, panel(colLeft, mid, 330, 620)...)
+	left = append(left, textLine(colLeft, 636, mid, "Figure 3: an invented diagram"))
+	pages := append(plain(), pageOf(4, left, column(4, next, colRight, nil)))
+
+	got := only(t, anchored(t, pages, 3))
+	// The prose in the caption's column runs down to 306 and the figure
+	// starts at 330.
+	if got.Box.YMin < 296 {
+		t.Fatalf("the region starts at y=%.0f, so it swallowed prose that runs down to 306", got.Box.YMin)
+	}
+	if got.Box.YMin > 340 {
+		t.Fatalf("the region starts at y=%.0f, which is inside the figure", got.Box.YMin)
+	}
+}
+
+// The other half of that trade. A diagram drawn as three stacks of boxed
+// labels is three columns of flush left type once the gutters are found, so
+// judged column by column every line of it reads as the paper's own prose
+// and the region collapses to a sliver above the caption. A region that
+// small is one the column by column reading has misread, so the whole page
+// is asked instead and the figure comes back whole.
+func TestADiagramDrawnAsColumnsOfTypeIsNotReadAsProse(t *testing.T) {
+	lines := column(4, colLeft, colRight, []poppler.Box{
+		{XMin: colLeft, YMin: 204, XMax: colRight, YMax: 648},
+	})
+	for _, x := range []float64{colLeft, 240.0, 408.0} {
+		lines = append(lines, stack(x, x+108, 216, 600)...)
+	}
+	lines = append(lines, textLine(colLeft, 624, colRight, "Figure 3: an invented diagram"))
+	pages := append(plain(), pageOf(4, lines))
+
+	for _, f := range found(t, pages, 3) {
+		if f.Box.YMin >= 204 && f.Box.YMax <= 624 {
+			t.Fatalf("the first pass found the diagram at %v, so this fixture does not test what it says it does", f.Box)
+		}
+	}
+	got := only(t, anchored(t, pages, 3))
+	if got.Box.YMin > 230 {
+		t.Fatalf("the region starts at y=%.0f, so it holds only the bottom of a diagram that starts at 216", got.Box.YMin)
+	}
+	if h := got.Box.YMax - got.Box.YMin; h < 300 {
+		t.Fatalf("the region is %.0f points tall, so the diagram was read as prose and collapsed", h)
+	}
+}
+
 // The caption of a figure on another page says nothing about this one.
 func TestACaptionFromAnotherPageIsIgnored(t *testing.T) {
 	pages := append(plain(), typeset())
