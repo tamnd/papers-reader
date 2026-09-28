@@ -15,11 +15,11 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@astrojs/react": "^6.0.5",
-    "@types/node": "^26.6.1",
+    "@astrojs/react": "^7.0.0",
+    "@types/node": "^26.6.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "astro": "^7.3.2",
+    "astro": "^7.3.5",
     "json-schema-to-typescript": "^16.0.0",
     "typescript": "^6.0.3"
   }
