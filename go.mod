@@ -6,7 +6,7 @@ require (
 	github.com/dop251/goja v0.0.0-20260911104922-fabc3b8078ad
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/tamnd/llm v0.1.5
-	golang.org/x/text v0.42.0
+	golang.org/x/text v0.43.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
